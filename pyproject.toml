@@ -1,0 +1,11 @@
+[project]
+name = "financial-advisor"
+version = "0.1.0"
+description = "Local investment quality and swing trade assistant."
+requires-python = ">=3.12"
+
+[project.scripts]
+advisor = "advisor.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["advisor*"]
