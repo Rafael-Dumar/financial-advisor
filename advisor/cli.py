@@ -83,6 +83,7 @@ def _scan(args: argparse.Namespace) -> int:
             return 1
         errors = config.validate(allow_missing_keys=False)
         if errors:
+            _record_scan_errors(args, errors)
             print("\n".join(_format_config_errors(errors)))
             return 1
     if args.fixture_dir is None:
@@ -97,6 +98,7 @@ def _scan(args: argparse.Namespace) -> int:
                 snapshots = loader.load_snapshots(include_discovery=args.include_discovery)
                 benchmarks = loader.load_benchmarks()
             except RuntimeError as error:
+                _record_scan_errors(args, [str(error)])
                 print(str(error))
                 return 1
         else:
@@ -304,13 +306,14 @@ def _run_report_job(args: argparse.Namespace, default_db: str | None = None) -> 
         include_discovery=args.include_discovery,
         require_live=args.require_live,
         report_type=args.report_type,
+        scan_errors=[],
     )
     scan_code = _scan(scan_args)
     if scan_code != 0 and args.require_live:
         return _write_blocked_report(
             output_dir=args.output_dir,
             report_type=args.report_type,
-            reasons=["live_report_failed"],
+            reasons=["live_report_failed", *scan_args.scan_errors],
         )
     return scan_code
 
@@ -321,6 +324,11 @@ def _write_blocked_report(*, output_dir: Path, report_type: str, reasons: list[s
     _write_reports(output_dir, markdown, html, report_type=report_type)
     print(f"blocked_report_written={output_dir / 'advisor-report.md'}")
     return 0
+
+
+def _record_scan_errors(args: argparse.Namespace, errors: list[str]) -> None:
+    if hasattr(args, "scan_errors") and isinstance(args.scan_errors, list):
+        args.scan_errors.extend(errors)
 
 
 def _signals_update_results(args: argparse.Namespace, default_db: str | None = None) -> int:

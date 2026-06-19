@@ -68,6 +68,7 @@ Configure repository secrets in GitHub under Settings -> Secrets and variables -
 - Optional: `ALPHAVANTAGE_API_KEY`, `COINBASE_API_KEY`, `ADVISOR_ACCOUNT_CAPITAL`, `ADVISOR_RISK_FRACTION`, `ADVISOR_MAX_DAILY_LOSS_FRACTION`, `ADVISOR_MAX_WEEKLY_LOSS_FRACTION`.
 
 If live validation fails in Actions, the workflow still uploads a `reports/` artifact with `Data mode: blocked` and `Decisao geral: no_trade_day`; it does not create a decision-grade report.
+The scheduled Actions workflow omits `--include-discovery` by default to preserve free-tier FMP calls. Use the direct CLI command with `--include-discovery` only when you intentionally want the larger scan.
 
 Discovery mode:
 

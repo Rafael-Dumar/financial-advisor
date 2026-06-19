@@ -24,7 +24,6 @@ class GitHubActionsWorkflowTests(unittest.TestCase):
         self.assertIn("python -m pip install -e .", content)
         self.assertIn("python -m advisor config validate --require-live", content)
         self.assertIn("python -m advisor report", content)
-        self.assertIn("--include-discovery", content)
         self.assertIn("--require-live", content)
         self.assertIn("FMP_API_KEY: ${{ secrets.FMP_API_KEY }}", content)
         self.assertIn("COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}", content)
@@ -32,6 +31,7 @@ class GitHubActionsWorkflowTests(unittest.TestCase):
         self.assertIn("reports/", content)
         self.assertNotIn("broker", content.lower())
         self.assertNotIn("place order", content.lower())
+        self.assertNotIn("--include-discovery", content)
 
     def test_scheduled_report_type_selection_is_explicit(self) -> None:
         workflow_path = PROJECT_ROOT / ".github" / "workflows" / "financial-advisor-reports.yml"

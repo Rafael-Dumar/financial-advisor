@@ -370,6 +370,44 @@ class CacheConfigCliTests(unittest.TestCase):
             self.assertIn("missing_fmp_api_key", report_text)
             self.assertNotIn("Decisao geral: `operate`", report_text)
 
+    def test_report_main_require_live_includes_provider_error_in_blocked_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "reports"
+            db_path = Path(tmp) / "advisor.db"
+            config = AdvisorConfig.default()
+            config.stock_watchlist = ["MSFT"]
+            config.crypto_watchlist = ["HYPE"]
+            config.fmp_api_key = "test_fmp"
+            config.coingecko_api_key = "test_coingecko"
+            buffer = StringIO()
+
+            with (
+                patch("advisor.cli.AdvisorConfig.default", return_value=config),
+                patch("advisor.cli.LiveDataLoader") as loader_class,
+                redirect_stdout(buffer),
+            ):
+                loader_class.return_value.load_snapshots.side_effect = RuntimeError(
+                    "provider_fetch_error:fmp:prices:http_error:429:Limit Reach"
+                )
+                exit_code = advisor_main(
+                    [
+                        "report",
+                        "main",
+                        "--require-live",
+                        "--db",
+                        str(db_path),
+                        "--output-dir",
+                        str(output_dir),
+                    ]
+                )
+
+            report_text = (output_dir / "advisor-report.md").read_text(encoding="utf-8")
+            self.assertEqual(exit_code, 0)
+            self.assertIn("blocked_report_written", buffer.getvalue())
+            self.assertIn("live_report_failed", report_text)
+            self.assertIn("provider_fetch_error:fmp:prices:http_error:429:Limit Reach", report_text)
+            self.assertIn("Decisao geral: `no_trade_day`", report_text)
+
     def test_report_close_can_generate_close_sections_without_breaking_latest_report_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "reports"

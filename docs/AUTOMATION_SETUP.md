@@ -138,6 +138,8 @@ Manual run:
 
 If `advisor config validate --require-live` fails, the workflow still runs `advisor report ... --require-live`; the CLI writes a blocked/no-trade report under `reports/` so the artifact explains the failure. It does not connect to a broker, execute orders, or recommend automatic buying.
 
+The workflow does not pass `--include-discovery` by default because FMP free-tier calls can be exhausted quickly. Run the direct CLI command with `--include-discovery` only when you intentionally want the larger universe.
+
 ## Generated Files
 
 The CLI writes:
