@@ -69,6 +69,7 @@ Configure repository secrets in GitHub under Settings -> Secrets and variables -
 
 If live validation fails in Actions, the workflow still uploads a `reports/` artifact with `Data mode: blocked` and `Decisao geral: no_trade_day`; it does not create a decision-grade report.
 The scheduled Actions workflow omits `--include-discovery` by default to preserve free-tier FMP calls. Use the direct CLI command with `--include-discovery` only when you intentionally want the larger scan.
+It also runs with a conservative default budget: `ADVISOR_STOCK_WATCHLIST=MSFT,NVDA`, `ADVISOR_CRYPTO_WATCHLIST=HYPE`, `ADVISOR_MAX_STOCKS_PER_RUN=2`, and `ADVISOR_FMP_CALL_BUDGET_PER_RUN=20`. That keeps scheduled runs around 16 estimated FMP calls each instead of scanning the full list.
 
 Discovery mode:
 

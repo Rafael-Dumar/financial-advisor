@@ -374,10 +374,14 @@ def _config_summary(config: AdvisorConfig) -> list[str]:
         f"estimated_live_calls_base={_format_counts(config.estimated_live_calls(include_discovery=False))}",
         f"estimated_live_calls_with_discovery={_format_counts(config.estimated_live_calls(include_discovery=True))}",
     ]
+    if config.max_stocks_per_run is not None:
+        lines.append(f"max_stocks_per_run={config.max_stocks_per_run}")
     for namespace, seconds in sorted(config.freshness_seconds.items()):
         lines.append(f"freshness_{namespace}_seconds={seconds}")
     for provider, limit in sorted(config.api_limits.items()):
         lines.append(f"api_limit_{provider}={limit}")
+    for provider, limit in sorted(config.api_run_limits.items()):
+        lines.append(f"api_run_limit_{provider}={limit}")
     return lines
 
 
@@ -430,10 +434,11 @@ def _write_reports(output_dir: Path, markdown: str, html: str, *, report_type: s
 
 def _enforce_live_budget(config: AdvisorConfig, *, include_discovery: bool) -> None:
     estimated = config.estimated_live_calls(include_discovery=include_discovery)
+    limits = {**config.api_limits, **config.api_run_limits}
     over_budget = [
-        f"{provider}:{count}>{config.api_limits[provider]}"
+        f"{provider}:{count}>{limits[provider]}"
         for provider, count in estimated.items()
-        if provider in config.api_limits and count > config.api_limits[provider]
+        if provider in limits and count > limits[provider]
     ]
     if over_budget:
         raise RuntimeError(f"api_budget_exceeded:{','.join(over_budget)}")

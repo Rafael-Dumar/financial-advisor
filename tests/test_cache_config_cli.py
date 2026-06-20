@@ -149,6 +149,29 @@ class CacheConfigCliTests(unittest.TestCase):
         self.assertEqual(config.max_daily_loss_fraction, 0.015)
         self.assertEqual(config.max_weekly_loss_fraction, 0.04)
 
+    def test_config_limits_symbols_and_exposes_per_run_fmp_budget(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = Path(tmp) / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        "ADVISOR_STOCK_WATCHLIST=MSFT,NVDA,AMD",
+                        "ADVISOR_CRYPTO_WATCHLIST=HYPE",
+                        "ADVISOR_MAX_STOCKS_PER_RUN=2",
+                        "ADVISOR_FMP_CALL_BUDGET_PER_RUN=20",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            config = AdvisorConfig.default(env_file=env_path)
+
+        stocks, cryptos = config.symbols_for_scan(include_discovery=False)
+        self.assertEqual(stocks, ["MSFT", "NVDA"])
+        self.assertEqual(cryptos, ["HYPE"])
+        self.assertEqual(config.api_run_limits["fmp"], 20)
+        self.assertLessEqual(config.estimated_live_calls(include_discovery=False)["fmp"], 20)
+
     def test_config_default_can_use_env_file_override_for_hermetic_runs(self):
         with tempfile.TemporaryDirectory() as tmp:
             real_env_path = Path(tmp) / ".env"
@@ -406,6 +429,39 @@ class CacheConfigCliTests(unittest.TestCase):
             self.assertIn("blocked_report_written", buffer.getvalue())
             self.assertIn("live_report_failed", report_text)
             self.assertIn("provider_fetch_error:fmp:prices:http_error:429:Limit Reach", report_text)
+            self.assertIn("Decisao geral: `no_trade_day`", report_text)
+
+    def test_report_main_blocks_before_provider_calls_when_fmp_run_budget_is_exceeded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "reports"
+            db_path = Path(tmp) / "advisor.db"
+            config = AdvisorConfig.default()
+            config.stock_watchlist = ["MSFT", "NVDA"]
+            config.crypto_watchlist = ["HYPE"]
+            config.fmp_api_key = "test_fmp"
+            config.coingecko_api_key = "test_coingecko"
+            config.api_run_limits["fmp"] = 10
+
+            with (
+                patch("advisor.cli.AdvisorConfig.default", return_value=config),
+                patch("advisor.cli.LiveDataLoader") as loader_class,
+            ):
+                exit_code = advisor_main(
+                    [
+                        "report",
+                        "main",
+                        "--require-live",
+                        "--db",
+                        str(db_path),
+                        "--output-dir",
+                        str(output_dir),
+                    ]
+                )
+
+            report_text = (output_dir / "advisor-report.md").read_text(encoding="utf-8")
+            self.assertEqual(exit_code, 0)
+            loader_class.assert_not_called()
+            self.assertIn("api_budget_exceeded:fmp:16>10", report_text)
             self.assertIn("Decisao geral: `no_trade_day`", report_text)
 
     def test_report_close_can_generate_close_sections_without_breaking_latest_report_command(self):

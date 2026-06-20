@@ -24,6 +24,8 @@ class AdvisorConfig:
     coinbase_api_key: str = ""
     freshness_seconds: dict[str, int] = field(default_factory=dict)
     api_limits: dict[str, int] = field(default_factory=dict)
+    api_run_limits: dict[str, int] = field(default_factory=dict)
+    max_stocks_per_run: int | None = None
 
     @classmethod
     def default(cls, env_file: Path | str | None = None) -> "AdvisorConfig":
@@ -31,9 +33,11 @@ class AdvisorConfig:
         if env_file_path is None:
             env_file_path = os.getenv("ADVISOR_ENV_FILE", ".env")
         file_env = _load_env_file(env_file_path if env_file_path else None)
+        default_stocks = ["INTC", "AMD", "NVDA", "HIMS", "MU", "MSFT", "USAR", "CRDO", "MSTR", "DELL"]
+        default_cryptos = ["BTC", "ETH", "SOL", "HYPE", "ZEC"]
         return cls(
-            stock_watchlist=["INTC", "AMD", "NVDA", "HIMS", "MU", "MSFT", "USAR", "CRDO", "MSTR", "DELL"],
-            crypto_watchlist=["BTC", "ETH", "SOL", "HYPE", "ZEC"],
+            stock_watchlist=_env_list("ADVISOR_STOCK_WATCHLIST", file_env, default_stocks),
+            crypto_watchlist=_env_list("ADVISOR_CRYPTO_WATCHLIST", file_env, default_cryptos),
             discovery_stock_candidates=[
                 "AAPL",
                 "AVGO",
@@ -71,6 +75,8 @@ class AdvisorConfig:
                 "alphavantage": 25,
                 "yahoo": 100_000,
             },
+            api_run_limits=_run_limits_from_env(file_env),
+            max_stocks_per_run=_env_int_optional("ADVISOR_MAX_STOCKS_PER_RUN", file_env),
         )
 
     def validate(self, *, allow_missing_keys: bool = False) -> list[str]:
@@ -87,6 +93,11 @@ class AdvisorConfig:
         for provider, limit in sorted(self.api_limits.items()):
             if limit < 0:
                 errors.append(f"invalid_api_limit_{provider}")
+        for provider, limit in sorted(self.api_run_limits.items()):
+            if limit < 0:
+                errors.append(f"invalid_api_run_limit_{provider}")
+        if self.max_stocks_per_run is not None and self.max_stocks_per_run <= 0:
+            errors.append("invalid_max_stocks_per_run")
         if self.risk_fraction <= 0 or self.risk_fraction > self.max_risk_fraction:
             errors.append("invalid_risk_fraction")
         if self.max_daily_loss_fraction <= 0:
@@ -128,6 +139,8 @@ class AdvisorConfig:
         if include_discovery:
             stocks = list(dict.fromkeys([*stocks, *self.discovery_stock_candidates]))
             cryptos = list(dict.fromkeys([*cryptos, *self.discovery_crypto_candidates]))
+        if self.max_stocks_per_run is not None:
+            stocks = stocks[: self.max_stocks_per_run]
         return stocks, cryptos
 
     def estimated_live_calls(self, *, include_discovery: bool) -> dict[str, int]:
@@ -145,6 +158,31 @@ class AdvisorConfig:
 
 def _env_value(name: str, file_env: dict[str, str], default: str) -> str:
     return os.getenv(name) or file_env.get(name, default)
+
+
+def _env_list(name: str, file_env: dict[str, str], default: list[str]) -> list[str]:
+    raw = os.getenv(name)
+    if raw is None:
+        raw = file_env.get(name)
+    if raw is None:
+        return list(default)
+    return [item.strip().upper() for item in raw.split(",") if item.strip()]
+
+
+def _env_int_optional(name: str, file_env: dict[str, str]) -> int | None:
+    raw = os.getenv(name)
+    if raw is None:
+        raw = file_env.get(name)
+    if raw is None or not raw.strip():
+        return None
+    return int(raw)
+
+
+def _run_limits_from_env(file_env: dict[str, str]) -> dict[str, int]:
+    fmp_limit = _env_int_optional("ADVISOR_FMP_CALL_BUDGET_PER_RUN", file_env)
+    if fmp_limit is None:
+        return {}
+    return {"fmp": fmp_limit}
 
 
 def _load_env_file(env_file: Path | str | None) -> dict[str, str]:

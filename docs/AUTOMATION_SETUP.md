@@ -140,6 +140,15 @@ If `advisor config validate --require-live` fails, the workflow still runs `advi
 
 The workflow does not pass `--include-discovery` by default because FMP free-tier calls can be exhausted quickly. Run the direct CLI command with `--include-discovery` only when you intentionally want the larger universe.
 
+The GitHub workflow also sets a conservative universe and per-run budget:
+
+- `ADVISOR_STOCK_WATCHLIST=MSFT,NVDA`
+- `ADVISOR_CRYPTO_WATCHLIST=HYPE`
+- `ADVISOR_MAX_STOCKS_PER_RUN=2`
+- `ADVISOR_FMP_CALL_BUDGET_PER_RUN=20`
+
+With the current FMP data model, each stock costs about 7 FMP calls plus 2 benchmark calls. The scheduled default therefore estimates about 16 FMP calls per report. If you expand the watchlist, increase the budget intentionally and keep the daily 250-call cap in mind.
+
 ## Generated Files
 
 The CLI writes:
