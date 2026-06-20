@@ -277,7 +277,29 @@ class LiveDataLoader:
             coinbase_payload: dict[str, Any] = {}
         else:
             binance_symbol = f"{symbol}USDT"
-            klines_payload = self._fetch("binance", "prices", self.binance.klines_url(binance_symbol))
+            try:
+                klines_payload = self._fetch("binance", "prices", self.binance.klines_url(binance_symbol))
+            except RuntimeError as error:
+                if _is_binance_restricted_location(error):
+                    return crypto_snapshot_from_payloads(
+                        symbol=symbol,
+                        theme=THEMES.get(symbol, "crypto"),
+                        klines_payload=[],
+                        market_payload=market_payload,
+                        funding_payload=[],
+                        open_interest_payload={},
+                        taker_payload=[],
+                        coinbase_payload={},
+                        liquidation_payload=[],
+                        missing_data=[
+                            "binance_restricted_location",
+                            "price_history_unavailable",
+                        ],
+                        data_source="binance_unavailable",
+                        data_timestamp=_now_iso(),
+                        cache_age_seconds=0,
+                    )
+                raise
             raw_funding_payload = self._fetch("binance", "crypto_flow", self.binance.funding_rate_url(binance_symbol))
             funding_rate = binance_funding_rate_8h_from_payloads(
                 funding_payload=raw_funding_payload,
@@ -492,6 +514,17 @@ def _is_fmp_price_unavailable(error: RuntimeError) -> bool:
     return (
         message.startswith("provider_fetch_error:fmp:prices:http_error:402")
         and "Premium Query Parameter" in message
+    )
+
+
+def _is_binance_restricted_location(error: RuntimeError) -> bool:
+    message = str(error)
+    return (
+        message.startswith("provider_fetch_error:binance:")
+        and (
+            "http_error:451" in message
+            or "restricted location" in message.lower()
+        )
     )
 
 

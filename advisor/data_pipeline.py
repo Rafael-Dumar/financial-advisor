@@ -139,6 +139,7 @@ def crypto_snapshot_from_payloads(
     taker_payload: list[dict[str, Any]],
     coinbase_payload: dict[str, Any] | None = None,
     liquidation_payload: list[dict[str, Any]] | None = None,
+    missing_data: list[str] | None = None,
     data_source: str = "binance/coingecko",
     data_timestamp: str | None = None,
     cache_age_seconds: int | None = None,
@@ -159,7 +160,7 @@ def crypto_snapshot_from_payloads(
     cvd_proxy = _cvd_proxy(taker_payload)
     coinbase_premium = _coinbase_premium(coinbase_payload or {}, candles[-1].close if candles else None)
     liquidation_imbalance = _liquidation_imbalance(liquidation_payload or [])
-    missing_data = []
+    missing_data = list(missing_data or [])
     if not taker_payload:
         missing_data.append("cvd_proxy_unavailable")
     if not open_interest_payload:

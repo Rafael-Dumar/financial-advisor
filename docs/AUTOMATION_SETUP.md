@@ -240,6 +240,7 @@ Network/provider failure:
 
 - The scripts fail explicitly and leave details in `.tmp\logs\`.
 - They do not promote a non-live report to `reports\latest.md`.
+- If Binance returns `http_error:451` in GitHub Actions, the runner location is restricted by Binance. The bot marks affected Binance crypto assets as blocked by `binance_restricted_location` instead of treating them as tradeable.
 
 Report says `blocked` or `no_trade_day`:
 

@@ -350,6 +350,31 @@ class LiveLoaderTests(unittest.TestCase):
         ):
             loader.load_snapshots()
 
+    def test_live_loader_blocks_binance_restricted_location_crypto_without_aborting_scan(self):
+        def fake_fetch(url, *, payload=None, headers=None):
+            if "coins/markets" in url:
+                return [{"id": "bitcoin", "market_cap": 1_500_000_000_000, "total_volume": 45_000_000_000}]
+            if "/klines" in url:
+                raise RuntimeError(
+                    "http_error:451:Service unavailable from a restricted location"
+                )
+            return {}
+
+        config = AdvisorConfig.default()
+        config.stock_watchlist = []
+        config.crypto_watchlist = ["BTC"]
+        config.fmp_api_key = "demo"
+        config.coingecko_api_key = "demo"
+        loader = LiveDataLoader(config, fetch_json=fake_fetch, today="2026-06-01")
+
+        snapshots = loader.load_snapshots()
+
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(snapshots[0].symbol, "BTC")
+        self.assertEqual(snapshots[0].candles, [])
+        self.assertIn("binance_restricted_location", snapshots[0].missing_data)
+        self.assertIn("price_history_unavailable", snapshots[0].missing_data)
+
     def test_live_loader_degrades_optional_liquidation_provider_error_payload(self):
         def fake_fetch(url, *, payload=None, headers=None):
             if "coins/markets" in url:
