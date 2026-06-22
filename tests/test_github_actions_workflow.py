@@ -33,6 +33,8 @@ class GitHubActionsWorkflowTests(unittest.TestCase):
         self.assertNotIn("place order", content.lower())
         self.assertIn("python -m advisor report main --include-discovery --require-live --output-dir reports", content)
         self.assertIn("python -m advisor report close --from-main --require-live --output-dir reports", content)
+        self.assertIn("ADVISOR_STOCK_WATCHLIST: INTC,AMD,NVDA,HIMS,MU,MSFT,USAR,CRDO,DELL,MRVL,HOOD", content)
+        self.assertIn("ADVISOR_CRYPTO_WATCHLIST: SOL,HYPE,BTC,ETH", content)
 
     def test_scheduled_report_type_selection_is_explicit(self) -> None:
         workflow_path = PROJECT_ROOT / ".github" / "workflows" / "financial-advisor-reports.yml"

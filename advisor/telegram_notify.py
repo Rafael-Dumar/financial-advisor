@@ -17,8 +17,13 @@ def build_telegram_message(markdown: str, *, artifact_path: str, workflow_url: s
     decision = _field(markdown, "Decisao geral")
     brt_date = datetime.now(timezone(timedelta(hours=-3))).date().isoformat()
     tradeable = _summary_count(markdown, "Ativos tradeable")
+    watchlist_count = _summary_count(markdown, "Watchlist aprovada")
+    coverage_count = _coverage_count(markdown)
     watchlist = _section_symbols(markdown, "Watchlist aprovada")[:3]
     research = _section_symbols(markdown, "Research queue")[:3]
+    deep_analysis = _section_symbols(markdown, "Deep analysis candidates")[:5]
+    provider_rate_limit_status = _field(markdown, "provider_rate_limit_status")
+    budget_limited = _field(markdown, "deep_analysis_limited_by_budget")
     risks = _section_text(markdown, "Riscos principais").splitlines()
     risk_line = next((line.strip("- ").strip() for line in risks if line.strip()), "not_verified")
     lines = [
@@ -27,9 +32,14 @@ def build_telegram_message(markdown: str, *, artifact_path: str, workflow_url: s
         f"report_type: {report_type}",
         f"data_mode: {data_mode}",
         f"decision: {decision}",
+        f"coverage_count: {coverage_count}",
         f"tradeable_count: {tradeable}",
+        f"watchlist_count: {watchlist_count}",
         f"watchlist_top3: {_csv_or_none(watchlist)}",
         f"research_queue_top3: {_csv_or_none(research)}",
+        f"deep_analysis_candidates: {_csv_or_none(deep_analysis)}",
+        f"provider_rate_limit_status: {provider_rate_limit_status}",
+        f"budget_limited: {budget_limited}",
         f"main_risks: {risk_line}",
         f"artifact: {artifact_path}",
     ]
@@ -90,6 +100,21 @@ def _summary_count(markdown: str, label: str) -> str:
         if line.startswith(prefix):
             return line[len(prefix):].strip()
     return "unknown"
+
+
+def _coverage_count(markdown: str) -> str:
+    field_value = _summary_count(markdown, "Coverage universe")
+    if field_value != "unknown":
+        return field_value
+    table = _section_text(markdown, "Coverage universe")
+    rows = [
+        line
+        for line in table.splitlines()
+        if line.startswith("| ")
+        and not line.startswith("| ---")
+        and "Ticker" not in line
+    ]
+    return str(len(rows)) if rows else "unknown"
 
 
 def _section_symbols(markdown: str, heading: str) -> list[str]:

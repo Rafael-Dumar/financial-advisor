@@ -26,6 +26,8 @@ def render_markdown_report(
     generated_at: str | None = None,
     data_freshness: str = "controlled_by_cache_freshness",
     provider_budget: dict[str, Any] | None = None,
+    coverage_universe: list[dict[str, Any]] | None = None,
+    deep_analysis_candidates: list[str] | None = None,
 ) -> str:
     generated_at = generated_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
     non_live_mode = _is_non_live_mode(data_mode)
@@ -60,6 +62,7 @@ def render_markdown_report(
         f"- Stock regime: `{stock_regime}`",
         f"- Crypto regime: `{crypto_regime}`",
         f"- Ativos analisados: {len(decisions)}",
+        f"- Coverage universe: {len(coverage_universe or [])}",
         f"- Blocked por dados: {blocked_count}",
         f"- Decisao geral: `{general_decision}`",
         f"- Alertas de carteira: {_format_list(portfolio_alerts or [])}",
@@ -67,6 +70,10 @@ def render_markdown_report(
     ]
     lines.extend(_provider_budget_section(provider_budget))
     ranked_decisions = _rank_decisions(decisions)
+    if coverage_universe:
+        lines.extend(_market_session_status_section(stock_regime, crypto_regime, market_sessions))
+        lines.extend(_coverage_universe_section(coverage_universe, ranked_decisions))
+    lines.extend(_deep_analysis_candidates_section(deep_analysis_candidates or [decision.symbol for decision in ranked_decisions[:5]]))
     if report_type == "close":
         lines.extend(
             _close_summary_sections(
@@ -268,6 +275,8 @@ def _provider_budget_section(provider_budget: dict[str, Any] | None) -> list[str
         f"- close_universe_source: `{provider_budget.get('close_universe_source', 'manual')}`",
         f"- skipped_provider_calls_due_to_cache: {int(provider_budget.get('skipped_provider_calls_due_to_cache', 0) or 0)}",
         f"- skipped_provider_calls_due_to_rate_limit: {int(provider_budget.get('skipped_provider_calls_due_to_rate_limit', 0) or 0)}",
+        f"- deep_analysis_limited_by_budget: `{str(bool(provider_budget.get('deep_analysis_limited_by_budget', False))).lower()}`",
+        f"- deep_analysis_skipped: {_format_compact_list(provider_budget.get('deep_analysis_skipped', []))}",
         f"- few_assets_reason: `{provider_budget.get('few_assets_reason', 'other')}`",
     ]
     if provider_budget.get("fmp_status") == "rate_limited":
@@ -282,6 +291,96 @@ def _provider_budget_section(provider_budget: dict[str, Any] | None) -> list[str
         lines.append(f"- {provider}_calls_used: {int(used.get(provider, 0) or 0)}")
     lines.append("")
     return lines
+
+
+def _market_session_status_section(stock_regime: str, crypto_regime: str, market_sessions: list[str]) -> list[str]:
+    return [
+        "## Market/session status",
+        "",
+        f"- market_session: `{','.join(market_sessions) if market_sessions else 'unknown'}`",
+        f"- stock_regime: `{stock_regime}`",
+        f"- crypto_regime: `{crypto_regime}`",
+        "",
+    ]
+
+
+def _coverage_universe_section(
+    coverage_universe: list[dict[str, Any]],
+    decisions: list[AssetDecision],
+) -> list[str]:
+    decision_by_symbol = {decision.symbol: decision for decision in decisions}
+    lines = [
+        "## Coverage universe",
+        "",
+        "| Ticker | Type | Last price | Daily change | Trend | Bucket | Data status | Reason |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in coverage_universe:
+        symbol = str(item.get("symbol", "")).upper()
+        asset_type = str(item.get("asset_type", "unknown"))
+        decision = decision_by_symbol.get(symbol)
+        if decision is None:
+            lines.append(
+                f"| {symbol} | {asset_type} | n/a | n/a | not_verified | not_deep_analyzed | not_verified | not_selected_for_deep_analysis |"
+            )
+            continue
+        lines.append(
+            f"| {symbol} | {asset_type} | {_coverage_last_price(decision)} | {_coverage_daily_change(decision)} | "
+            f"{_coverage_trend(decision)} | {_final_bucket(decision)} | {_coverage_data_status(decision)} | "
+            f"{_coverage_reason(decision)} |"
+        )
+    lines.append("")
+    return lines
+
+
+def _deep_analysis_candidates_section(candidates: list[str]) -> list[str]:
+    lines = ["## Deep analysis candidates", ""]
+    if not candidates:
+        lines.extend(["Nenhum ativo selecionado para deep analysis.", ""])
+        return lines
+    for symbol in candidates[:5]:
+        lines.append(f"- `{symbol}`")
+    lines.append("")
+    return lines
+
+
+def _coverage_last_price(decision: AssetDecision) -> str:
+    for metric in decision.metrics_summary:
+        if metric.startswith("Last price:"):
+            return metric.split(":", 1)[1].strip()
+    return "n/a"
+
+
+def _coverage_daily_change(decision: AssetDecision) -> str:
+    for metric in decision.metrics_summary:
+        if metric.startswith("Daily change:"):
+            return metric.split(":", 1)[1].strip()
+    return "n/a"
+
+
+def _coverage_trend(decision: AssetDecision) -> str:
+    if decision.swing_trade_score >= 70:
+        return "up"
+    if decision.swing_trade_score <= 35:
+        return "down"
+    return "flat"
+
+
+def _coverage_data_status(decision: AssetDecision) -> str:
+    if decision.decision == "blocked" or decision.data_quality == "blocked":
+        return "blocked"
+    if decision.is_stale:
+        return "cache"
+    if decision.data_source in {"alphavantage", "yahoo", "stooq"}:
+        return "fallback"
+    if decision.data_source in {"unknown", "unavailable"}:
+        return "not_verified"
+    return "live"
+
+
+def _coverage_reason(decision: AssetDecision) -> str:
+    reasons = [*decision.reason_codes, *decision.alerts, *decision.limitations]
+    return str(reasons[0]) if reasons else str(decision.decision)
 
 
 def _main_summary_sections(
@@ -1053,6 +1152,10 @@ def _format_expected_value(stats) -> str:
 
 def _format_list(values: list[str]) -> str:
     return ", ".join(values) if values else "nenhum"
+
+
+def _format_compact_list(values: list[str]) -> str:
+    return ",".join(values) if values else "nenhum"
 
 
 def _format_percent(value: float) -> str:

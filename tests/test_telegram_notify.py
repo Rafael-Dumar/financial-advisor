@@ -21,6 +21,7 @@ REPORT = """# Investment and Swing Trade Advisor
 - Ativos tradeable: 0
 - Watchlist aprovada: 1
 - Research queue: 1
+- Coverage universe: 4
 
 ## Watchlist aprovada
 
@@ -29,6 +30,26 @@ REPORT = """# Investment and Swing Trade Advisor
 ## Research queue
 
 - `NVDA`
+
+## Coverage universe
+
+| Ticker | Type | Last price | Daily change | Trend | Bucket | Data status | Reason |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| MSFT | stock | 100.00 | 1.20% | up | watchlist | live | setup_present |
+| NVDA | stock | n/a | n/a | not_verified | research_queue | not_verified | not_selected_for_deep_analysis |
+| HYPE | crypto | 35.00 | -2.00% | down | technical_unvalidated | live | high_volatility |
+| BTC | crypto | n/a | n/a | not_verified | not_deep_analyzed | not_verified | not_selected_for_deep_analysis |
+
+## Deep analysis candidates
+
+- `MSFT`
+- `HYPE`
+
+## provider_budget_summary
+
+- provider_rate_limit_status: `ok`
+- deep_analysis_limited_by_budget: `true`
+- deep_analysis_skipped: NVDA,BTC
 
 ## Riscos principais
 
@@ -84,6 +105,11 @@ class TelegramNotifyTests(unittest.TestCase):
         self.assertIn("brt_date:", payload["text"])
         self.assertIn("report_type: main", payload["text"])
         self.assertIn("decision: wait", payload["text"])
+        self.assertIn("coverage_count: 4", payload["text"])
+        self.assertIn("watchlist_count: 1", payload["text"])
+        self.assertIn("deep_analysis_candidates: MSFT,HYPE", payload["text"])
+        self.assertIn("provider_rate_limit_status: ok", payload["text"])
+        self.assertIn("budget_limited: true", payload["text"])
         self.assertIn("workflow: https://github.com/example/actions/runs/1", payload["text"])
 
     def test_build_telegram_message_handles_missing_report_fields(self) -> None:

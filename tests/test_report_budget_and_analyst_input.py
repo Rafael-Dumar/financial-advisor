@@ -147,6 +147,63 @@ class ReportBudgetAndAnalystInputTests(unittest.TestCase):
         self.assertIn("- skipped_provider_calls_due_to_rate_limit: 15", report)
         self.assertNotIn("Decisao geral: `operate`", report)
 
+    def test_report_shows_full_coverage_universe_without_deep_analysis_for_all(self) -> None:
+        coverage = [
+            {"symbol": "INTC", "asset_type": "stock"},
+            {"symbol": "AMD", "asset_type": "stock"},
+            {"symbol": "NVDA", "asset_type": "stock"},
+            {"symbol": "HIMS", "asset_type": "stock"},
+            {"symbol": "MU", "asset_type": "stock"},
+            {"symbol": "MSFT", "asset_type": "stock"},
+            {"symbol": "USAR", "asset_type": "stock"},
+            {"symbol": "CRDO", "asset_type": "stock"},
+            {"symbol": "DELL", "asset_type": "stock"},
+            {"symbol": "MRVL", "asset_type": "stock"},
+            {"symbol": "HOOD", "asset_type": "stock"},
+            {"symbol": "SOL", "asset_type": "crypto"},
+            {"symbol": "HYPE", "asset_type": "crypto"},
+            {"symbol": "BTC", "asset_type": "crypto"},
+            {"symbol": "ETH", "asset_type": "crypto"},
+        ]
+        report = render_markdown_report(
+            [
+                _decision("INTC", investment_quality_score=82),
+                _decision("HYPE", asset_type="crypto", decision="technical_unvalidated"),
+            ],
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            report_type="main",
+            data_mode="live",
+            coverage_universe=coverage,
+            deep_analysis_candidates=["INTC", "HYPE"],
+            provider_budget={
+                "estimated_calls": {"fmp": 16},
+                "used_calls": {"fmp": 14},
+                "cache_hits": 4,
+                "cache_misses": 2,
+                "universe_requested": 15,
+                "universe_scanned": 2,
+                "discovery_enabled": True,
+                "skipped_due_to_api_budget": False,
+                "provider_rate_limit_status": "ok",
+                "few_assets_reason": "budget_limit",
+                "actions_cache_hit": "true",
+                "deep_analysis_limited_by_budget": True,
+                "deep_analysis_skipped": ["AMD", "NVDA", "MRVL"],
+            },
+        )
+
+        self.assertIn("## Coverage universe", report)
+        for symbol in ["INTC", "AMD", "NVDA", "HIMS", "MU", "MSFT", "USAR", "CRDO", "DELL", "MRVL", "HOOD", "SOL", "HYPE", "BTC", "ETH"]:
+            self.assertIn(f"| {symbol} |", report)
+        self.assertIn("| AMD | stock | n/a | n/a | not_verified | not_deep_analyzed | not_verified | not_selected_for_deep_analysis |", report)
+        self.assertIn("## Deep analysis candidates", report)
+        self.assertIn("- `INTC`", report)
+        self.assertIn("- `HYPE`", report)
+        self.assertNotIn("- `AMD` | deep", report)
+        self.assertIn("- deep_analysis_limited_by_budget: `true`", report)
+        self.assertIn("- deep_analysis_skipped: AMD,NVDA,MRVL", report)
+
     def test_analyst_review_input_keeps_only_top_equity_candidates(self) -> None:
         decisions = [
             _decision("MSFT", swing_trade_score=90),
@@ -173,6 +230,37 @@ class ReportBudgetAndAnalystInputTests(unittest.TestCase):
         self.assertIn("NVDA", text)
         self.assertIn("AMD", text)
         self.assertNotIn("AVGO", text)
+
+    def test_analyst_review_input_does_not_send_full_coverage_and_separates_crypto(self) -> None:
+        decisions = [
+            _decision("INTC", investment_quality_score=95, swing_trade_score=95),
+            _decision("AMD", investment_quality_score=94, swing_trade_score=94),
+            _decision("NVDA", investment_quality_score=93, swing_trade_score=93),
+            _decision("MSFT", investment_quality_score=92, swing_trade_score=92),
+            _decision("HYPE", asset_type="crypto", decision="technical_unvalidated"),
+            _decision("BTC", asset_type="crypto", decision="technical_unvalidated"),
+        ]
+
+        text = render_analyst_review_input(
+            decisions,
+            report_type="main",
+            data_mode="live",
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            generated_at="2026-06-22T12:00:00-03:00",
+        )
+
+        equity_section = text.split("## Crypto review needed", 1)[0]
+        self.assertIn("## Top equity candidates for qualitative review", text)
+        self.assertIn("## Crypto review needed", text)
+        self.assertIn("HYPE", text)
+        self.assertIn("BTC", text)
+        self.assertNotIn("HYPE", equity_section)
+        self.assertNotIn("BTC", equity_section)
+        self.assertIn("INTC", equity_section)
+        self.assertIn("AMD", equity_section)
+        self.assertIn("NVDA", equity_section)
+        self.assertNotIn("MSFT", equity_section)
 
     def test_analyst_review_input_has_exact_no_candidate_phrase(self) -> None:
         text = render_analyst_review_input(

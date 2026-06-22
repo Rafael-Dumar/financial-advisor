@@ -150,6 +150,7 @@ def _scan(args: argparse.Namespace) -> int:
         snapshots = snapshots_from_fixture(payload)
         benchmarks = benchmarks_from_fixture(payload)
     account_capital = float(payload.get("account_capital", config.account_capital))
+    coverage_universe = _coverage_universe(config)
     regimes = derive_market_regimes(snapshots=snapshots, benchmarks=benchmarks)
     stock_regime = payload.get("stock_regime", regimes.stock.label)
     crypto_regime = payload.get("crypto_regime", regimes.crypto.label)
@@ -206,6 +207,10 @@ def _scan(args: argparse.Namespace) -> int:
         close_universe_source=getattr(args, "close_universe_source", None),
         cache_reused_from_main=getattr(args, "cache_reused_from_main", False),
     )
+    deep_analysis_candidates = [decision.symbol for decision in _rank_report_decisions(decisions)[:5]]
+    deep_skipped = _deep_analysis_skipped(coverage_universe, decisions)
+    provider_budget["deep_analysis_limited_by_budget"] = bool(deep_skipped)
+    provider_budget["deep_analysis_skipped"] = deep_skipped
     markdown = render_markdown_report(
         decisions,
         stock_regime=stock_regime,
@@ -214,6 +219,8 @@ def _scan(args: argparse.Namespace) -> int:
         data_mode=data_mode,
         portfolio_alerts=portfolio_alerts,
         provider_budget=provider_budget,
+        coverage_universe=coverage_universe,
+        deep_analysis_candidates=deep_analysis_candidates,
     )
     analyst_markdown = render_analyst_review_input(
         decisions,
@@ -466,6 +473,7 @@ def _symbols_from_main_baseline(markdown: str) -> list[str]:
         "Watchlist aprovada",
         "Watchlist apenas",
         "Research queue",
+        "Equity research queue",
         "Setup tecnico detectado, mas nao validado",
     }
     symbols: list[str] = []
@@ -501,6 +509,38 @@ def _apply_close_universe_to_config(config: AdvisorConfig, symbols: list[str]) -
     config.crypto_watchlist = [symbol for symbol in symbols if symbol in crypto_symbols]
     config.discovery_stock_candidates = []
     config.discovery_crypto_candidates = []
+
+
+def _coverage_universe(config: AdvisorConfig) -> list[dict[str, str]]:
+    return [
+        *({"symbol": symbol, "asset_type": "stock"} for symbol in dict.fromkeys(config.stock_watchlist)),
+        *({"symbol": symbol, "asset_type": "crypto"} for symbol in dict.fromkeys(config.crypto_watchlist)),
+    ]
+
+
+def _deep_analysis_skipped(
+    coverage_universe: list[dict[str, str]],
+    decisions: list[AssetDecision],
+) -> list[str]:
+    analyzed = {decision.symbol for decision in decisions}
+    return [
+        str(item["symbol"])
+        for item in coverage_universe
+        if str(item["symbol"]) not in analyzed
+    ]
+
+
+def _rank_report_decisions(decisions: list[AssetDecision]) -> list[AssetDecision]:
+    return sorted(
+        decisions,
+        key=lambda decision: (
+            decision.decision in {"tradeable", "watch_buy", "technical_unvalidated", "speculative_watch"},
+            decision.swing_trade_score,
+            decision.investment_quality_score,
+            decision.decision_confidence_score,
+        ),
+        reverse=True,
+    )
 
 
 def _record_scan_errors(args: argparse.Namespace, errors: list[str]) -> None:

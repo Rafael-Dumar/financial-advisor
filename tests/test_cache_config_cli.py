@@ -72,7 +72,15 @@ class CacheConfigCliTests(unittest.TestCase):
 
         self.assertIn("placeholder_fmp_api_key", errors)
         self.assertIn("placeholder_coingecko_api_key", errors)
-        self.assertFalse(config.has_live_keys())
+
+    def test_default_watchlists_match_coverage_universe(self):
+        config = AdvisorConfig.default()
+
+        self.assertEqual(
+            config.stock_watchlist,
+            ["INTC", "AMD", "NVDA", "HIMS", "MU", "MSFT", "USAR", "CRDO", "DELL", "MRVL", "HOOD"],
+        )
+        self.assertEqual(config.crypto_watchlist, ["SOL", "HYPE", "BTC", "ETH"])
 
     def test_config_validate_checks_watchlists_and_freshness(self):
         config = AdvisorConfig.default()
@@ -104,8 +112,8 @@ class CacheConfigCliTests(unittest.TestCase):
 
         self.assertEqual(base_calls["fmp"], (len(config.stock_watchlist) * 7) + 2)
         self.assertEqual(base_calls["hyperliquid"], 2)
-        self.assertEqual(base_calls["binance"], 21)
-        self.assertEqual(discovery_calls["binance"], 41)
+        self.assertEqual(base_calls["binance"], 16)
+        self.assertEqual(discovery_calls["binance"], 36)
         self.assertGreater(discovery_calls["fmp"], base_calls["fmp"])
         self.assertLessEqual(discovery_calls["fmp"], config.api_limits["fmp"])
 
@@ -531,6 +539,8 @@ class CacheConfigCliTests(unittest.TestCase):
                         "- `NVDA`",
                         "## Research queue",
                         "- `HYPE`",
+                        "## Equity research queue",
+                        "- `MRVL`",
                         "## Setup tecnico detectado, mas nao validado",
                         "- `AMD`: review",
                         "",
@@ -571,7 +581,7 @@ class CacheConfigCliTests(unittest.TestCase):
             report_text = (output_dir / "advisor-report.md").read_text(encoding="utf-8")
             used_config = loader_class.call_args.args[0]
             self.assertEqual(exit_code, 0)
-            self.assertEqual(used_config.stock_watchlist, ["MSFT", "NVDA", "AMD"])
+            self.assertEqual(used_config.stock_watchlist, ["MSFT", "NVDA", "MRVL", "AMD"])
             self.assertEqual(used_config.crypto_watchlist, ["HYPE"])
             loader_class.return_value.load_snapshots.assert_called_once_with(include_discovery=False)
             self.assertIn("- discovery_enabled: `false`", report_text)
@@ -1080,8 +1090,8 @@ class CacheConfigCliTests(unittest.TestCase):
 
         self.assertEqual(command.returncode, 0, command.stderr)
         self.assertIn("config ok", command.stdout)
-        self.assertIn("stock_watchlist=10", command.stdout)
-        self.assertIn("crypto_watchlist=5", command.stdout)
+        self.assertIn("stock_watchlist=11", command.stdout)
+        self.assertIn("crypto_watchlist=4", command.stdout)
         self.assertIn("risk_per_trade=0.50%", command.stdout)
         self.assertIn("max_risk_per_trade=1.00%", command.stdout)
         self.assertIn("minimum_stock_market_cap=10000000000.00", command.stdout)

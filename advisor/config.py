@@ -33,8 +33,8 @@ class AdvisorConfig:
         if env_file_path is None:
             env_file_path = os.getenv("ADVISOR_ENV_FILE", ".env")
         file_env = _load_env_file(env_file_path if env_file_path else None)
-        default_stocks = ["INTC", "AMD", "NVDA", "HIMS", "MU", "MSFT", "USAR", "CRDO", "MSTR", "DELL"]
-        default_cryptos = ["BTC", "ETH", "SOL", "HYPE", "ZEC"]
+        default_stocks = ["INTC", "AMD", "NVDA", "HIMS", "MU", "MSFT", "USAR", "CRDO", "DELL", "MRVL", "HOOD"]
+        default_cryptos = ["SOL", "HYPE", "BTC", "ETH"]
         return cls(
             stock_watchlist=_env_list("ADVISOR_STOCK_WATCHLIST", file_env, default_stocks),
             crypto_watchlist=_env_list("ADVISOR_CRYPTO_WATCHLIST", file_env, default_cryptos),

@@ -142,8 +142,8 @@ The workflow passes `--include-discovery` only for the main report. The close re
 
 The GitHub workflow also sets a conservative universe and per-run budget:
 
-- `ADVISOR_STOCK_WATCHLIST=MSFT,NVDA`
-- `ADVISOR_CRYPTO_WATCHLIST=HYPE`
+- `ADVISOR_STOCK_WATCHLIST=INTC,AMD,NVDA,HIMS,MU,MSFT,USAR,CRDO,DELL,MRVL,HOOD`
+- `ADVISOR_CRYPTO_WATCHLIST=SOL,HYPE,BTC,ETH`
 - `ADVISOR_MAX_STOCKS_PER_RUN=2`
 - `ADVISOR_FMP_CALL_BUDGET_PER_RUN=20`
 
