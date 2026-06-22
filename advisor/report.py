@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from html import escape
 from typing import Any
 
@@ -11,6 +11,8 @@ from advisor.risk import evaluate_leverage_policy
 CONSERVATIVE_TECHNICAL_THESIS = (
     "Setup tecnico detectado, mas dados incompletos/EV/fluxo/noticias nao validam entrada operacional."
 )
+BRT = timezone(timedelta(hours=-3))
+CLOSE_WINDOW_AFTER_REGULAR_CLOSE = timedelta(hours=2, minutes=30)
 
 
 def render_markdown_report(
@@ -31,7 +33,13 @@ def render_markdown_report(
     market_sessions = sorted({decision.market_session for decision in decisions if decision.market_session})
     stale_count = sum(1 for decision in decisions if decision.is_stale)
     report_type = report_type if report_type in {"main", "close"} else "main"
-    report_grade = _report_grade(report_type=report_type, data_mode=data_mode, market_sessions=market_sessions)
+    report_grade = _report_grade(
+        report_type=report_type,
+        data_mode=data_mode,
+        market_sessions=market_sessions,
+        generated_at=generated_at,
+        has_stale_assets=stale_count > 0,
+    )
     diagnostic_main = report_grade == "diagnostic_not_decision_grade"
     actionable_report = report_grade == "decision_grade" and not non_live_mode
     general_decision = "no_trade_day" if non_live_mode or diagnostic_main else _general_decision(decisions)
@@ -126,13 +134,19 @@ def render_analyst_review_input(
     generated_at = generated_at or datetime.now(timezone(timedelta(hours=-3))).isoformat(timespec="seconds")
     ranked = _rank_decisions(decisions)
     market_sessions = sorted({decision.market_session for decision in decisions if decision.market_session})
-    report_grade = _report_grade(report_type=report_type, data_mode=data_mode, market_sessions=market_sessions)
+    report_grade = _report_grade(
+        report_type=report_type,
+        data_mode=data_mode,
+        market_sessions=market_sessions,
+        generated_at=generated_at,
+        has_stale_assets=any(decision.is_stale for decision in decisions),
+    )
     diagnostic_main = report_grade == "diagnostic_not_decision_grade"
     general_decision = "no_trade_day" if _is_non_live_mode(data_mode) or diagnostic_main else _general_decision(decisions)
     equity_candidates = [
         decision
         for decision in ranked
-        if not diagnostic_main
+        if report_grade == "decision_grade"
         and decision.asset_type == "stock"
         and _final_bucket(decision) in {"tradeable", "watchlist"}
     ][:3]
@@ -144,6 +158,14 @@ def render_analyst_review_input(
         and _final_bucket(decision) not in {"tradeable", "watchlist", "rejected", "blocked"}
     ][:3]
     if diagnostic_main:
+        equity_research = [
+            decision
+            for decision in ranked
+            if decision.asset_type == "stock"
+            and decision.investment_quality_score >= 80
+            and _final_bucket(decision) not in {"rejected", "blocked"}
+        ][:3]
+    if report_grade == "close_decision_grade":
         equity_research = [
             decision
             for decision in ranked
@@ -363,7 +385,12 @@ def _close_summary_sections(
         "",
         f"Postura sugerida para o proximo pregao: `{general_decision}`.",
         *(
-            ["close report fora do horario regular nao e gatilho automatico para o proximo pregao."]
+            ["Relatorio de fechamento valido para preparacao do proximo pregao. Nao e gatilho automatico de ordem."]
+            if report_grade == "close_decision_grade"
+            else []
+        ),
+        *(
+            ["Close report fora da janela valida ou sem sessao regular confirmada; usar apenas como diagnostico."]
             if report_grade == "close_diagnostic"
             else []
         ),
@@ -585,13 +612,28 @@ def _analyst_candidate_lines(decision: AssetDecision) -> list[str]:
     ]
 
 
-def _report_grade(*, report_type: str, data_mode: str, market_sessions: list[str]) -> str:
+def _report_grade(
+    *,
+    report_type: str,
+    data_mode: str,
+    market_sessions: list[str],
+    generated_at: str,
+    has_stale_assets: bool,
+) -> str:
     if _is_non_live_mode(data_mode):
         return "not_decision_grade"
     normalized = {session.lower() for session in market_sessions if session}
-    if report_type == "main" and normalized != {"regular"}:
-        return "diagnostic_not_decision_grade"
-    if report_type == "close" and normalized & {"closed", "after_hours"}:
+    if has_stale_assets:
+        return "close_diagnostic" if report_type == "close" else "diagnostic_not_decision_grade"
+    if report_type == "main":
+        if normalized != {"regular"}:
+            return "diagnostic_not_decision_grade"
+        return "decision_grade"
+    if report_type == "close":
+        if not normalized or not normalized <= {"closed", "after_hours"}:
+            return "close_diagnostic"
+        if _is_valid_close_window(generated_at):
+            return "close_decision_grade"
         return "close_diagnostic"
     return "decision_grade"
 
@@ -599,9 +641,108 @@ def _report_grade(*, report_type: str, data_mode: str, market_sessions: list[str
 def _report_grade_warnings(report_grade: str) -> list[str]:
     if report_grade == "diagnostic_not_decision_grade":
         return ["- AVISO: main report fora do horario regular; usar apenas como diagnostico"]
+    if report_grade == "close_decision_grade":
+        return [
+            "- Nota: Relatorio de fechamento valido para preparacao do proximo pregao. "
+            "Nao e gatilho automatico de ordem. Sem ordem automatica, sem broker e sem compra automatica."
+        ]
     if report_grade == "close_diagnostic":
-        return ["- AVISO: close report fora do horario regular nao e gatilho automatico para o proximo pregao"]
+        return ["- AVISO: Close report fora da janela valida ou sem sessao regular confirmada; usar apenas como diagnostico."]
     return []
+
+
+def _is_valid_close_window(generated_at: str) -> bool:
+    generated_brt = _parse_generated_at_to_brt(generated_at)
+    if generated_brt is None:
+        return False
+    market_date = generated_brt.date()
+    if not _is_us_market_trading_day(market_date):
+        return False
+    regular_close_brt = datetime.combine(market_date, _regular_close_time_brt(market_date), tzinfo=BRT)
+    return regular_close_brt <= generated_brt <= regular_close_brt + CLOSE_WINDOW_AFTER_REGULAR_CLOSE
+
+
+def _regular_close_time_brt(day: date) -> time:
+    return time(17, 0) if _is_us_dst(day) else time(18, 0)
+
+
+def _is_us_dst(day: date) -> bool:
+    starts = _nth_weekday(day.year, 3, 6, 2)
+    ends = _nth_weekday(day.year, 11, 6, 1)
+    return starts <= day < ends
+
+
+def _parse_generated_at_to_brt(generated_at: str) -> datetime | None:
+    try:
+        normalized = generated_at.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=BRT)
+    return parsed.astimezone(BRT)
+
+
+def _is_us_market_trading_day(day: date) -> bool:
+    if day.weekday() >= 5:
+        return False
+    return day not in _us_market_holidays(day.year)
+
+
+def _us_market_holidays(year: int) -> set[date]:
+    holidays = {
+        _observed(date(year, 1, 1)),
+        _nth_weekday(year, 1, 0, 3),
+        _nth_weekday(year, 2, 0, 3),
+        _easter_sunday(year) - timedelta(days=2),
+        _last_weekday(year, 5, 0),
+        _observed(date(year, 6, 19)),
+        _observed(date(year, 7, 4)),
+        _nth_weekday(year, 9, 0, 1),
+        _nth_weekday(year, 11, 3, 4),
+        _observed(date(year, 12, 25)),
+    }
+    return {holiday for holiday in holidays if holiday.year == year}
+
+
+def _observed(day: date) -> date:
+    if day.weekday() == 5:
+        return day - timedelta(days=1)
+    if day.weekday() == 6:
+        return day + timedelta(days=1)
+    return day
+
+
+def _nth_weekday(year: int, month: int, weekday: int, nth: int) -> date:
+    current = date(year, month, 1)
+    while current.weekday() != weekday:
+        current += timedelta(days=1)
+    return current + timedelta(days=7 * (nth - 1))
+
+
+def _last_weekday(year: int, month: int, weekday: int) -> date:
+    current = date(year + (1 if month == 12 else 0), 1 if month == 12 else month + 1, 1) - timedelta(days=1)
+    while current.weekday() != weekday:
+        current -= timedelta(days=1)
+    return current
+
+
+def _easter_sunday(year: int) -> date:
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return date(year, month, day)
 
 
 def _bucket(decisions: list[AssetDecision], name: str) -> list[AssetDecision]:

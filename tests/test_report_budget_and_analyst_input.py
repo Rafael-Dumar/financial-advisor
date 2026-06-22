@@ -225,10 +225,69 @@ class ReportBudgetAndAnalystInputTests(unittest.TestCase):
             crypto_regime="neutral",
             report_type="close",
             data_mode="live",
+            generated_at="2026-06-22T20:00:00-03:00",
         )
 
         self.assertIn("report_grade: `close_diagnostic`", report)
-        self.assertIn("close report fora do horario regular nao e gatilho automatico para o proximo pregao", report)
+        self.assertIn("Close report fora da janela valida ou sem sessao regular confirmada; usar apenas como diagnostico.", report)
+
+    def test_close_after_market_close_on_trading_day_is_close_decision_grade(self) -> None:
+        report = render_markdown_report(
+            [_decision("NVDA", decision="watch_buy", market_session="closed")],
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            report_type="close",
+            data_mode="live",
+            generated_at="2026-06-22T17:15:00-03:00",
+        )
+        analyst = render_analyst_review_input(
+            [_decision("NVDA", decision="watch_buy", market_session="closed", investment_quality_score=95)],
+            report_type="close",
+            data_mode="live",
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            generated_at="2026-06-22T17:15:00-03:00",
+        )
+
+        self.assertIn("report_grade: `close_decision_grade`", report)
+        self.assertIn("Relatorio de fechamento valido para preparacao do proximo pregao. Nao e gatilho automatico de ordem.", report)
+        self.assertIn("Sem ordem automatica, sem broker e sem compra automatica", report)
+        self.assertIn("report_grade: `close_decision_grade`", analyst)
+        self.assertIn("## Equity research queue", analyst)
+
+    def test_close_before_market_close_is_close_diagnostic(self) -> None:
+        report = render_markdown_report(
+            [_decision("NVDA", decision="watch_buy", market_session="regular")],
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            report_type="close",
+            data_mode="live",
+            generated_at="2026-06-22T15:30:00-03:00",
+        )
+
+        self.assertIn("report_grade: `close_diagnostic`", report)
+        self.assertIn("Close report fora da janela valida ou sem sessao regular confirmada; usar apenas como diagnostico.", report)
+
+    def test_close_on_weekend_or_holiday_is_close_diagnostic(self) -> None:
+        weekend_report = render_markdown_report(
+            [_decision("NVDA", decision="watch_buy", market_session="closed")],
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            report_type="close",
+            data_mode="live",
+            generated_at="2026-06-21T17:15:00-03:00",
+        )
+        holiday_report = render_markdown_report(
+            [_decision("NVDA", decision="watch_buy", market_session="closed")],
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            report_type="close",
+            data_mode="live",
+            generated_at="2026-06-19T17:15:00-03:00",
+        )
+
+        self.assertIn("report_grade: `close_diagnostic`", weekend_report)
+        self.assertIn("report_grade: `close_diagnostic`", holiday_report)
 
     def test_asset_appears_in_only_one_final_bucket(self) -> None:
         report = render_markdown_report(
