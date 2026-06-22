@@ -19,12 +19,19 @@ def _decision(
     asset_type: str = "stock",
     decision: str = "watch_buy",
     swing_trade_score: float = 65,
+    investment_quality_score: float = 70,
+    market_session: str = "regular",
+    missing_data_severity: str = "medium",
+    expected_value_r: float | None = None,
+    limitations: list[str] | None = None,
+    short_setup_score: float = 0,
+    short_status: str = "not_evaluated",
 ) -> AssetDecision:
     return AssetDecision(
         symbol=symbol,
         asset_type=asset_type,
         decision=decision,
-        investment_quality_score=70,
+        investment_quality_score=investment_quality_score,
         swing_trade_score=swing_trade_score,
         risk_plan=RiskPlan(
             entry=100,
@@ -40,22 +47,31 @@ def _decision(
             alerts=[],
         ),
         alerts=["earnings_data_missing"] if asset_type == "stock" else [],
-        limitations=["news_not_verified"],
         thesis=f"{symbol} has a setup worth review.",
         metrics_summary=["revenue growth: ok", "valuation: not cheap"],
         ideal_entry=100,
         alternative_entry=None,
         hold_suggestion="swing",
-        backtest_stats=BacktestStats(sample_size=30, win_rate_2r=0.5, win_rate_3r=None),
+        backtest_stats=BacktestStats(
+            sample_size=30,
+            win_rate_2r=0.5,
+            win_rate_3r=None,
+            expected_value_r=expected_value_r,
+            avg_win_r=1.2 if expected_value_r is not None else None,
+            avg_loss_r=-1.0 if expected_value_r is not None else None,
+        ),
         sample_quality="medium",
         reason_codes=["setup_present"],
         data_quality="ok",
-        missing_data_severity="medium",
+        missing_data_severity=missing_data_severity,
         news_summary="not_collected",
         event_check_status="not_collected",
         news_status="not_collected",
-        market_session="regular",
+        market_session=market_session,
         decision_confidence_score=60,
+        short_setup_score=short_setup_score,
+        short_status=short_status,
+        limitations=limitations or ["news_not_verified"],
     )
 
 
@@ -176,6 +192,110 @@ class ReportBudgetAndAnalystInputTests(unittest.TestCase):
         self.assertEqual(summary["universe_requested"], 5)
         self.assertEqual(summary["universe_scanned"], 3)
         self.assertEqual(summary["few_assets_reason"], "budget_limit")
+
+    def test_main_outside_regular_session_is_diagnostic_not_decision_grade(self) -> None:
+        report = render_markdown_report(
+            [_decision("NVDA", decision="watch_buy", market_session="closed")],
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            report_type="main",
+            data_mode="live",
+        )
+        analyst = render_analyst_review_input(
+            [_decision("NVDA", decision="watch_buy", market_session="closed", investment_quality_score=95)],
+            report_type="main",
+            data_mode="live",
+            stock_regime="neutral",
+            crypto_regime="neutral",
+        )
+
+        self.assertIn("report_grade: `diagnostic_not_decision_grade`", report)
+        self.assertIn("main report fora do horario regular; usar apenas como diagnostico", report)
+        self.assertIn("Nenhum ativo em watchlist acionavel", report)
+        self.assertIn("No equity candidates for qualitative review", analyst)
+        self.assertIn("report_grade: `diagnostic_not_decision_grade`", analyst)
+        self.assertIn("## Equity research queue", analyst)
+        self.assertIn("pesquisa qualitativa, nao trade", analyst)
+        self.assertIn("NVDA", analyst)
+
+    def test_close_outside_regular_session_is_not_next_day_trigger(self) -> None:
+        report = render_markdown_report(
+            [_decision("NVDA", decision="watch_buy", market_session="closed")],
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            report_type="close",
+            data_mode="live",
+        )
+
+        self.assertIn("report_grade: `close_diagnostic`", report)
+        self.assertIn("close report fora do horario regular nao e gatilho automatico para o proximo pregao", report)
+
+    def test_asset_appears_in_only_one_final_bucket(self) -> None:
+        report = render_markdown_report(
+            [
+                _decision("NVDA", decision="wait"),
+                _decision("MSFT", decision="avoid", short_setup_score=89, short_status="watch_only"),
+                _decision("HYPE", asset_type="crypto", decision="technical_unvalidated"),
+            ],
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            report_type="main",
+            data_mode="live",
+        )
+
+        bucket_sections = [
+            "## Tradeable hoje",
+            "## Watchlist apenas",
+            "## Setup tecnico detectado, mas nao validado",
+            "## Research queue",
+            "## Wait",
+            "## Rejected",
+            "## Blocked",
+            "## Short watchlist apenas",
+        ]
+        for symbol in ["NVDA", "MSFT", "HYPE"]:
+            appearances = sum(symbol in _section(report, heading) for heading in bucket_sections)
+            self.assertEqual(appearances, 1, f"{symbol} appears in {appearances} final buckets")
+
+    def test_technical_unvalidated_with_high_missing_data_uses_conservative_thesis(self) -> None:
+        report = render_markdown_report(
+            [
+                _decision(
+                    "HYPE",
+                    asset_type="crypto",
+                    decision="technical_unvalidated",
+                    missing_data_severity="high",
+                    expected_value_r=-0.01,
+                    limitations=["cvd_proxy_unavailable", "news_not_collected_confidence_limited"],
+                )
+            ],
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            report_type="main",
+            data_mode="live",
+        )
+
+        self.assertIn("Setup tecnico detectado, mas dados incompletos/EV/fluxo/noticias nao validam entrada operacional.", report)
+        self.assertNotIn("qualidade e setup alinhados", report)
+
+    def test_report_uses_internal_drivers_until_real_news_macro_exists(self) -> None:
+        report = render_markdown_report(
+            [_decision("NVDA", decision="wait")],
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            report_type="main",
+            data_mode="live",
+            portfolio_alerts=["market_not_risk_on"],
+        )
+
+        self.assertIn("## Drivers internos do modelo", report)
+        self.assertIn("Sem news/macro real coletado nesta V1", report)
+        self.assertNotIn("## O que moveu o mercado", report)
+
+def _section(markdown: str, heading: str) -> str:
+    start = markdown.index(heading)
+    next_start = markdown.find("\n## ", start + len(heading))
+    return markdown[start : next_start if next_start != -1 else len(markdown)]
 
 
 if __name__ == "__main__":

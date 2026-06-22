@@ -759,16 +759,19 @@ class ScoringRegimeReportTests(unittest.TestCase):
 
         self.assertIn("## Resumo executivo", report)
         self.assertIn("## Decisao geral", report)
-        self.assertIn("## O que moveu o mercado", report)
+        self.assertIn("## Drivers internos do modelo", report)
+        self.assertIn("Sem news/macro real coletado nesta V1", report)
         self.assertIn("## Regime de mercado", report)
         self.assertIn("## Setores fortes e fracos", report)
         self.assertIn("## Watchlist aprovada", report)
         self.assertIn("- `MSFT`", report)
         self.assertIn("## Research queue", report)
-        self.assertIn("- `AMD`", report)
+        self.assertIn("## Setup tecnico detectado, mas nao validado", report)
         research_section = report.split("## Research queue", 1)[1].split("##", 1)[0]
+        technical_section = report.split("## Setup tecnico detectado, mas nao validado", 1)[1].split("##", 1)[0]
         watchlist_section = report.split("## Watchlist aprovada", 1)[1].split("##", 1)[0]
-        self.assertIn("`AMD`", research_section)
+        self.assertIn("`AMD`", technical_section)
+        self.assertNotIn("`AMD`", research_section)
         self.assertNotIn("`AMD`", watchlist_section)
 
     def test_close_report_uses_close_sections(self):
@@ -849,6 +852,7 @@ def _decision(symbol: str, decision: str, *, swing: float, investment: float) ->
         hold_suggestion="1-8 semanas",
         backtest_stats=BacktestStats(sample_size=74, win_rate_2r=0.62, win_rate_3r=0.38),
         sample_quality="medium",
+        market_session="regular",
     )
 
 

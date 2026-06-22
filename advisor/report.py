@@ -8,6 +8,11 @@ from advisor.models import AssetDecision
 from advisor.risk import evaluate_leverage_policy
 
 
+CONSERVATIVE_TECHNICAL_THESIS = (
+    "Setup tecnico detectado, mas dados incompletos/EV/fluxo/noticias nao validam entrada operacional."
+)
+
+
 def render_markdown_report(
     decisions: list[AssetDecision],
     *,
@@ -25,8 +30,11 @@ def render_markdown_report(
     blocked_count = sum(1 for decision in decisions if decision.decision == "blocked")
     market_sessions = sorted({decision.market_session for decision in decisions if decision.market_session})
     stale_count = sum(1 for decision in decisions if decision.is_stale)
-    general_decision = "no_trade_day" if non_live_mode else _general_decision(decisions)
     report_type = report_type if report_type in {"main", "close"} else "main"
+    report_grade = _report_grade(report_type=report_type, data_mode=data_mode, market_sessions=market_sessions)
+    diagnostic_main = report_grade == "diagnostic_not_decision_grade"
+    actionable_report = report_grade == "decision_grade" and not non_live_mode
+    general_decision = "no_trade_day" if non_live_mode or diagnostic_main else _general_decision(decisions)
     lines = [
         "# Investment and Swing Trade Advisor",
         "",
@@ -37,6 +45,8 @@ def render_markdown_report(
         f"- Data freshness: `{data_freshness}`",
         f"- Data mode: `{data_mode}`",
         *([f"- AVISO: **Nao usar para decisao real**"] if non_live_mode else []),
+        f"- report_grade: `{report_grade}`",
+        *(_report_grade_warnings(report_grade)),
         f"- market_session: `{','.join(market_sessions) if market_sessions else 'unknown'}`",
         f"- stale_assets: {stale_count}",
         f"- Stock regime: `{stock_regime}`",
@@ -50,7 +60,14 @@ def render_markdown_report(
     lines.extend(_provider_budget_section(provider_budget))
     ranked_decisions = _rank_decisions(decisions)
     if report_type == "close":
-        lines.extend(_close_summary_sections(ranked_decisions, general_decision, portfolio_alerts or []))
+        lines.extend(
+            _close_summary_sections(
+                ranked_decisions,
+                general_decision,
+                portfolio_alerts or [],
+                report_grade=report_grade,
+            )
+        )
     else:
         lines.extend(
             _main_summary_sections(
@@ -59,10 +76,11 @@ def render_markdown_report(
                 stock_regime=stock_regime,
                 crypto_regime=crypto_regime,
                 portfolio_alerts=portfolio_alerts or [],
+                actionable_report=actionable_report,
             )
         )
-    lines.extend(_tradeable_today_section(ranked_decisions, actionable=not non_live_mode))
-    lines.extend(_watchlist_only_section(ranked_decisions, actionable=not non_live_mode))
+    lines.extend(_tradeable_today_section(ranked_decisions, actionable=actionable_report))
+    lines.extend(_watchlist_only_section(ranked_decisions, actionable=actionable_report))
     lines.extend(_technical_unvalidated_section(ranked_decisions))
     lines.extend(_research_queue_section(ranked_decisions))
     lines.extend(_wait_section(ranked_decisions))
@@ -107,13 +125,32 @@ def render_analyst_review_input(
 ) -> str:
     generated_at = generated_at or datetime.now(timezone(timedelta(hours=-3))).isoformat(timespec="seconds")
     ranked = _rank_decisions(decisions)
-    general_decision = "no_trade_day" if _is_non_live_mode(data_mode) else _general_decision(decisions)
     market_sessions = sorted({decision.market_session for decision in decisions if decision.market_session})
+    report_grade = _report_grade(report_type=report_type, data_mode=data_mode, market_sessions=market_sessions)
+    diagnostic_main = report_grade == "diagnostic_not_decision_grade"
+    general_decision = "no_trade_day" if _is_non_live_mode(data_mode) or diagnostic_main else _general_decision(decisions)
     equity_candidates = [
         decision
         for decision in ranked
-        if decision.asset_type == "stock" and decision.decision in {"tradeable", "watch_buy", "technical_unvalidated"}
+        if not diagnostic_main
+        and decision.asset_type == "stock"
+        and _final_bucket(decision) in {"tradeable", "watchlist"}
     ][:3]
+    equity_research = [
+        decision
+        for decision in ranked
+        if decision.asset_type == "stock"
+        and decision.investment_quality_score >= 80
+        and _final_bucket(decision) not in {"tradeable", "watchlist", "rejected", "blocked"}
+    ][:3]
+    if diagnostic_main:
+        equity_research = [
+            decision
+            for decision in ranked
+            if decision.asset_type == "stock"
+            and decision.investment_quality_score >= 80
+            and _final_bucket(decision) not in {"rejected", "blocked"}
+        ][:3]
     crypto_candidates = [
         decision
         for decision in ranked
@@ -126,6 +163,8 @@ def render_analyst_review_input(
         f"- generated_at: `{generated_at}`",
         f"- report_type: `{report_type}`",
         f"- data_mode: `{data_mode}`",
+        f"- report_grade: `{report_grade}`",
+        *(_report_grade_warnings(report_grade)),
         f"- market_session: `{','.join(market_sessions) if market_sessions else 'unknown'}`",
         f"- bot_general_decision: `{general_decision}`",
         f"- stock_regime: `{stock_regime}`",
@@ -140,6 +179,17 @@ def render_analyst_review_input(
         lines.append("No equity candidates for qualitative review")
     else:
         for decision in equity_candidates:
+            lines.extend(_analyst_candidate_lines(decision))
+    if equity_research:
+        lines.extend(
+            [
+                "",
+                "## Equity research queue",
+                "",
+                "pesquisa qualitativa, nao trade. Usar para entender negocio/valuation; nao e setup aprovado.",
+            ]
+        )
+        for decision in equity_research:
             lines.extend(_analyst_candidate_lines(decision))
     lines.extend(
         [
@@ -206,12 +256,13 @@ def _main_summary_sections(
     stock_regime: str,
     crypto_regime: str,
     portfolio_alerts: list[str],
+    actionable_report: bool,
 ) -> list[str]:
-    tradeable = [decision for decision in decisions if decision.decision == "tradeable"]
-    watchlist = [decision for decision in decisions if decision.decision == "watch_buy"]
-    research = _research_queue(decisions)
-    blocked = [decision for decision in decisions if decision.decision == "blocked"]
-    rejected = _rejected(decisions)
+    tradeable = _bucket(decisions, "tradeable") if actionable_report else []
+    watchlist = _bucket(decisions, "watchlist") if actionable_report else []
+    research = _bucket(decisions, "research_queue")
+    blocked = _bucket(decisions, "blocked")
+    rejected = _bucket(decisions, "rejected")
     return [
         "## Resumo executivo",
         "",
@@ -225,9 +276,9 @@ def _main_summary_sections(
         "",
         f"Postura sugerida: `{general_decision}`. Sem ordem automatica, sem broker e sem compra automatica.",
         "",
-        "## O que moveu o mercado",
+        "## Drivers internos do modelo",
         "",
-        _market_driver_summary(decisions, portfolio_alerts),
+        _internal_driver_summary(decisions, portfolio_alerts),
         "",
         "## Regime de mercado",
         "",
@@ -289,16 +340,18 @@ def _close_summary_sections(
     decisions: list[AssetDecision],
     general_decision: str,
     portfolio_alerts: list[str],
+    *,
+    report_grade: str,
 ) -> list[str]:
     tomorrow = [
         decision
         for decision in decisions
-        if decision.decision in {"tradeable", "watch_buy"}
+        if _final_bucket(decision) in {"tradeable", "watchlist"}
     ]
     blocked_or_remove = [
         decision
         for decision in decisions
-        if decision.decision in {"blocked", "avoid", "wait", "technical_unvalidated"}
+        if _final_bucket(decision) in {"blocked", "rejected", "wait", "technical_unvalidated"}
     ]
     return [
         "## Resumo de fechamento",
@@ -309,6 +362,11 @@ def _close_summary_sections(
         "## Decisao geral para o proximo dia",
         "",
         f"Postura sugerida para o proximo pregao: `{general_decision}`.",
+        *(
+            ["close report fora do horario regular nao e gatilho automatico para o proximo pregao."]
+            if report_grade == "close_diagnostic"
+            else []
+        ),
         "",
         "## Mudancas vs main report",
         "",
@@ -370,7 +428,7 @@ def _ranking_section(decisions: list[AssetDecision]) -> list[str]:
 
 
 def _research_queue_section(decisions: list[AssetDecision]) -> list[str]:
-    items = _research_queue(decisions)
+    items = _bucket(decisions, "research_queue")
     lines = ["## Research queue", ""]
     lines.extend(_symbol_lines(items, empty="Nenhum ativo em research queue."))
     lines.append("")
@@ -378,7 +436,7 @@ def _research_queue_section(decisions: list[AssetDecision]) -> list[str]:
 
 
 def _rejected_section(decisions: list[AssetDecision]) -> list[str]:
-    items = _rejected(decisions)
+    items = _bucket(decisions, "rejected")
     lines = ["## Rejected", ""]
     lines.extend(_symbol_lines(items, empty="Nenhum ativo rejected."))
     lines.append("")
@@ -386,7 +444,7 @@ def _rejected_section(decisions: list[AssetDecision]) -> list[str]:
 
 
 def _tradeable_today_section(decisions: list[AssetDecision], *, actionable: bool = True) -> list[str]:
-    tradeable = [decision for decision in decisions if decision.decision == "tradeable"]
+    tradeable = _bucket(decisions, "tradeable")
     lines = ["## Tradeable hoje", ""]
     if not actionable:
         lines.extend(["Nenhum ativo tradeable neste data mode. Nao usar para decisao real.", ""])
@@ -400,7 +458,7 @@ def _tradeable_today_section(decisions: list[AssetDecision], *, actionable: bool
 
 
 def _watchlist_only_section(decisions: list[AssetDecision], *, actionable: bool = True) -> list[str]:
-    watchlist = [decision for decision in decisions if decision.decision == "watch_buy"]
+    watchlist = _bucket(decisions, "watchlist")
     lines = ["## Watchlist apenas", ""]
     if not actionable:
         lines.extend(["Nenhum ativo em watchlist acionavel neste data mode. Nao usar para decisao real.", ""])
@@ -414,13 +472,13 @@ def _watchlist_only_section(decisions: list[AssetDecision], *, actionable: bool 
 
 
 def _technical_unvalidated_section(decisions: list[AssetDecision]) -> list[str]:
-    items = [decision for decision in decisions if decision.decision == "technical_unvalidated"]
+    items = _bucket(decisions, "technical_unvalidated")
     lines = ["## Setup tecnico detectado, mas nao validado", ""]
     if not items:
         lines.extend(["Nenhum setup tecnico nao validado.", ""])
         return lines
     lines.extend(
-        f"- `{decision.symbol}`: dados/EV/confianca ainda nao validam entrada operacional"
+        f"- `{decision.symbol}`: {CONSERVATIVE_TECHNICAL_THESIS}"
         for decision in items
     )
     lines.append("")
@@ -428,7 +486,7 @@ def _technical_unvalidated_section(decisions: list[AssetDecision]) -> list[str]:
 
 
 def _wait_section(decisions: list[AssetDecision]) -> list[str]:
-    items = [decision for decision in decisions if decision.decision in {"wait", "watch_only"}]
+    items = _bucket(decisions, "wait")
     lines = ["## Wait", ""]
     if not items:
         lines.extend(["Nenhum ativo em wait.", ""])
@@ -439,7 +497,7 @@ def _wait_section(decisions: list[AssetDecision]) -> list[str]:
 
 
 def _avoid_section(decisions: list[AssetDecision]) -> list[str]:
-    items = [decision for decision in decisions if decision.decision == "avoid"]
+    items: list[AssetDecision] = []
     lines = ["## Avoid/Rejected", ""]
     if not items:
         lines.extend(["Nenhum ativo rejeitado.", ""])
@@ -450,7 +508,7 @@ def _avoid_section(decisions: list[AssetDecision]) -> list[str]:
 
 
 def _blocked_section(decisions: list[AssetDecision]) -> list[str]:
-    items = [decision for decision in decisions if decision.decision == "blocked"]
+    items = _bucket(decisions, "blocked")
     lines = ["## Blocked", ""]
     if not items:
         lines.extend(["Nenhum ativo blocked por dados.", ""])
@@ -461,11 +519,7 @@ def _blocked_section(decisions: list[AssetDecision]) -> list[str]:
 
 
 def _short_watchlist_section(decisions: list[AssetDecision]) -> list[str]:
-    items = [
-        decision
-        for decision in decisions
-        if decision.short_status == "watch_only" and decision.short_setup_score > 0
-    ]
+    items = _bucket(decisions, "short_observational")
     lines = ["## Short watchlist apenas", ""]
     if not items:
         lines.extend(["Nenhum ativo em short watchlist observacional.", ""])
@@ -501,11 +555,7 @@ def _symbol_lines(decisions: list[AssetDecision], *, empty: str) -> list[str]:
 
 
 def _short_lines(decisions: list[AssetDecision]) -> list[str]:
-    items = [
-        decision
-        for decision in decisions
-        if decision.short_status == "watch_only" and decision.short_setup_score > 0
-    ]
+    items = _bucket(decisions, "short_observational")
     if not items:
         return ["Nenhum short operacional. Shorts sao apenas observacionais na V1."]
     return [
@@ -527,12 +577,82 @@ def _analyst_candidate_lines(decision: AssetDecision) -> list[str]:
     return [
         f"- `{decision.symbol}`",
         f"  - bot_decision: `{decision.decision}`",
-        f"  - reason: {decision.thesis}",
+        f"  - reason: {_display_thesis(decision)}",
         f"  - risks: {_format_list(sorted(set([*decision.alerts, *decision.limitations])))}",
         f"  - valuation_summary: {'; '.join(decision.metrics_summary) if decision.metrics_summary else 'not_verified'}",
         f"  - earnings_guidance_status: `{_verification_status(decision.event_check_status)}`",
         f"  - news_catalyst_status: `{_verification_status(decision.news_status)}`",
     ]
+
+
+def _report_grade(*, report_type: str, data_mode: str, market_sessions: list[str]) -> str:
+    if _is_non_live_mode(data_mode):
+        return "not_decision_grade"
+    normalized = {session.lower() for session in market_sessions if session}
+    if report_type == "main" and normalized != {"regular"}:
+        return "diagnostic_not_decision_grade"
+    if report_type == "close" and normalized & {"closed", "after_hours"}:
+        return "close_diagnostic"
+    return "decision_grade"
+
+
+def _report_grade_warnings(report_grade: str) -> list[str]:
+    if report_grade == "diagnostic_not_decision_grade":
+        return ["- AVISO: main report fora do horario regular; usar apenas como diagnostico"]
+    if report_grade == "close_diagnostic":
+        return ["- AVISO: close report fora do horario regular nao e gatilho automatico para o proximo pregao"]
+    return []
+
+
+def _bucket(decisions: list[AssetDecision], name: str) -> list[AssetDecision]:
+    return [decision for decision in decisions if _final_bucket(decision) == name]
+
+
+def _final_bucket(decision: AssetDecision) -> str:
+    if decision.decision == "blocked":
+        return "blocked"
+    if decision.decision in {"avoid", "rejected"}:
+        return "rejected"
+    if decision.decision == "technical_unvalidated":
+        return "technical_unvalidated"
+    if decision.decision in {"wait", "watch_only"}:
+        return "wait"
+    if decision.decision == "speculative_watch":
+        return "research_queue"
+    if decision.decision == "watch_buy":
+        return "watchlist"
+    if decision.decision in {"tradeable", "strong_buy_candidate"}:
+        return "tradeable"
+    if decision.short_status == "watch_only" and decision.short_setup_score > 0:
+        return "short_observational"
+    return "wait"
+
+
+def _display_thesis(decision: AssetDecision) -> str:
+    if decision.decision == "technical_unvalidated" and _needs_conservative_technical_thesis(decision):
+        return CONSERVATIVE_TECHNICAL_THESIS
+    return decision.thesis
+
+
+def _needs_conservative_technical_thesis(decision: AssetDecision) -> bool:
+    stats = decision.backtest_stats
+    expected_value = stats.expected_value_r if stats is not None else None
+    limitations = set(decision.limitations)
+    has_missing_flow_or_news = any(
+        "flow" in limitation
+        or "cvd" in limitation
+        or "open_interest" in limitation
+        or "liquidation" in limitation
+        or "news" in limitation
+        for limitation in limitations
+    )
+    return (
+        decision.missing_data_severity in {"high", "blocking", "critical"}
+        or (expected_value is not None and expected_value < 0)
+        or "negative_ev_with_high_data_severity" in decision.alerts
+        or "negative_ev_with_high_data_severity" in limitations
+        or has_missing_flow_or_news
+    )
 
 
 def _themes_for(decisions: list[AssetDecision]) -> list[str]:
@@ -544,11 +664,11 @@ def _themes_for(decisions: list[AssetDecision]) -> list[str]:
     return sorted(set(themes))
 
 
-def _market_driver_summary(decisions: list[AssetDecision], portfolio_alerts: list[str]) -> str:
+def _internal_driver_summary(decisions: list[AssetDecision], portfolio_alerts: list[str]) -> str:
     alerts = sorted(set([*portfolio_alerts, *[alert for decision in decisions for alert in decision.alerts]]))
     if not alerts:
-        return "not_verified: nenhum driver externo coletado nesta V1."
-    return _format_list(alerts)
+        return "Sem news/macro real coletado nesta V1; nenhum driver interno relevante."
+    return f"Sem news/macro real coletado nesta V1; drivers internos do modelo: {_format_list(alerts)}"
 
 
 def _news_verification_summary(decisions: list[AssetDecision]) -> str:
@@ -683,7 +803,7 @@ def _asset_section(decision: AssetDecision) -> list[str]:
         f"- {quality}",
         f"- {three_r}",
         f"- Hold sugerido: {decision.hold_suggestion}",
-        f"- Tese: {decision.thesis}",
+        f"- Tese: {_display_thesis(decision)}",
         f"- Metricas principais: {'; '.join(decision.metrics_summary)}",
         f"- Event risk: {_event_risk(decision)}",
         f"- event_check_status: `{_verification_status(decision.event_check_status)}`",
@@ -721,6 +841,11 @@ def _asset_section(decision: AssetDecision) -> list[str]:
         f"- gap_risk: `{decision.gap_risk}`",
         f"- borrow_data_available: `{str(decision.borrow_data_available).lower()}`",
         f"- short_status: `{decision.short_status}`",
+        *(
+            ["- short_note: short observacional; nao operacional"]
+            if decision.short_status == "watch_only" and decision.short_setup_score > 0
+            else []
+        ),
         "",
     ]
 

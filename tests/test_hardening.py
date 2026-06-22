@@ -3,6 +3,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from advisor.backtest import summarize_backtest_setups
@@ -665,6 +666,7 @@ class HardeningTests(unittest.TestCase):
             classify_asset(amd, BacktestStats(sample_size=120, win_rate_2r=0.42, win_rate_3r=0.35, expected_value_r=0.61)),
             classify_asset(blocked, BacktestStats(sample_size=0, win_rate_2r=None, win_rate_3r=None)),
         ]
+        decisions = [replace(decision, market_session="regular") for decision in decisions]
 
         report = render_markdown_report(decisions, stock_regime="neutral", crypto_regime="risk_off")
 
