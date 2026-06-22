@@ -262,8 +262,21 @@ def _provider_budget_section(provider_budget: dict[str, Any] | None) -> list[str
         f"- discovery_enabled: `{str(bool(provider_budget.get('discovery_enabled', False))).lower()}`",
         f"- skipped_due_to_api_budget: `{str(bool(provider_budget.get('skipped_due_to_api_budget', False))).lower()}`",
         f"- provider_rate_limit_status: `{provider_budget.get('provider_rate_limit_status', 'unknown')}`",
+        f"- fmp_status: `{provider_budget.get('fmp_status', 'unknown')}`",
+        f"- retry_after: `{provider_budget.get('retry_after', 'unknown')}`",
+        f"- cache_reused_from_main: `{str(bool(provider_budget.get('cache_reused_from_main', False))).lower()}`",
+        f"- close_universe_source: `{provider_budget.get('close_universe_source', 'manual')}`",
+        f"- skipped_provider_calls_due_to_cache: {int(provider_budget.get('skipped_provider_calls_due_to_cache', 0) or 0)}",
+        f"- skipped_provider_calls_due_to_rate_limit: {int(provider_budget.get('skipped_provider_calls_due_to_rate_limit', 0) or 0)}",
         f"- few_assets_reason: `{provider_budget.get('few_assets_reason', 'other')}`",
     ]
+    if provider_budget.get("fmp_status") == "rate_limited":
+        lines.extend(
+            [
+                "",
+                "FMP rate limit atingido; relatorio bloqueado ou degradado conforme cache/fallback disponivel.",
+            ]
+        )
     for provider in sorted(set([*estimated.keys(), *used.keys()])):
         lines.append(f"- {provider}_calls_estimated: {int(estimated.get(provider, 0) or 0)}")
         lines.append(f"- {provider}_calls_used: {int(used.get(provider, 0) or 0)}")

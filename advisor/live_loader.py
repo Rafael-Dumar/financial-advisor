@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 from typing import Any, Callable
 
 from advisor.cache import ApiLimiter, SQLiteCache
@@ -86,6 +87,9 @@ class LiveDataLoader:
         self.cache_hits = 0
         self.cache_misses = 0
         self.provider_call_counts: dict[str, int] = {}
+        self.provider_statuses: dict[str, str] = {}
+        self.provider_retry_after: dict[str, str] = {}
+        self.skipped_provider_calls_due_to_rate_limit: dict[str, int] = {}
         self.fmp = FmpSource(config.fmp_api_key)
         self.alphavantage = AlphaVantageSource(config.alphavantage_api_key)
         self.binance = BinanceSource()
@@ -425,6 +429,12 @@ class LiveDataLoader:
                 self._fmp_price_unavailable_symbols.add(symbol)
                 if not self.config.alphavantage_api_key:
                     return []
+            elif _is_fmp_rate_limited(error):
+                fallback_payload = self._stock_price_fallback_payload(symbol)
+                if _has_price_history(fallback_payload):
+                    return fallback_payload
+                self._fmp_price_unavailable_symbols.add(symbol)
+                raise
             else:
                 raise
             payload = {}
@@ -433,6 +443,27 @@ class LiveDataLoader:
         alpha_payload = self._fetch("alphavantage", "prices", self.alphavantage.daily_adjusted_url(symbol))
         self._alphavantage_fallback_symbols.add(symbol)
         return fmp_historical_from_alphavantage(alpha_payload)
+
+    def _stock_price_fallback_payload(self, symbol: str) -> dict[str, Any]:
+        if self.config.alphavantage_api_key:
+            try:
+                alpha_payload = self._fetch("alphavantage", "prices", self.alphavantage.daily_adjusted_url(symbol))
+            except RuntimeError:
+                alpha_payload = {}
+            if alpha_payload:
+                converted = fmp_historical_from_alphavantage(alpha_payload)
+                if _has_price_history(converted):
+                    self._alphavantage_fallback_symbols.add(symbol)
+                    return converted
+        yahoo_payload = self._yahoo_historical_payload(symbol)
+        if _has_price_history(yahoo_payload):
+            self._yahoo_fallback_symbols.add(symbol)
+            return yahoo_payload
+        stooq_payload = self._stooq_historical_payload(symbol)
+        if _has_price_history(stooq_payload):
+            self._stooq_fallback_symbols.add(symbol)
+            return stooq_payload
+        return {"historical": []}
 
     def _yahoo_historical_payload(self, symbol: str) -> dict[str, list[dict[str, Any]]]:
         payload = self._fetch_optional(
@@ -463,6 +494,11 @@ class LiveDataLoader:
                 _raise_for_provider_error(provider, cached)
                 return cached
             self.cache_misses += 1
+            if self.provider_statuses.get(provider) == "rate_limited":
+                self.skipped_provider_calls_due_to_rate_limit[provider] = (
+                    self.skipped_provider_calls_due_to_rate_limit.get(provider, 0) + 1
+                )
+                raise RuntimeError(f"provider_rate_limited:{provider}")
             if self.limiter is not None and not self.limiter.allow(
                 provider,
                 limit=self.config.api_limits[provider],
@@ -472,6 +508,11 @@ class LiveDataLoader:
         try:
             fresh = self.fetch_json(url, payload=payload, headers=self._headers_for(provider))
         except RuntimeError as error:
+            if _is_rate_limit_error(error):
+                self.provider_statuses[provider] = "rate_limited"
+                retry_after = _retry_after_from_error(error)
+                if retry_after != "unknown":
+                    self.provider_retry_after[provider] = retry_after
             raise RuntimeError(f"provider_fetch_error:{provider}:{namespace}:{error}") from error
         _raise_for_provider_error(provider, fresh)
         if self.cache is not None:
@@ -521,6 +562,21 @@ def _is_fmp_price_unavailable(error: RuntimeError) -> bool:
         message.startswith("provider_fetch_error:fmp:prices:http_error:402")
         and "Premium Query Parameter" in message
     )
+
+
+def _is_fmp_rate_limited(error: RuntimeError) -> bool:
+    message = str(error).lower()
+    return "fmp" in message and ("http_error:429" in message or "limit reach" in message or "rate_limited" in message)
+
+
+def _is_rate_limit_error(error: RuntimeError) -> bool:
+    message = str(error).lower()
+    return "http_error:429" in message or "limit reach" in message or "rate limit" in message
+
+
+def _retry_after_from_error(error: RuntimeError) -> str:
+    match = re.search(r"retry[-_ ]after[:= ]+([0-9]+)", str(error), flags=re.IGNORECASE)
+    return match.group(1) if match else "unknown"
 
 
 def _is_binance_restricted_location(error: RuntimeError) -> bool:
@@ -664,6 +720,7 @@ def _is_degradable_fetch_error(error: RuntimeError) -> bool:
     return (
         message.startswith("provider_api_error:")
         or message.startswith("provider_fetch_error:")
+        or message.startswith("provider_rate_limited:")
         or message.startswith("api_limit_exhausted:")
         or message.startswith("http_error:")
         or message.startswith("network_error:")

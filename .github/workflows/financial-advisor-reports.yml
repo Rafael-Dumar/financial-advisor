@@ -87,9 +87,9 @@ jobs:
         shell: bash
         run: |
           if [ "$REPORT_TYPE" = "main" ]; then
-            python -m advisor report main --require-live --output-dir reports
+            python -m advisor report main --include-discovery --require-live --output-dir reports
           else
-            python -m advisor report close --require-live --output-dir reports
+            python -m advisor report close --from-main --require-live --output-dir reports
           fi
 
       - name: Notify Telegram

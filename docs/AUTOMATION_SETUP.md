@@ -81,10 +81,10 @@ Direct CLI main report with discovery and live gate:
 .\.venv\Scripts\python.exe -m advisor report main --include-discovery --require-live
 ```
 
-Direct CLI close report with discovery and live gate:
+Direct CLI close report using the same-day main baseline and live gate:
 
 ```powershell
-.\.venv\Scripts\python.exe -m advisor report close --include-discovery --require-live
+.\.venv\Scripts\python.exe -m advisor report close --from-main --require-live
 ```
 
 Main report with discovery:
@@ -138,7 +138,7 @@ Manual run:
 
 If `advisor config validate --require-live` fails, the workflow still runs `advisor report ... --require-live`; the CLI writes a blocked/no-trade report under `reports/` so the artifact explains the failure. It does not connect to a broker, execute orders, or recommend automatic buying.
 
-The workflow does not pass `--include-discovery` by default because FMP free-tier calls can be exhausted quickly. Run the direct CLI command with `--include-discovery` only when you intentionally want the larger universe.
+The workflow passes `--include-discovery` only for the main report. The close report uses `--from-main` and does not run discovery by default; it reuses the same-day main baseline from `reports/history/YYYY-MM-DD-main.md` or the restored SQLite cache when available. If the main baseline is missing or blocked, close writes a blocked/no-trade report with `main_baseline_missing_or_blocked`.
 
 The GitHub workflow also sets a conservative universe and per-run budget:
 
@@ -147,7 +147,7 @@ The GitHub workflow also sets a conservative universe and per-run budget:
 - `ADVISOR_MAX_STOCKS_PER_RUN=2`
 - `ADVISOR_FMP_CALL_BUDGET_PER_RUN=20`
 
-With the current FMP data model, each stock costs about 7 FMP calls plus 2 benchmark calls. The scheduled default therefore estimates about 16 FMP calls per report. If you expand the watchlist, increase the budget intentionally and keep the daily 250-call cap in mind.
+With the current FMP data model, each stock costs about 7 FMP calls plus 2 benchmark calls when fresh data is needed. The close job is cache-first and reports `cache_reused_from_main`, `close_universe_source`, `skipped_provider_calls_due_to_cache`, and `skipped_provider_calls_due_to_rate_limit` so FMP usage stays visible.
 
 ## Generated Files
 

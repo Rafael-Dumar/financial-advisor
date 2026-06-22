@@ -202,6 +202,29 @@ class HardeningTests(unittest.TestCase):
         self.assertIn("provider_market_cap_mismatch_possible", decision.alerts)
         self.assertIn("mixed_provider_data", decision.limitations)
 
+    def test_price_fallback_reduces_decision_confidence(self):
+        base_snapshot = strong_stock_snapshot("MSFT", news_events=[{"headline": "verified catalyst", "confirmed_status": "confirmed"}])
+        fallback_snapshot = AssetSnapshot(
+            **{
+                **base_snapshot.__dict__,
+                "data_source": "alphavantage",
+                "missing_data": ["alphavantage_price_fallback"],
+            }
+        )
+
+        fmp_decision = classify_asset(
+            score_asset(base_snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral"),
+            BacktestStats(sample_size=120, win_rate_2r=0.66, win_rate_3r=0.44, expected_value_r=0.80),
+        )
+        fallback_decision = classify_asset(
+            score_asset(fallback_snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral"),
+            BacktestStats(sample_size=120, win_rate_2r=0.66, win_rate_3r=0.44, expected_value_r=0.80),
+        )
+
+        self.assertIn("mixed_provider_data", fallback_decision.limitations)
+        self.assertLess(fallback_decision.decision_confidence_score, fmp_decision.decision_confidence_score)
+        self.assertNotEqual(fallback_decision.decision, "tradeable")
+
     def test_signal_journal_persists_decisions_for_tracking(self):
         with tempfile.TemporaryDirectory() as tmp:
             cache = SQLiteCache(Path(tmp) / "advisor.db")

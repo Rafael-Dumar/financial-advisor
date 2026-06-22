@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from datetime import datetime, timedelta, timezone
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -510,6 +511,217 @@ class CacheConfigCliTests(unittest.TestCase):
             self.assertIn("## Resumo de fechamento", report_text)
             self.assertIn("## Decisao geral para o proximo dia", report_text)
             self.assertIn("## Preparacao para o proximo pregao", report_text)
+
+    def test_report_close_from_main_uses_main_baseline_universe_without_discovery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "reports"
+            history_dir = output_dir / "history"
+            history_dir.mkdir(parents=True)
+            db_path = Path(tmp) / "advisor.db"
+            brt_date = datetime.now(timezone(timedelta(hours=-3))).strftime("%Y-%m-%d")
+            (history_dir / f"{brt_date}-main.md").write_text(
+                "\n".join(
+                    [
+                        "# Investment and Swing Trade Advisor",
+                        "- report_type: `main`",
+                        "- Data mode: `live`",
+                        "## Tradeable hoje",
+                        "- `MSFT`",
+                        "## Watchlist aprovada",
+                        "- `NVDA`",
+                        "## Research queue",
+                        "- `HYPE`",
+                        "## Setup tecnico detectado, mas nao validado",
+                        "- `AMD`: review",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            config = AdvisorConfig.default()
+            config.stock_watchlist = ["SHOULD_NOT_USE"]
+            config.crypto_watchlist = ["HYPE"]
+            config.discovery_stock_candidates = ["AAPL"]
+            config.discovery_crypto_candidates = ["LINK"]
+            config.fmp_api_key = "test_fmp"
+            config.coingecko_api_key = "test_coingecko"
+            config.api_run_limits = {}
+            buffer = StringIO()
+
+            with (
+                patch("advisor.cli.AdvisorConfig.default", return_value=config),
+                patch("advisor.cli.LiveDataLoader") as loader_class,
+                redirect_stdout(buffer),
+            ):
+                loader_class.return_value.load_snapshots.return_value = []
+                loader_class.return_value.load_benchmarks.return_value = {}
+                exit_code = advisor_main(
+                    [
+                        "report",
+                        "close",
+                        "--from-main",
+                        "--require-live",
+                        "--db",
+                        str(db_path),
+                        "--output-dir",
+                        str(output_dir),
+                    ]
+                )
+
+            report_text = (output_dir / "advisor-report.md").read_text(encoding="utf-8")
+            used_config = loader_class.call_args.args[0]
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(used_config.stock_watchlist, ["MSFT", "NVDA", "AMD"])
+            self.assertEqual(used_config.crypto_watchlist, ["HYPE"])
+            loader_class.return_value.load_snapshots.assert_called_once_with(include_discovery=False)
+            self.assertIn("- discovery_enabled: `false`", report_text)
+            self.assertIn("- close_universe_source: `main_baseline`", report_text)
+            self.assertIn("- cache_reused_from_main: `true`", report_text)
+
+    def test_report_close_from_main_blocks_when_main_baseline_is_blocked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "reports"
+            history_dir = output_dir / "history"
+            history_dir.mkdir(parents=True)
+            db_path = Path(tmp) / "advisor.db"
+            brt_date = datetime.now(timezone(timedelta(hours=-3))).strftime("%Y-%m-%d")
+            (history_dir / f"{brt_date}-main.md").write_text(
+                "\n".join(
+                    [
+                        "# Investment and Swing Trade Advisor",
+                        "- report_type: `main`",
+                        "- Data mode: `blocked`",
+                        "- Decisao geral: `no_trade_day`",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            config = AdvisorConfig.default()
+            config.fmp_api_key = "test_fmp"
+            config.coingecko_api_key = "test_coingecko"
+
+            with (
+                patch("advisor.cli.AdvisorConfig.default", return_value=config),
+                patch("advisor.cli.LiveDataLoader") as loader_class,
+            ):
+                exit_code = advisor_main(
+                    [
+                        "report",
+                        "close",
+                        "--from-main",
+                        "--require-live",
+                        "--db",
+                        str(db_path),
+                        "--output-dir",
+                        str(output_dir),
+                    ]
+                )
+
+            report_text = (output_dir / "advisor-report.md").read_text(encoding="utf-8")
+            self.assertEqual(exit_code, 0)
+            loader_class.assert_not_called()
+            self.assertIn("main_baseline_missing_or_blocked", report_text)
+            self.assertIn("Data mode: `blocked`", report_text)
+            self.assertIn("Decisao geral: `no_trade_day`", report_text)
+
+    def test_report_close_from_main_can_use_latest_main_from_sqlite_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "reports"
+            db_path = Path(tmp) / "advisor.db"
+            SQLiteCache(db_path).save_latest_report(
+                "\n".join(
+                    [
+                        "# Investment and Swing Trade Advisor",
+                        "- report_type: `main`",
+                        "- Data mode: `live`",
+                        "## Research queue",
+                        "- `MSFT`",
+                        "",
+                    ]
+                ),
+                "<html></html>",
+            )
+            config = AdvisorConfig.default()
+            config.fmp_api_key = "test_fmp"
+            config.coingecko_api_key = "test_coingecko"
+
+            with (
+                patch("advisor.cli.AdvisorConfig.default", return_value=config),
+                patch("advisor.cli.LiveDataLoader") as loader_class,
+            ):
+                loader_class.return_value.load_snapshots.return_value = []
+                loader_class.return_value.load_benchmarks.return_value = {}
+                exit_code = advisor_main(
+                    [
+                        "report",
+                        "close",
+                        "--from-main",
+                        "--require-live",
+                        "--db",
+                        str(db_path),
+                        "--output-dir",
+                        str(output_dir),
+                    ]
+                )
+
+            report_text = (output_dir / "advisor-report.md").read_text(encoding="utf-8")
+            used_config = loader_class.call_args.args[0]
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(used_config.stock_watchlist, ["MSFT"])
+            self.assertIn("- close_universe_source: `main_baseline`", report_text)
+
+    def test_report_close_fmp_429_marks_rate_limited_and_no_trade(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "reports"
+            history_dir = output_dir / "history"
+            history_dir.mkdir(parents=True)
+            db_path = Path(tmp) / "advisor.db"
+            brt_date = datetime.now(timezone(timedelta(hours=-3))).strftime("%Y-%m-%d")
+            (history_dir / f"{brt_date}-main.md").write_text(
+                "\n".join(
+                    [
+                        "# Investment and Swing Trade Advisor",
+                        "- report_type: `main`",
+                        "- Data mode: `live`",
+                        "## Research queue",
+                        "- `MSFT`",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            config = AdvisorConfig.default()
+            config.fmp_api_key = "test_fmp"
+            config.coingecko_api_key = "test_coingecko"
+
+            with (
+                patch("advisor.cli.AdvisorConfig.default", return_value=config),
+                patch("advisor.cli.LiveDataLoader") as loader_class,
+            ):
+                loader_class.return_value.load_snapshots.side_effect = RuntimeError(
+                    "provider_fetch_error:fmp:prices:http_error:429:Limit Reach"
+                )
+                exit_code = advisor_main(
+                    [
+                        "report",
+                        "close",
+                        "--from-main",
+                        "--require-live",
+                        "--db",
+                        str(db_path),
+                        "--output-dir",
+                        str(output_dir),
+                    ]
+                )
+
+            report_text = (output_dir / "advisor-report.md").read_text(encoding="utf-8")
+            self.assertEqual(exit_code, 0)
+            self.assertIn("- provider_rate_limit_status: `rate_limited`", report_text)
+            self.assertIn("- fmp_status: `rate_limited`", report_text)
+            self.assertIn("FMP rate limit atingido; relatorio bloqueado ou degradado conforme cache/fallback disponivel.", report_text)
+            self.assertIn("Decisao geral: `no_trade_day`", report_text)
+            self.assertNotIn("Decisao geral: `operate`", report_text)
 
     def test_scan_derives_regimes_from_fixture_benchmarks(self):
         def candle_rows(step):

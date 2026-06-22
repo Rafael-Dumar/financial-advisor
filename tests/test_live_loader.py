@@ -144,6 +144,57 @@ class LiveLoaderTests(unittest.TestCase):
         self.assertIn("alphavantage_price_fallback", snapshots[0].missing_data)
         self.assertTrue(any("alphavantage.co" in url for url in calls))
 
+    def test_live_loader_does_not_repeat_fmp_after_rate_limit_and_uses_fallback(self):
+        calls = []
+
+        def fake_fetch(url, *, payload=None, headers=None):
+            calls.append(url)
+            if "financialmodelingprep.com" in url:
+                raise RuntimeError("http_error:429:Limit Reach Retry-After: 60")
+            if "alphavantage.co" in url:
+                return {
+                    "Time Series (Daily)": {
+                        "2026-01-02": {
+                            "1. open": "101",
+                            "2. high": "104",
+                            "3. low": "100",
+                            "4. close": "103",
+                            "6. volume": "2000",
+                        },
+                        "2026-01-01": {
+                            "1. open": "100",
+                            "2. high": "102",
+                            "3. low": "99",
+                            "4. close": "101",
+                            "6. volume": "1500",
+                        },
+                    }
+                }
+            return {}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = AdvisorConfig.default()
+            config.stock_watchlist = ["MSFT"]
+            config.crypto_watchlist = []
+            config.fmp_api_key = "demo"
+            config.coingecko_api_key = "demo"
+            config.alphavantage_api_key = "alpha"
+            loader = LiveDataLoader(
+                config,
+                fetch_json=fake_fetch,
+                today="2026-06-01",
+                db_path=Path(tmp) / "advisor.db",
+            )
+
+            snapshots = loader.load_snapshots()
+
+        fmp_calls = [url for url in calls if "financialmodelingprep.com" in url]
+        self.assertEqual(len(fmp_calls), 1)
+        self.assertEqual(loader.provider_statuses["fmp"], "rate_limited")
+        self.assertEqual(loader.provider_retry_after["fmp"], "60")
+        self.assertGreater(loader.skipped_provider_calls_due_to_rate_limit["fmp"], 0)
+        self.assertIn("alphavantage_price_fallback", snapshots[0].missing_data)
+
     def test_live_loader_accepts_stable_fmp_historical_price_rows_without_alpha_fallback(self):
         calls = []
 

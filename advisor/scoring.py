@@ -317,7 +317,7 @@ def _hold_suggestion(scored: ScoredAsset, backtest_stats: BacktestStats | None) 
 
 def _has_confidence_limiting_data_gap(limitations: list[str]) -> bool:
     non_blocking = {"cvd_proxy_uses_taker_buy_sell_volume", "fmp_price_light_fallback"}
-    explicitly_limiting = {"earnings_data_missing", "news_rumor_not_confirmed", "news_confidence_low"}
+    explicitly_limiting = {"earnings_data_missing", "mixed_provider_data", "news_rumor_not_confirmed", "news_confidence_low"}
     for limitation in limitations:
         if limitation in non_blocking:
             continue
@@ -382,7 +382,7 @@ def _apply_provider_context(snapshot: AssetSnapshot, alerts: list[str], limitati
     if snapshot.symbol in {"TSM", "ASML"}:
         alerts.append("adr_or_foreign_listing")
         alerts.append("provider_market_cap_mismatch_possible")
-    if snapshot.asset_type == "stock" and snapshot.data_source not in {"fmp", "fmp_light", "unknown"}:
+    if snapshot.asset_type == "stock" and snapshot.data_source in {"yahoo", "stooq", "alphavantage"}:
         alerts.append("source_mismatch_possible")
         limitations.append("mixed_provider_data")
     if snapshot.data_source in {"yahoo", "stooq", "alphavantage"}:
@@ -506,6 +506,8 @@ def _decision_confidence_score(
     if backtest_stats and backtest_stats.expected_value_r is not None and backtest_stats.expected_value_r <= 0:
         score = min(score, 50)
     if "earnings_data_missing" in limitations:
+        score = min(score, 55)
+    if "mixed_provider_data" in limitations:
         score = min(score, 55)
     if "market_not_risk_on" in alerts:
         score = min(score, 75)

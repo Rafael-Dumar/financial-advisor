@@ -31,7 +31,8 @@ class GitHubActionsWorkflowTests(unittest.TestCase):
         self.assertIn("reports/", content)
         self.assertNotIn("broker", content.lower())
         self.assertNotIn("place order", content.lower())
-        self.assertNotIn("--include-discovery", content)
+        self.assertIn("python -m advisor report main --include-discovery --require-live --output-dir reports", content)
+        self.assertIn("python -m advisor report close --from-main --require-live --output-dir reports", content)
 
     def test_scheduled_report_type_selection_is_explicit(self) -> None:
         workflow_path = PROJECT_ROOT / ".github" / "workflows" / "financial-advisor-reports.yml"

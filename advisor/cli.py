@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -47,6 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--db", default=None)
     report_parser.add_argument("--include-discovery", action="store_true")
     report_parser.add_argument("--require-live", action="store_true")
+    report_parser.add_argument("--from-main", action="store_true")
 
     notify_parser = subparsers.add_parser("notify-telegram")
     notify_parser.add_argument("--report", type=Path, default=Path("reports/latest.md"))
@@ -85,13 +87,15 @@ def main(argv: list[str] | None = None) -> int:
 
 def _scan(args: argparse.Namespace) -> int:
     db_path = Path(args.db or "data/advisor.db")
-    config = AdvisorConfig.default()
+    config = getattr(args, "config", None) or AdvisorConfig.default()
     provider_budget = _provider_budget_summary(
         config,
         include_discovery=args.include_discovery,
         universe_scanned=0,
+        close_universe_source=getattr(args, "close_universe_source", None),
+        cache_reused_from_main=getattr(args, "cache_reused_from_main", False),
     )
-    if args.require_live:
+    if args.require_live and not getattr(args, "skip_live_validation", False):
         if args.fixture_dir is not None:
             print("require_live_conflicts_with_fixture_dir")
             return 1
@@ -103,6 +107,8 @@ def _scan(args: argparse.Namespace) -> int:
                     include_discovery=args.include_discovery,
                     universe_scanned=0,
                     errors=errors,
+                    close_universe_source=getattr(args, "close_universe_source", None),
+                    cache_reused_from_main=getattr(args, "cache_reused_from_main", False),
                 )
             _record_scan_errors(args, errors)
             print("\n".join(_format_config_errors(errors)))
@@ -125,6 +131,8 @@ def _scan(args: argparse.Namespace) -> int:
                     universe_scanned=0,
                     loader=locals().get("loader"),
                     errors=[str(error)],
+                    close_universe_source=getattr(args, "close_universe_source", None),
+                    cache_reused_from_main=getattr(args, "cache_reused_from_main", False),
                 )
                 if hasattr(args, "provider_budget"):
                     args.provider_budget = provider_budget
@@ -195,6 +203,8 @@ def _scan(args: argparse.Namespace) -> int:
         include_discovery=args.include_discovery,
         universe_scanned=len(decisions),
         loader=locals().get("loader"),
+        close_universe_source=getattr(args, "close_universe_source", None),
+        cache_reused_from_main=getattr(args, "cache_reused_from_main", False),
     )
     markdown = render_markdown_report(
         decisions,
@@ -356,6 +366,32 @@ def _run_report_job(args: argparse.Namespace, default_db: str | None = None) -> 
                 reasons=errors,
                 provider_budget=provider_budget,
             )
+    close_universe_source = None
+    cache_reused_from_main = False
+    if args.report_type == "close" and getattr(args, "from_main", False):
+        baseline = _load_main_baseline(args.output_dir, db_path=db_path)
+        if baseline is None or _main_baseline_is_blocked(baseline):
+            provider_budget = _provider_budget_summary(
+                config,
+                include_discovery=False,
+                universe_scanned=0,
+                close_universe_source="main_baseline",
+                cache_reused_from_main=False,
+            )
+            return _write_blocked_report(
+                output_dir=args.output_dir,
+                report_type=args.report_type,
+                reasons=["main_baseline_missing_or_blocked"],
+                provider_budget=provider_budget,
+            )
+        symbols = _symbols_from_main_baseline(baseline)
+        if symbols:
+            _apply_close_universe_to_config(config, symbols)
+            close_universe_source = "main_baseline"
+            cache_reused_from_main = True
+        else:
+            close_universe_source = "fallback"
+        args.include_discovery = False
     scan_args = argparse.Namespace(
         db=str(db_path),
         fixture_dir=None,
@@ -365,6 +401,10 @@ def _run_report_job(args: argparse.Namespace, default_db: str | None = None) -> 
         report_type=args.report_type,
         scan_errors=[],
         provider_budget=None,
+        config=config,
+        skip_live_validation=True,
+        close_universe_source=close_universe_source,
+        cache_reused_from_main=cache_reused_from_main,
     )
     scan_code = _scan(scan_args)
     if scan_code != 0 and args.require_live:
@@ -396,6 +436,71 @@ def _write_blocked_report(
     _write_reports(output_dir, markdown, html, report_type=report_type, analyst_markdown=analyst_markdown)
     print(f"blocked_report_written={output_dir / 'advisor-report.md'}")
     return 0
+
+
+def _load_main_baseline(output_dir: Path, *, db_path: Path) -> str | None:
+    brt_date = datetime.now(timezone(timedelta(hours=-3))).strftime("%Y-%m-%d")
+    history_path = output_dir / "history" / f"{brt_date}-main.md"
+    if history_path.exists():
+        return history_path.read_text(encoding="utf-8")
+    latest = SQLiteCache(db_path).load_latest_report()
+    if latest is None:
+        return None
+    markdown, _html = latest
+    if "- report_type: `main`" not in markdown:
+        return None
+    return markdown
+
+
+def _main_baseline_is_blocked(markdown: str) -> bool:
+    return (
+        "- Data mode: `blocked`" in markdown
+        or "- report_grade: `not_decision_grade`" in markdown
+        or "blocked_report_written" in markdown
+    )
+
+
+def _symbols_from_main_baseline(markdown: str) -> list[str]:
+    wanted_sections = {
+        "Tradeable hoje",
+        "Watchlist aprovada",
+        "Watchlist apenas",
+        "Research queue",
+        "Setup tecnico detectado, mas nao validado",
+    }
+    symbols: list[str] = []
+    active = False
+    for raw_line in markdown.splitlines():
+        line = raw_line.strip()
+        if line.startswith("## "):
+            active = line.removeprefix("## ").strip() in wanted_sections
+            continue
+        if not active:
+            continue
+        match = re.match(r"- `([A-Z0-9.-]+)`", line)
+        if match:
+            symbol = match.group(1).upper()
+            if symbol not in symbols:
+                symbols.append(symbol)
+    return symbols
+
+
+def _apply_close_universe_to_config(config: AdvisorConfig, symbols: list[str]) -> None:
+    crypto_symbols = {
+        "BTC",
+        "ETH",
+        "SOL",
+        "HYPE",
+        "ZEC",
+        "BNB",
+        "XRP",
+        "LINK",
+        "AVAX",
+    }
+    config.stock_watchlist = [symbol for symbol in symbols if symbol not in crypto_symbols]
+    config.crypto_watchlist = [symbol for symbol in symbols if symbol in crypto_symbols]
+    config.discovery_stock_candidates = []
+    config.discovery_crypto_candidates = []
 
 
 def _record_scan_errors(args: argparse.Namespace, errors: list[str]) -> None:
@@ -503,6 +608,8 @@ def _provider_budget_summary(
     universe_scanned: int,
     loader: object | None = None,
     errors: list[str] | None = None,
+    close_universe_source: str | None = None,
+    cache_reused_from_main: bool = False,
 ) -> dict[str, object]:
     errors = errors or []
     stocks, cryptos = config.symbols_for_scan(include_discovery=include_discovery)
@@ -518,9 +625,21 @@ def _provider_budget_summary(
     cache_hits = int(getattr(loader, "cache_hits", 0) or 0)
     cache_misses = int(getattr(loader, "cache_misses", 0) or 0)
     used_calls = dict(getattr(loader, "provider_call_counts", {}) or {})
+    provider_statuses = dict(getattr(loader, "provider_statuses", {}) or {})
+    provider_retry_after = dict(getattr(loader, "provider_retry_after", {}) or {})
+    skipped_due_to_rate_limit_by_provider = dict(getattr(loader, "skipped_provider_calls_due_to_rate_limit", {}) or {})
     skipped_due_to_api_budget = any(str(error).startswith("api_budget_exceeded:") for error in errors)
+    provider_rate_limit_status = _provider_rate_limit_status(errors, provider_statuses=provider_statuses)
+    estimated_calls = config.estimated_live_calls(include_discovery=include_discovery)
+    skipped_provider_calls_due_to_cache = cache_hits
+    skipped_provider_calls_due_to_rate_limit = sum(int(value or 0) for value in skipped_due_to_rate_limit_by_provider.values())
+    if provider_rate_limit_status == "rate_limited" and not skipped_provider_calls_due_to_rate_limit:
+        skipped_provider_calls_due_to_rate_limit = max(
+            int(estimated_calls.get("fmp", 0) or 0) - int(used_calls.get("fmp", 0) or 0),
+            0,
+        )
     return {
-        "estimated_calls": config.estimated_live_calls(include_discovery=include_discovery),
+        "estimated_calls": estimated_calls,
         "used_calls": used_calls,
         "cache_hits": cache_hits,
         "cache_misses": cache_misses,
@@ -528,7 +647,7 @@ def _provider_budget_summary(
         "universe_scanned": universe_scanned,
         "discovery_enabled": include_discovery,
         "skipped_due_to_api_budget": skipped_due_to_api_budget,
-        "provider_rate_limit_status": _provider_rate_limit_status(errors),
+        "provider_rate_limit_status": provider_rate_limit_status,
         "few_assets_reason": _few_assets_reason(
             include_discovery=include_discovery,
             universe_requested=universe_requested,
@@ -538,10 +657,18 @@ def _provider_budget_summary(
             errors=errors,
         ),
         "actions_cache_hit": os.getenv("ADVISOR_ACTIONS_CACHE_HIT", "unknown") or "unknown",
+        "cache_reused_from_main": cache_reused_from_main,
+        "close_universe_source": close_universe_source or ("discovery" if include_discovery else "manual"),
+        "skipped_provider_calls_due_to_cache": skipped_provider_calls_due_to_cache,
+        "skipped_provider_calls_due_to_rate_limit": skipped_provider_calls_due_to_rate_limit,
+        "fmp_status": _provider_status("fmp", errors, provider_statuses),
+        "retry_after": provider_retry_after.get("fmp") or _retry_after_from_errors(errors),
     }
 
 
-def _provider_rate_limit_status(errors: list[str]) -> str:
+def _provider_rate_limit_status(errors: list[str], *, provider_statuses: dict[str, str] | None = None) -> str:
+    if provider_statuses and "rate_limited" in provider_statuses.values():
+        return "rate_limited"
     if not errors:
         return "ok"
     joined = " ".join(errors).lower()
@@ -554,6 +681,23 @@ def _provider_rate_limit_status(errors: list[str]) -> str:
     if "missing_" in joined or "placeholder_" in joined:
         return "not_checked"
     return "error"
+
+
+def _provider_status(provider: str, errors: list[str], provider_statuses: dict[str, str]) -> str:
+    if provider in provider_statuses:
+        return provider_statuses[provider]
+    provider_errors = [error for error in errors if f":{provider}:" in str(error) or str(error).endswith(f":{provider}")]
+    if _provider_rate_limit_status(provider_errors) == "rate_limited":
+        return "rate_limited"
+    if provider_errors:
+        return "provider_error"
+    return "ok"
+
+
+def _retry_after_from_errors(errors: list[str]) -> str:
+    joined = " ".join(str(error) for error in errors)
+    match = re.search(r"retry[-_ ]after[:= ]+([0-9]+)", joined, flags=re.IGNORECASE)
+    return match.group(1) if match else "unknown"
 
 
 def _few_assets_reason(

@@ -93,6 +93,11 @@ class ReportBudgetAndAnalystInputTests(unittest.TestCase):
                 "provider_rate_limit_status": "ok",
                 "few_assets_reason": "budget_limit",
                 "actions_cache_hit": "true",
+                "cache_reused_from_main": True,
+                "close_universe_source": "main_baseline",
+                "skipped_provider_calls_due_to_cache": 3,
+                "skipped_provider_calls_due_to_rate_limit": 0,
+                "fmp_status": "ok",
             },
         )
 
@@ -103,6 +108,44 @@ class ReportBudgetAndAnalystInputTests(unittest.TestCase):
         self.assertIn("- cache_misses: 2", report)
         self.assertIn("- few_assets_reason: `budget_limit`", report)
         self.assertIn("- actions_cache_hit: `true`", report)
+        self.assertIn("- cache_reused_from_main: `true`", report)
+        self.assertIn("- close_universe_source: `main_baseline`", report)
+        self.assertIn("- skipped_provider_calls_due_to_cache: 3", report)
+        self.assertIn("- skipped_provider_calls_due_to_rate_limit: 0", report)
+        self.assertIn("- fmp_status: `ok`", report)
+
+    def test_report_rate_limit_summary_is_clear(self) -> None:
+        report = render_markdown_report(
+            [],
+            stock_regime="not_verified",
+            crypto_regime="not_verified",
+            report_type="close",
+            data_mode="blocked",
+            provider_budget={
+                "estimated_calls": {"fmp": 16},
+                "used_calls": {"fmp": 1},
+                "cache_hits": 0,
+                "cache_misses": 1,
+                "universe_requested": 0,
+                "universe_scanned": 0,
+                "discovery_enabled": False,
+                "skipped_due_to_api_budget": False,
+                "provider_rate_limit_status": "rate_limited",
+                "few_assets_reason": "provider_error",
+                "actions_cache_hit": "false",
+                "close_universe_source": "main_baseline",
+                "cache_reused_from_main": False,
+                "skipped_provider_calls_due_to_cache": 0,
+                "skipped_provider_calls_due_to_rate_limit": 15,
+                "fmp_status": "rate_limited",
+            },
+        )
+
+        self.assertIn("FMP rate limit atingido; relatorio bloqueado ou degradado conforme cache/fallback disponivel.", report)
+        self.assertIn("- provider_rate_limit_status: `rate_limited`", report)
+        self.assertIn("- fmp_status: `rate_limited`", report)
+        self.assertIn("- skipped_provider_calls_due_to_rate_limit: 15", report)
+        self.assertNotIn("Decisao geral: `operate`", report)
 
     def test_analyst_review_input_keeps_only_top_equity_candidates(self) -> None:
         decisions = [
