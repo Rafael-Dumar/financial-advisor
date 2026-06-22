@@ -42,6 +42,25 @@ class GitHubActionsWorkflowTests(unittest.TestCase):
         self.assertIn("github.event.schedule", content)
         self.assertIn("15 20 * * 1-5", content)
 
+    def test_workflow_persists_only_safe_market_cache(self) -> None:
+        workflow_path = PROJECT_ROOT / ".github" / "workflows" / "financial-advisor-reports.yml"
+        content = workflow_path.read_text(encoding="utf-8")
+
+        self.assertIn("actions/cache/restore@v4", content)
+        self.assertIn("actions/cache/save@v4", content)
+        self.assertIn("data/advisor.db", content)
+        self.assertIn("ADVISOR_ACTIONS_CACHE_HIT", content)
+        self.assertNotIn(".env", content)
+
+    def test_workflow_has_non_blocking_telegram_notification(self) -> None:
+        workflow_path = PROJECT_ROOT / ".github" / "workflows" / "financial-advisor-reports.yml"
+        content = workflow_path.read_text(encoding="utf-8")
+
+        self.assertIn("TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}", content)
+        self.assertIn("TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}", content)
+        self.assertIn("python -m advisor notify-telegram", content)
+        self.assertIn("continue-on-error: true", content)
+
 
 if __name__ == "__main__":
     unittest.main()

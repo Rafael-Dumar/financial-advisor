@@ -31,6 +31,8 @@ jobs:
       ADVISOR_RISK_FRACTION: ${{ secrets.ADVISOR_RISK_FRACTION }}
       ADVISOR_MAX_DAILY_LOSS_FRACTION: ${{ secrets.ADVISOR_MAX_DAILY_LOSS_FRACTION }}
       ADVISOR_MAX_WEEKLY_LOSS_FRACTION: ${{ secrets.ADVISOR_MAX_WEEKLY_LOSS_FRACTION }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       ADVISOR_STOCK_WATCHLIST: MSFT,NVDA
       ADVISOR_CRYPTO_WATCHLIST: HYPE
       ADVISOR_MAX_STOCKS_PER_RUN: 2
@@ -49,6 +51,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
+
+      - name: Restore market cache
+        id: market-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/advisor.db
+          key: financial-advisor-market-cache-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            financial-advisor-market-cache-${{ runner.os }}-${{ github.ref_name }}-
+
+      - name: Record cache status
+        shell: bash
+        run: |
+          echo "ADVISOR_ACTIONS_CACHE_HIT=${{ steps.market-cache.outputs.cache-hit }}" >> "$GITHUB_ENV"
 
       - name: Select report type
         shell: bash
@@ -76,9 +92,24 @@ jobs:
             python -m advisor report close --require-live --output-dir reports
           fi
 
+      - name: Notify Telegram
+        continue-on-error: true
+        run: >
+          python -m advisor notify-telegram
+          --report reports/latest.md
+          --artifact-path reports/latest.md
+          --workflow-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
       - name: Upload report artifact
         uses: actions/upload-artifact@v4
         with:
           name: financial-advisor-${{ env.REPORT_TYPE }}-${{ github.run_id }}
           path: reports/
           if-no-files-found: error
+
+      - name: Save market cache
+        if: always() && hashFiles('data/advisor.db') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: data/advisor.db
+          key: financial-advisor-market-cache-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}

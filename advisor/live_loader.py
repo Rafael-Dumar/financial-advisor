@@ -83,6 +83,9 @@ class LiveDataLoader:
         self._stooq_fallback_symbols: set[str] = set()
         self._binance_funding_info_loaded = False
         self._binance_funding_info: Any = []
+        self.cache_hits = 0
+        self.cache_misses = 0
+        self.provider_call_counts: dict[str, int] = {}
         self.fmp = FmpSource(config.fmp_api_key)
         self.alphavantage = AlphaVantageSource(config.alphavantage_api_key)
         self.binance = BinanceSource()
@@ -456,13 +459,16 @@ class LiveDataLoader:
                 max_age_seconds=self.config.freshness_seconds[namespace],
             )
             if cached is not None:
+                self.cache_hits += 1
                 _raise_for_provider_error(provider, cached)
                 return cached
+            self.cache_misses += 1
             if self.limiter is not None and not self.limiter.allow(
                 provider,
                 limit=self.config.api_limits[provider],
             ):
                 raise RuntimeError(f"api_limit_exhausted:{provider}")
+        self.provider_call_counts[provider] = self.provider_call_counts.get(provider, 0) + 1
         try:
             fresh = self.fetch_json(url, payload=payload, headers=self._headers_for(provider))
         except RuntimeError as error:

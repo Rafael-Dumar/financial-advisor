@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 
 from advisor.backtest import backtest_similar_setups, summarize_backtest_setups
@@ -11,10 +12,11 @@ from advisor.config import AdvisorConfig
 from advisor.fixtures import benchmarks_from_fixture, load_scan_fixture, snapshots_from_fixture
 from advisor.live_loader import LiveDataLoader
 from advisor.models import AssetDecision, AssetSnapshot, BacktestStats, Candle, RiskPlan
-from advisor.report import render_blocked_report, render_html_report, render_markdown_report
+from advisor.report import render_analyst_review_input, render_blocked_report, render_html_report, render_markdown_report
 from advisor.risk import detect_return_correlation, detect_theme_concentration, rate_sample_quality
 from advisor.scan_engine import derive_market_regimes, derive_relative_strength
 from advisor.scoring import classify_asset, score_asset
+from advisor.telegram_notify import notify_from_report
 
 
 MIN_PRICE_HISTORY_FOR_SCORING = 80
@@ -46,6 +48,11 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--include-discovery", action="store_true")
     report_parser.add_argument("--require-live", action="store_true")
 
+    notify_parser = subparsers.add_parser("notify-telegram")
+    notify_parser.add_argument("--report", type=Path, default=Path("reports/latest.md"))
+    notify_parser.add_argument("--artifact-path", default="reports/latest.md")
+    notify_parser.add_argument("--workflow-url", default="")
+
     signals_parser = subparsers.add_parser("signals")
     signals_parser.add_argument("--db", default=None)
     signals_subparsers = signals_parser.add_subparsers(dest="signals_command", required=True)
@@ -67,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
         return _collect_crypto_flow(args, default_db=args.db)
     if args.command == "report":
         return _report(args, default_db=args.db)
+    if args.command == "notify-telegram":
+        return _notify_telegram(args)
     if args.command == "signals" and args.signals_command == "update-results":
         return _signals_update_results(args, default_db=args.db)
     if args.command == "config" and args.config_command == "validate":
@@ -77,12 +86,24 @@ def main(argv: list[str] | None = None) -> int:
 def _scan(args: argparse.Namespace) -> int:
     db_path = Path(args.db or "data/advisor.db")
     config = AdvisorConfig.default()
+    provider_budget = _provider_budget_summary(
+        config,
+        include_discovery=args.include_discovery,
+        universe_scanned=0,
+    )
     if args.require_live:
         if args.fixture_dir is not None:
             print("require_live_conflicts_with_fixture_dir")
             return 1
         errors = config.validate(allow_missing_keys=False)
         if errors:
+            if hasattr(args, "provider_budget"):
+                args.provider_budget = _provider_budget_summary(
+                    config,
+                    include_discovery=args.include_discovery,
+                    universe_scanned=0,
+                    errors=errors,
+                )
             _record_scan_errors(args, errors)
             print("\n".join(_format_config_errors(errors)))
             return 1
@@ -98,6 +119,15 @@ def _scan(args: argparse.Namespace) -> int:
                 snapshots = loader.load_snapshots(include_discovery=args.include_discovery)
                 benchmarks = loader.load_benchmarks()
             except RuntimeError as error:
+                provider_budget = _provider_budget_summary(
+                    config,
+                    include_discovery=args.include_discovery,
+                    universe_scanned=0,
+                    loader=locals().get("loader"),
+                    errors=[str(error)],
+                )
+                if hasattr(args, "provider_budget"):
+                    args.provider_budget = provider_budget
                 _record_scan_errors(args, [str(error)])
                 print(str(error))
                 return 1
@@ -160,6 +190,12 @@ def _scan(args: argparse.Namespace) -> int:
         )
     )
     portfolio_alerts.extend(str(alert) for alert in payload.get("portfolio_alerts", []))
+    provider_budget = _provider_budget_summary(
+        config,
+        include_discovery=args.include_discovery,
+        universe_scanned=len(decisions),
+        loader=locals().get("loader"),
+    )
     markdown = render_markdown_report(
         decisions,
         stock_regime=stock_regime,
@@ -167,13 +203,27 @@ def _scan(args: argparse.Namespace) -> int:
         report_type=getattr(args, "report_type", None) or "main",
         data_mode=data_mode,
         portfolio_alerts=portfolio_alerts,
+        provider_budget=provider_budget,
+    )
+    analyst_markdown = render_analyst_review_input(
+        decisions,
+        report_type=getattr(args, "report_type", None) or "main",
+        data_mode=data_mode,
+        stock_regime=stock_regime,
+        crypto_regime=crypto_regime,
     )
     html = render_html_report(markdown)
     cache = SQLiteCache(db_path)
     cache.save_latest_report(markdown, html)
     report_file = str(args.output_dir / "advisor-report.md")
     cache.save_signal_journal(decisions, report_file=report_file)
-    _write_reports(args.output_dir, markdown, html, report_type=getattr(args, "report_type", None))
+    _write_reports(
+        args.output_dir,
+        markdown,
+        html,
+        report_type=getattr(args, "report_type", None),
+        analyst_markdown=analyst_markdown,
+    )
     print(f"Report written to {args.output_dir / 'advisor-report.md'}")
     return 0
 
@@ -294,10 +344,17 @@ def _run_report_job(args: argparse.Namespace, default_db: str | None = None) -> 
     if args.require_live:
         errors = config.validate(allow_missing_keys=False)
         if errors:
+            provider_budget = _provider_budget_summary(
+                config,
+                include_discovery=args.include_discovery,
+                universe_scanned=0,
+                errors=errors,
+            )
             return _write_blocked_report(
                 output_dir=args.output_dir,
                 report_type=args.report_type,
                 reasons=errors,
+                provider_budget=provider_budget,
             )
     scan_args = argparse.Namespace(
         db=str(db_path),
@@ -307,6 +364,7 @@ def _run_report_job(args: argparse.Namespace, default_db: str | None = None) -> 
         require_live=args.require_live,
         report_type=args.report_type,
         scan_errors=[],
+        provider_budget=None,
     )
     scan_code = _scan(scan_args)
     if scan_code != 0 and args.require_live:
@@ -314,14 +372,28 @@ def _run_report_job(args: argparse.Namespace, default_db: str | None = None) -> 
             output_dir=args.output_dir,
             report_type=args.report_type,
             reasons=["live_report_failed", *scan_args.scan_errors],
+            provider_budget=scan_args.provider_budget,
         )
     return scan_code
 
 
-def _write_blocked_report(*, output_dir: Path, report_type: str, reasons: list[str]) -> int:
-    markdown = render_blocked_report(report_type=report_type, reasons=reasons)
+def _write_blocked_report(
+    *,
+    output_dir: Path,
+    report_type: str,
+    reasons: list[str],
+    provider_budget: dict[str, object] | None = None,
+) -> int:
+    markdown = render_blocked_report(report_type=report_type, reasons=reasons, provider_budget=provider_budget)
+    analyst_markdown = render_analyst_review_input(
+        [],
+        report_type=report_type,
+        data_mode="blocked",
+        stock_regime="not_verified",
+        crypto_regime="not_verified",
+    )
     html = render_html_report(markdown)
-    _write_reports(output_dir, markdown, html, report_type=report_type)
+    _write_reports(output_dir, markdown, html, report_type=report_type, analyst_markdown=analyst_markdown)
     print(f"blocked_report_written={output_dir / 'advisor-report.md'}")
     return 0
 
@@ -329,6 +401,16 @@ def _write_blocked_report(*, output_dir: Path, report_type: str, reasons: list[s
 def _record_scan_errors(args: argparse.Namespace, errors: list[str]) -> None:
     if hasattr(args, "scan_errors") and isinstance(args.scan_errors, list):
         args.scan_errors.extend(errors)
+
+
+def _notify_telegram(args: argparse.Namespace) -> int:
+    status = notify_from_report(
+        report_path=args.report,
+        artifact_path=args.artifact_path,
+        workflow_url=args.workflow_url,
+    )
+    print(status)
+    return 0
 
 
 def _signals_update_results(args: argparse.Namespace, default_db: str | None = None) -> int:
@@ -414,10 +496,99 @@ def _format_counts(counts: dict[str, int]) -> str:
     return ",".join(f"{name}={counts[name]}" for name in sorted(counts))
 
 
-def _write_reports(output_dir: Path, markdown: str, html: str, *, report_type: str | None = None) -> None:
+def _provider_budget_summary(
+    config: AdvisorConfig,
+    *,
+    include_discovery: bool,
+    universe_scanned: int,
+    loader: object | None = None,
+    errors: list[str] | None = None,
+) -> dict[str, object]:
+    errors = errors or []
+    stocks, cryptos = config.symbols_for_scan(include_discovery=include_discovery)
+    uncapped_stocks = list(dict.fromkeys([
+        *config.stock_watchlist,
+        *(config.discovery_stock_candidates if include_discovery else []),
+    ]))
+    universe_requested = len(stocks) + len(cryptos)
+    cache_hits = int(getattr(loader, "cache_hits", 0) or 0)
+    cache_misses = int(getattr(loader, "cache_misses", 0) or 0)
+    used_calls = dict(getattr(loader, "provider_call_counts", {}) or {})
+    skipped_due_to_api_budget = any(str(error).startswith("api_budget_exceeded:") for error in errors)
+    return {
+        "estimated_calls": config.estimated_live_calls(include_discovery=include_discovery),
+        "used_calls": used_calls,
+        "cache_hits": cache_hits,
+        "cache_misses": cache_misses,
+        "universe_requested": universe_requested,
+        "universe_scanned": universe_scanned,
+        "discovery_enabled": include_discovery,
+        "skipped_due_to_api_budget": skipped_due_to_api_budget,
+        "provider_rate_limit_status": _provider_rate_limit_status(errors),
+        "few_assets_reason": _few_assets_reason(
+            include_discovery=include_discovery,
+            universe_requested=universe_requested,
+            universe_scanned=universe_scanned,
+            capped_stock_count=len(stocks),
+            uncapped_stock_count=len(uncapped_stocks),
+            errors=errors,
+        ),
+        "actions_cache_hit": os.getenv("ADVISOR_ACTIONS_CACHE_HIT", "unknown") or "unknown",
+    }
+
+
+def _provider_rate_limit_status(errors: list[str]) -> str:
+    if not errors:
+        return "ok"
+    joined = " ".join(errors).lower()
+    if "429" in joined or "limit reach" in joined or "api_limit_exhausted" in joined:
+        return "rate_limited"
+    if "api_budget_exceeded" in joined:
+        return "budget_blocked_before_fetch"
+    if "provider_fetch_error" in joined or "provider_api_error" in joined:
+        return "provider_error"
+    if "missing_" in joined or "placeholder_" in joined:
+        return "not_checked"
+    return "error"
+
+
+def _few_assets_reason(
+    *,
+    include_discovery: bool,
+    universe_requested: int,
+    universe_scanned: int,
+    capped_stock_count: int,
+    uncapped_stock_count: int,
+    errors: list[str],
+) -> str:
+    if any("api_budget_exceeded" in str(error) for error in errors):
+        return "budget_limit"
+    if any("provider_" in str(error) or "api_limit_exhausted" in str(error) for error in errors):
+        return "provider_error"
+    if capped_stock_count < uncapped_stock_count:
+        return "budget_limit"
+    if universe_requested <= 3:
+        return "manual_small_universe"
+    if not include_discovery:
+        return "discovery_disabled"
+    if universe_scanned == 0:
+        return "other"
+    return "other"
+
+
+def _write_reports(
+    output_dir: Path,
+    markdown: str,
+    html: str,
+    *,
+    report_type: str | None = None,
+    analyst_markdown: str | None = None,
+) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "advisor-report.md").write_text(markdown, encoding="utf-8")
     (output_dir / "advisor-report.html").write_text(html, encoding="utf-8")
+    if analyst_markdown is not None:
+        (output_dir / "analyst-review-input.md").write_text(analyst_markdown, encoding="utf-8")
     if report_type:
         (output_dir / "latest.md").write_text(markdown, encoding="utf-8")
         (output_dir / "latest.html").write_text(html, encoding="utf-8")

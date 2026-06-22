@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html import escape
+from typing import Any
 
 from advisor.models import AssetDecision
 from advisor.risk import evaluate_leverage_policy
@@ -17,6 +18,7 @@ def render_markdown_report(
     portfolio_alerts: list[str] | None = None,
     generated_at: str | None = None,
     data_freshness: str = "controlled_by_cache_freshness",
+    provider_budget: dict[str, Any] | None = None,
 ) -> str:
     generated_at = generated_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
     non_live_mode = _is_non_live_mode(data_mode)
@@ -45,6 +47,7 @@ def render_markdown_report(
         f"- Alertas de carteira: {_format_list(portfolio_alerts or [])}",
         "",
     ]
+    lines.extend(_provider_budget_section(provider_budget))
     ranked_decisions = _rank_decisions(decisions)
     if report_type == "close":
         lines.extend(_close_summary_sections(ranked_decisions, general_decision, portfolio_alerts or []))
@@ -78,6 +81,7 @@ def render_blocked_report(
     report_type: str,
     reasons: list[str],
     generated_at: str | None = None,
+    provider_budget: dict[str, Any] | None = None,
 ) -> str:
     return render_markdown_report(
         [],
@@ -88,12 +92,109 @@ def render_blocked_report(
         portfolio_alerts=sorted(set(["live_validation_failed", *reasons])),
         generated_at=generated_at,
         data_freshness="not_verified",
+        provider_budget=provider_budget,
     )
+
+
+def render_analyst_review_input(
+    decisions: list[AssetDecision],
+    *,
+    report_type: str,
+    data_mode: str,
+    stock_regime: str,
+    crypto_regime: str,
+    generated_at: str | None = None,
+) -> str:
+    generated_at = generated_at or datetime.now(timezone(timedelta(hours=-3))).isoformat(timespec="seconds")
+    ranked = _rank_decisions(decisions)
+    general_decision = "no_trade_day" if _is_non_live_mode(data_mode) else _general_decision(decisions)
+    market_sessions = sorted({decision.market_session for decision in decisions if decision.market_session})
+    equity_candidates = [
+        decision
+        for decision in ranked
+        if decision.asset_type == "stock" and decision.decision in {"tradeable", "watch_buy", "technical_unvalidated"}
+    ][:3]
+    crypto_candidates = [
+        decision
+        for decision in ranked
+        if decision.asset_type == "crypto" and decision.decision in {"tradeable", "watch_buy", "technical_unvalidated"}
+    ][:3]
+    lines = [
+        "# Analyst review input",
+        "",
+        f"- BRT date: `{generated_at[:10]}`",
+        f"- generated_at: `{generated_at}`",
+        f"- report_type: `{report_type}`",
+        f"- data_mode: `{data_mode}`",
+        f"- market_session: `{','.join(market_sessions) if market_sessions else 'unknown'}`",
+        f"- bot_general_decision: `{general_decision}`",
+        f"- stock_regime: `{stock_regime}`",
+        f"- crypto_regime: `{crypto_regime}`",
+        "",
+        "## Top equity candidates for qualitative review",
+        "",
+    ]
+    if not equity_candidates:
+        lines.append("No equity candidates for qualitative review")
+    else:
+        for decision in equity_candidates:
+            lines.extend(_analyst_candidate_lines(decision))
+    lines.extend(
+        [
+            "",
+            "## Crypto review needed",
+            "",
+        ]
+    )
+    if not crypto_candidates:
+        lines.append("No crypto candidates for qualitative review")
+    else:
+        lines.append("Crypto is separate from equity review; technical_unvalidated is not approval to buy.")
+        for decision in crypto_candidates:
+            lines.extend(_analyst_candidate_lines(decision))
+    lines.extend(
+        [
+            "",
+            "## Questions for analyst/plugin",
+            "",
+            "- Is the business quality and valuation strong enough to support the setup?",
+            "- Are news, earnings, guidance, or regulatory catalysts still not_verified?",
+            "- Should any candidate be downgraded to watch_only or research_queue?",
+            "- What concrete invalidation would make the setup wrong?",
+            "",
+        ]
+    )
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def render_html_report(markdown: str) -> str:
     body = "\n".join(f"<p>{escape(line)}</p>" if line else "" for line in markdown.splitlines())
     return f"<!doctype html><html><head><meta charset=\"utf-8\"><title>Advisor Report</title></head><body>{body}</body></html>"
+
+
+def _provider_budget_section(provider_budget: dict[str, Any] | None) -> list[str]:
+    if not provider_budget:
+        return []
+    estimated = provider_budget.get("estimated_calls", {})
+    used = provider_budget.get("used_calls", {})
+    lines = [
+        "## provider_budget_summary",
+        "",
+        f"- actions_cache_hit: `{provider_budget.get('actions_cache_hit', 'unknown')}`",
+        f"- cache_hits: {int(provider_budget.get('cache_hits', 0) or 0)}",
+        f"- cache_misses: {int(provider_budget.get('cache_misses', 0) or 0)}",
+        f"- universe_requested: {int(provider_budget.get('universe_requested', 0) or 0)}",
+        f"- universe_scanned: {int(provider_budget.get('universe_scanned', 0) or 0)}",
+        f"- discovery_enabled: `{str(bool(provider_budget.get('discovery_enabled', False))).lower()}`",
+        f"- skipped_due_to_api_budget: `{str(bool(provider_budget.get('skipped_due_to_api_budget', False))).lower()}`",
+        f"- provider_rate_limit_status: `{provider_budget.get('provider_rate_limit_status', 'unknown')}`",
+        f"- few_assets_reason: `{provider_budget.get('few_assets_reason', 'other')}`",
+    ]
+    for provider in sorted(set([*estimated.keys(), *used.keys()])):
+        lines.append(f"- {provider}_calls_estimated: {int(estimated.get(provider, 0) or 0)}")
+        lines.append(f"- {provider}_calls_used: {int(used.get(provider, 0) or 0)}")
+    lines.append("")
+    return lines
 
 
 def _main_summary_sections(
@@ -417,6 +518,18 @@ def _stop_lines(decisions: list[AssetDecision]) -> list[str]:
     return [
         f"- `{decision.symbol}`: invalidation {decision.risk_plan.stop:.2f}; tamanho se adapta ao risco."
         for decision in decisions
+    ]
+
+
+def _analyst_candidate_lines(decision: AssetDecision) -> list[str]:
+    return [
+        f"- `{decision.symbol}`",
+        f"  - bot_decision: `{decision.decision}`",
+        f"  - reason: {decision.thesis}",
+        f"  - risks: {_format_list(sorted(set([*decision.alerts, *decision.limitations])))}",
+        f"  - valuation_summary: {'; '.join(decision.metrics_summary) if decision.metrics_summary else 'not_verified'}",
+        f"  - earnings_guidance_status: `{_verification_status(decision.event_check_status)}`",
+        f"  - news_catalyst_status: `{_verification_status(decision.news_status)}`",
     ]
 
 
