@@ -510,7 +510,11 @@ def _provider_budget_summary(
         *config.stock_watchlist,
         *(config.discovery_stock_candidates if include_discovery else []),
     ]))
-    universe_requested = len(stocks) + len(cryptos)
+    uncapped_cryptos = list(dict.fromkeys([
+        *config.crypto_watchlist,
+        *(config.discovery_crypto_candidates if include_discovery else []),
+    ]))
+    universe_requested = len(uncapped_stocks) + len(uncapped_cryptos)
     cache_hits = int(getattr(loader, "cache_hits", 0) or 0)
     cache_misses = int(getattr(loader, "cache_misses", 0) or 0)
     used_calls = dict(getattr(loader, "provider_call_counts", {}) or {})

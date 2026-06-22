@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 
 from advisor.models import AssetDecision, BacktestStats, RiskPlan
+from advisor.cli import _provider_budget_summary
+from advisor.config import AdvisorConfig
 from advisor.report import render_analyst_review_input, render_markdown_report
 
 
@@ -156,6 +158,22 @@ class ReportBudgetAndAnalystInputTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((output_dir / "analyst-review-input.md").exists())
             self.assertIn("# Analyst review input", (output_dir / "analyst-review-input.md").read_text(encoding="utf-8"))
+
+    def test_provider_budget_universe_requested_is_before_stock_cap(self) -> None:
+        config = AdvisorConfig.default()
+        config.stock_watchlist = ["MSFT", "NVDA", "AMD", "AVGO"]
+        config.crypto_watchlist = ["HYPE"]
+        config.max_stocks_per_run = 2
+
+        summary = _provider_budget_summary(
+            config,
+            include_discovery=False,
+            universe_scanned=3,
+        )
+
+        self.assertEqual(summary["universe_requested"], 5)
+        self.assertEqual(summary["universe_scanned"], 3)
+        self.assertEqual(summary["few_assets_reason"], "budget_limit")
 
 
 if __name__ == "__main__":
