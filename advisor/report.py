@@ -133,6 +133,8 @@ def render_analyst_review_input(
         "",
         "## Top equity candidates for qualitative review",
         "",
+        "technical_unvalidated is not approval to buy. News can explain risk context but cannot approve a trade by itself.",
+        "",
     ]
     if not equity_candidates:
         lines.append("No equity candidates for qualitative review")

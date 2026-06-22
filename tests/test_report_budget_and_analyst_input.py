@@ -108,6 +108,8 @@ class ReportBudgetAndAnalystInputTests(unittest.TestCase):
         self.assertIn("# Analyst review input", text)
         self.assertIn("report_type: `main`", text)
         self.assertIn("Top equity candidates for qualitative review", text)
+        self.assertIn("technical_unvalidated is not approval to buy", text)
+        self.assertIn("cannot approve a trade by itself", text)
         self.assertIn("MSFT", text)
         self.assertIn("NVDA", text)
         self.assertIn("AMD", text)
