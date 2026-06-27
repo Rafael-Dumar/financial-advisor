@@ -149,6 +149,40 @@ The GitHub workflow also sets a conservative universe and per-run budget:
 
 With the current FMP data model, each stock costs about 7 FMP calls plus 2 benchmark calls when fresh data is needed. The close job is cache-first and reports `cache_reused_from_main`, `close_universe_source`, `skipped_provider_calls_due_to_cache`, and `skipped_provider_calls_due_to_rate_limit` so FMP usage stays visible.
 
+## Nightly qualitative review prep
+
+Use this local helper when you open Codex at night and want the latest GitHub Actions artifacts prepared for a manual qualitative review.
+
+Install and authenticate GitHub CLI:
+
+```powershell
+winget install GitHub.cli
+gh auth login
+gh auth status
+```
+
+Fetch the latest Financial Advisor Reports artifacts:
+
+```powershell
+Set-Location "C:\Users\Administrador\Documents\financial advisor"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\fetch-latest-github-reports.ps1"
+```
+
+The script checks that `gh` exists, checks `gh auth status`, prefers workflow runs from the current BRT date, downloads the newest main and close artifacts it can find, and writes:
+
+- `.tmp\nightly-review\YYYY-MM-DD\...`
+- `reports\nightly-review-input.md`
+
+Validate the download:
+
+```powershell
+Test-Path ".tmp\nightly-review\$(Get-Date -Format yyyy-MM-dd)"
+Test-Path "reports\nightly-review-input.md"
+Get-Content "reports\nightly-review-input.md" -TotalCount 80
+```
+
+Use `reports\nightly-review-input.md` as the context file for a manual Codex/Public Equity Investing qualitative review. The file includes workflow run IDs/links, main and close summaries, raw artifact paths, available `analyst-review-input.md` content, and warnings when main or close is blocked/diagnostic. It does not print secrets, connect to a broker, execute orders, or suggest automatic buying.
+
 ## Generated Files
 
 The CLI writes:

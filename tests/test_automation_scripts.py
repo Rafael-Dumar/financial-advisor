@@ -32,3 +32,37 @@ class AutomationScriptsTests(unittest.TestCase):
             self.assertIn("live_validation_failed", content)
             if expected_scan_flag:
                 self.assertIn(expected_scan_flag, content)
+
+    def test_fetch_latest_github_reports_script_contract(self) -> None:
+        script_path = PROJECT_ROOT / "scripts" / "fetch-latest-github-reports.ps1"
+        self.assertTrue(script_path.exists(), "missing fetch-latest-github-reports.ps1")
+        content = script_path.read_text(encoding="utf-8")
+
+        self.assertIn("Get-Command gh", content)
+        self.assertIn("gh auth status", content)
+        self.assertIn("gh run list", content)
+        self.assertIn("Financial Advisor Reports", content)
+        self.assertIn("gh run view", content)
+        self.assertIn("gh run download", content)
+        self.assertIn(".tmp\\nightly-review", content)
+        self.assertIn("reports\\nightly-review-input.md", content)
+        self.assertIn("analyst-review-input.md", content)
+        self.assertIn("main_baseline_missing", content)
+        self.assertIn("blocked_or_diagnostic", content)
+        self.assertIn("Public Equity Investing", content)
+        self.assertIn("no broker", content.lower())
+        self.assertIn("no order execution", content.lower())
+        self.assertNotIn("FMP_API_KEY", content)
+        self.assertNotIn("COINGECKO_API_KEY", content)
+
+    def test_docs_explain_nightly_review_artifact_fetch(self) -> None:
+        doc_path = PROJECT_ROOT / "docs" / "AUTOMATION_SETUP.md"
+        content = doc_path.read_text(encoding="utf-8")
+
+        self.assertIn("## Nightly qualitative review prep", content)
+        self.assertIn("GitHub CLI", content)
+        self.assertIn("gh auth login", content)
+        self.assertIn("scripts\\fetch-latest-github-reports.ps1", content)
+        self.assertIn(".tmp\\nightly-review\\YYYY-MM-DD", content)
+        self.assertIn("reports\\nightly-review-input.md", content)
+        self.assertIn("Public Equity Investing", content)
