@@ -47,6 +47,19 @@ function Find-ReportFile {
         [string]$ReportType,
         [string]$BrtDate
     )
+    function Test-ReportType {
+        param(
+            [string]$Path,
+            [string]$ExpectedType
+        )
+        if (-not $Path -or -not (Test-Path -LiteralPath $Path)) {
+            return $false
+        }
+        $markdown = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+        $pattern = '(?m)^-\s*report_type:\s*`?' + [regex]::Escape($ExpectedType) + '`?\s*$'
+        return [regex]::IsMatch($markdown, $pattern)
+    }
+
     $preferred = Get-ChildItem -LiteralPath $ArtifactRoot -Recurse -File -Filter "$BrtDate-$ReportType.md" -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($preferred) {
         return $preferred.FullName
@@ -59,8 +72,12 @@ function Find-ReportFile {
     }
     $latest = Get-ChildItem -LiteralPath $ArtifactRoot -Recurse -File -Include 'latest.md', 'advisor-report.md' -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending |
+        Where-Object { Test-ReportType -Path $_.FullName -ExpectedType $ReportType } |
         Select-Object -First 1
-    return $latest.FullName
+    if ($latest) {
+        return $latest.FullName
+    }
+    return $null
 }
 
 function Find-AnalystInputFile {
@@ -165,6 +182,7 @@ if (-not $runs) {
 $todayRuns = @($runs | Where-Object { (ConvertTo-BrtDateString $_.createdAt) -eq $BrtDate })
 $candidateRuns = if ($todayRuns.Count -gt 0) { $todayRuns } else { @($runs) }
 
+$warnings = New-Object System.Collections.Generic.List[string]
 $selected = @{}
 foreach ($run in $candidateRuns) {
     if ($selected.ContainsKey('main') -and $selected.ContainsKey('close')) {
@@ -174,40 +192,42 @@ foreach ($run in $candidateRuns) {
         # gh run view
         'run', 'view', [string]$run.databaseId,
         '--repo', $Repo,
-        '--json', 'databaseId,createdAt,url,artifacts'
+        '--json', 'databaseId,createdAt,url,status,conclusion,name,workflowName,headBranch,headSha'
     )
-    foreach ($artifact in @($view.artifacts)) {
-        $name = [string]$artifact.name
-        if (-not $selected.ContainsKey('main') -and $name -like 'financial-advisor-main-*') {
-            $selected['main'] = [pscustomobject]@{ Run = $run; Artifact = $artifact }
-        }
-        elseif (-not $selected.ContainsKey('close') -and $name -like 'financial-advisor-close-*') {
-            $selected['close'] = [pscustomobject]@{ Run = $run; Artifact = $artifact }
-        }
-    }
-}
 
-$warnings = New-Object System.Collections.Generic.List[string]
-$artifactRoots = @{}
-foreach ($reportType in @('main', 'close')) {
-    if (-not $selected.ContainsKey($reportType)) {
-        $warnings.Add("missing_${reportType}_artifact")
-        continue
-    }
-    $runId = [string]$selected[$reportType].Run.databaseId
-    $artifactName = [string]$selected[$reportType].Artifact.name
-    $downloadDir = Join-Path $NightlyDir "$reportType-$runId"
+    $runId = [string]$view.databaseId
+    $downloadDir = Join-Path $NightlyDir "run-$runId"
     New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
 
-    & gh run download $runId --repo $Repo --name $artifactName --dir $downloadDir
+    & gh run download $runId --repo $Repo --dir $downloadDir
     if ($LASTEXITCODE -ne 0) {
-        throw "artifact_download_failed:${reportType}:${runId}:${artifactName}"
+        $warnings.Add("artifact_download_failed:${runId}")
+        continue
     }
-    $artifactRoots[$reportType] = $downloadDir
+
+    $mainCandidate = Find-ReportFile -ArtifactRoot $downloadDir -ReportType 'main' -BrtDate $BrtDate
+    if (-not $selected.ContainsKey('main') -and $mainCandidate) {
+        $selected['main'] = [pscustomobject]@{ Run = $view; DownloadDir = $downloadDir; ReportPath = $mainCandidate }
+    }
+
+    $closeCandidate = Find-ReportFile -ArtifactRoot $downloadDir -ReportType 'close' -BrtDate $BrtDate
+    if (-not $selected.ContainsKey('close') -and $closeCandidate) {
+        $selected['close'] = [pscustomobject]@{ Run = $view; DownloadDir = $downloadDir; ReportPath = $closeCandidate }
+    }
 }
 
-$mainReport = if ($artifactRoots.ContainsKey('main')) { Find-ReportFile -ArtifactRoot $artifactRoots['main'] -ReportType 'main' -BrtDate $BrtDate } else { $null }
-$closeReport = if ($artifactRoots.ContainsKey('close')) { Find-ReportFile -ArtifactRoot $artifactRoots['close'] -ReportType 'close' -BrtDate $BrtDate } else { $null }
+$artifactRoots = @{}
+foreach ($reportType in @('main', 'close')) {
+    if ($selected.ContainsKey($reportType)) {
+        $artifactRoots[$reportType] = [string]$selected[$reportType].DownloadDir
+    }
+    else {
+        $warnings.Add("missing_${reportType}_artifact")
+    }
+}
+
+$mainReport = if ($selected.ContainsKey('main')) { [string]$selected['main'].ReportPath } else { $null }
+$closeReport = if ($selected.ContainsKey('close')) { [string]$selected['close'].ReportPath } else { $null }
 $mainAnalyst = if ($artifactRoots.ContainsKey('main')) { Find-AnalystInputFile -ArtifactRoot $artifactRoots['main'] } else { $null }
 $closeAnalyst = if ($artifactRoots.ContainsKey('close')) { Find-AnalystInputFile -ArtifactRoot $artifactRoots['close'] } else { $null }
 
@@ -238,8 +258,8 @@ $lines.Add("")
 foreach ($reportType in @('main', 'close')) {
     if ($selected.ContainsKey($reportType)) {
         $run = $selected[$reportType].Run
-        $artifact = $selected[$reportType].Artifact
-        $lines.Add("- ${reportType}: run_id=$($run.databaseId); artifact=$($artifact.name); created_at=$($run.createdAt); url=$($run.url)")
+        $downloadDir = [string]$selected[$reportType].DownloadDir
+        $lines.Add("- ${reportType}: run_id=$($run.databaseId); download_dir=$downloadDir; created_at=$($run.createdAt); url=$($run.url)")
     }
     else {
         $lines.Add("- ${reportType}: WARNING missing artifact")

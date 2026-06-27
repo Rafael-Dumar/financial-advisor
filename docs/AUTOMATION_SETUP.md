@@ -168,7 +168,7 @@ Set-Location "C:\Users\Administrador\Documents\financial advisor"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\fetch-latest-github-reports.ps1"
 ```
 
-The script checks that `gh` exists, checks `gh auth status`, prefers workflow runs from the current BRT date, downloads the newest main and close artifacts it can find, and writes:
+The script checks that `gh` exists, checks `gh auth status`, prefers workflow runs from the current BRT date, and uses `gh run download <run_id> --dir ...` to download all artifacts from candidate runs. It does not rely on the `artifacts` JSON field from `gh run view`, which keeps it compatible with older GitHub CLI versions. It writes:
 
 - `.tmp\nightly-review\YYYY-MM-DD\...`
 - `reports\nightly-review-input.md`
