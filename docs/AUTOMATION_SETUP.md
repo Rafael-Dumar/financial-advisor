@@ -183,6 +183,41 @@ Get-Content "reports\nightly-review-input.md" -TotalCount 80
 
 Use `reports\nightly-review-input.md` as the context file for a manual Codex/Public Equity Investing qualitative review. The file includes workflow run IDs/links, main and close summaries, raw artifact paths, available `analyst-review-input.md` content, and warnings when main or close is blocked/diagnostic. It does not print secrets, connect to a broker, execute orders, or suggest automatic buying.
 
+## Optional Telegram for nightly analyst review
+
+The nightly Telegram step sends only the `## Telegram summary` section from `reports\analyst-final-review.md`. It does not send `latest.md`, does not send the full quantitative report, and does not print the bot token.
+
+Create a Telegram bot:
+
+1. Open Telegram and start a chat with `BotFather`.
+2. Send `/newbot` and follow the prompts.
+3. Copy the token shown by BotFather. This is `TELEGRAM_BOT_TOKEN`.
+4. Send one message to your new bot from the chat that should receive alerts.
+5. Open `https://api.telegram.org/bot<token>/getUpdates` in a browser, replacing `<token>` locally, and copy the numeric chat id from the response. This is `TELEGRAM_CHAT_ID`.
+
+Configure Windows user-level environment variables without committing secrets:
+
+```powershell
+[Environment]::SetEnvironmentVariable("TELEGRAM_BOT_TOKEN", "paste_token_here", "User")
+[Environment]::SetEnvironmentVariable("TELEGRAM_CHAT_ID", "paste_chat_id_here", "User")
+```
+
+Open a new terminal after setting them. Test without exposing secrets:
+
+```powershell
+if ($env:TELEGRAM_BOT_TOKEN) { "TELEGRAM_BOT_TOKEN=set" } else { "TELEGRAM_BOT_TOKEN=missing" }
+if ($env:TELEGRAM_CHAT_ID) { "TELEGRAM_CHAT_ID=set" } else { "TELEGRAM_CHAT_ID=missing" }
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\send-analyst-final-telegram.ps1"
+```
+
+Run the nightly review with optional Telegram:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\run-nightly-analyst-review.ps1" -SendTelegram
+```
+
+If `TELEGRAM_BOT_TOKEN` or `TELEGRAM_CHAT_ID` is missing, the send script writes a clear warning and exits without failing the automation. If `reports\analyst-final-review.md` is missing, it blocks the send with `analyst_final_review_missing`.
+
 ## Generated Files
 
 The CLI writes:

@@ -6,7 +6,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from advisor.telegram_notify import build_telegram_message, notify_from_report
+from advisor.telegram_notify import (
+    build_analyst_final_telegram_message,
+    build_telegram_message,
+    extract_telegram_summary,
+    notify_from_analyst_final_review,
+    notify_from_report,
+)
 
 
 REPORT = """# Investment and Swing Trade Advisor
@@ -122,6 +128,112 @@ class TelegramNotifyTests(unittest.TestCase):
         self.assertIn("report_type: unknown", message)
         self.assertIn("decision: unknown", message)
         self.assertIn("artifact: reports/latest.md", message)
+
+    def test_extract_analyst_final_telegram_summary_only(self) -> None:
+        markdown = """# Analyst Final Review
+
+## Equity review
+
+Do not send this section.
+
+## Telegram summary
+
+Decisao final: no_trade.
+Sem ordem automatica, sem broker, sem compra automatica.
+
+## Appendix
+
+Do not send appendix.
+"""
+
+        summary = extract_telegram_summary(markdown)
+
+        self.assertIn("Decisao final: no_trade", summary)
+        self.assertIn("Sem ordem automatica", summary)
+        self.assertNotIn("Equity review", summary)
+        self.assertNotIn("Appendix", summary)
+
+    def test_analyst_final_telegram_skip_without_secrets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "analyst-final-review.md"
+            report_path.write_text(
+                "# Analyst Final Review\n\n## Telegram summary\n\nDecisao final: no_trade.",
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {}, clear=True):
+                status = notify_from_analyst_final_review(
+                    report_path=report_path,
+                    send_json=lambda url, payload: (_ for _ in ()).throw(AssertionError("should not send")),
+                )
+
+        self.assertEqual(status, "telegram_skipped_missing_secrets")
+
+    def test_analyst_final_telegram_payload_uses_summary_and_hides_token(self) -> None:
+        payloads = []
+        markdown = """# Analyst Final Review
+
+## Equity review
+
+AMD details that should not be sent.
+
+## Telegram summary
+
+Decisao final: no_trade. Main diagnostic.
+Sem ordem automatica, sem broker, sem compra automatica.
+"""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "analyst-final-review.md"
+            report_path.write_text(markdown, encoding="utf-8")
+            with patch.dict(
+                os.environ,
+                {
+                    "TELEGRAM_BOT_TOKEN": "123456:secret-token",
+                    "TELEGRAM_CHAT_ID": "999",
+                },
+                clear=True,
+            ):
+                status = notify_from_analyst_final_review(
+                    report_path=report_path,
+                    send_json=lambda url, payload: payloads.append((url, payload)) or {"ok": True},
+                )
+
+        self.assertEqual(status, "telegram_sent")
+        self.assertEqual(len(payloads), 1)
+        url, payload = payloads[0]
+        self.assertIn("123456:secret-token", url)
+        self.assertEqual(payload["chat_id"], "999")
+        self.assertIn("Decisao final: no_trade", payload["text"])
+        self.assertIn("decisao_final_conservadora: true", payload["text"])
+        self.assertIn("sem broker", payload["text"].lower())
+        self.assertIn("sem ordem automatica", payload["text"].lower())
+        self.assertIn("sem compra automatica", payload["text"].lower())
+        self.assertNotIn("AMD details", payload["text"])
+        self.assertNotIn("secret-token", payload["text"])
+
+    def test_analyst_final_review_missing_blocks_send(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            missing_path = Path(tmp) / "analyst-final-review.md"
+            with patch.dict(
+                os.environ,
+                {
+                    "TELEGRAM_BOT_TOKEN": "123456:secret-token",
+                    "TELEGRAM_CHAT_ID": "999",
+                },
+                clear=True,
+            ):
+                with self.assertRaises(FileNotFoundError):
+                    notify_from_analyst_final_review(report_path=missing_path)
+
+    def test_analyst_final_message_rejects_buy_now_language(self) -> None:
+        message = build_analyst_final_telegram_message(
+            "comprar agora AMD\nvender agora INTC\nDecisao final: no_trade."
+        )
+
+        self.assertNotIn("comprar agora", message.lower())
+        self.assertNotIn("vender agora", message.lower())
+        self.assertIn("decisao_final_conservadora: true", message)
 
 
 if __name__ == "__main__":

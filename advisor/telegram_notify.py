@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -9,6 +10,7 @@ from urllib import request
 
 
 SendJson = Callable[[str, dict[str, str]], Any]
+TELEGRAM_MAX_CHARS = 3500
 
 
 def build_telegram_message(markdown: str, *, artifact_path: str, workflow_url: str) -> str:
@@ -73,6 +75,53 @@ def notify_from_report(
     return "telegram_sent"
 
 
+def extract_telegram_summary(markdown: str) -> str:
+    summary = _section_text(markdown, "Telegram summary")
+    if not summary:
+        raise ValueError("telegram_summary_missing")
+    return summary.strip()
+
+
+def build_analyst_final_telegram_message(summary: str) -> str:
+    safe_summary = _remove_forbidden_trade_language(summary).strip()
+    safety_lines = [
+        "Analyst Final Review",
+        "decisao_final_conservadora: true",
+        "seguranca: sem broker; sem ordem automatica; sem compra automatica.",
+        "",
+        safe_summary,
+    ]
+    message = "\n".join(line for line in safety_lines if line is not None).strip()
+    return message[:TELEGRAM_MAX_CHARS]
+
+
+def notify_from_analyst_final_review(
+    *,
+    report_path: Path,
+    send_json: SendJson | None = None,
+) -> str:
+    if not report_path.exists():
+        raise FileNotFoundError(f"analyst_final_review_missing:{report_path}")
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    if not token or not chat_id:
+        return "telegram_skipped_missing_secrets"
+
+    markdown = report_path.read_text(encoding="utf-8")
+    summary = extract_telegram_summary(markdown)
+    message = build_analyst_final_telegram_message(summary)
+    sender = send_json or _post_json
+    sender(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        {
+            "chat_id": chat_id,
+            "text": message,
+            "disable_web_page_preview": "true",
+        },
+    )
+    return "telegram_sent"
+
+
 def _post_json(url: str, payload: dict[str, str]) -> Any:
     body = json.dumps(payload).encode("utf-8")
     req = request.Request(
@@ -83,6 +132,31 @@ def _post_json(url: str, payload: dict[str, str]) -> Any:
     )
     with request.urlopen(req, timeout=10) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def _remove_forbidden_trade_language(text: str) -> str:
+    replacements = {
+        "comprar agora": "nao comprar automaticamente",
+        "vender agora": "nao vender automaticamente",
+        "buy now": "do not buy automatically",
+        "sell now": "do not sell automatically",
+    }
+    cleaned = text
+    for forbidden, replacement in replacements.items():
+        cleaned = _replace_case_insensitive(cleaned, forbidden, replacement)
+    return cleaned
+
+
+def _replace_case_insensitive(text: str, old: str, new: str) -> str:
+    lower_text = text.lower()
+    lower_old = old.lower()
+    start = lower_text.find(lower_old)
+    while start != -1:
+        end = start + len(old)
+        text = text[:start] + new + text[end:]
+        lower_text = text.lower()
+        start = lower_text.find(lower_old, start + len(new))
+    return text
 
 
 def _field(markdown: str, name: str) -> str:
@@ -147,3 +221,33 @@ def _section_text(markdown: str, heading: str) -> str:
 
 def _csv_or_none(values: list[str]) -> str:
     return ",".join(values) if values else "nenhum"
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if not args or args[0] != "analyst-final":
+        print("usage: python -m advisor.telegram_notify analyst-final --report-path <path>")
+        return 2
+    report_path = Path("reports/analyst-final-review.md")
+    index = 1
+    while index < len(args):
+        if args[index] == "--report-path" and index + 1 < len(args):
+            report_path = Path(args[index + 1])
+            index += 2
+            continue
+        print(f"unknown_arg:{args[index]}")
+        return 2
+    try:
+        status = notify_from_analyst_final_review(report_path=report_path)
+    except FileNotFoundError as exc:
+        print(str(exc))
+        return 1
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    print(status)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
