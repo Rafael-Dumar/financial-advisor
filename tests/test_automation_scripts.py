@@ -44,6 +44,7 @@ class AutomationScriptsTests(unittest.TestCase):
         self.assertIn("Financial Advisor Reports", content)
         self.assertIn("gh run view", content)
         self.assertIn("gh run download", content)
+        self.assertIn("Remove-Item -LiteralPath $downloadDir -Recurse -Force", content)
         self.assertNotIn("databaseId,createdAt,url,artifacts", content)
         self.assertNotRegex(content, r"--json', '[^']*artifacts")
         self.assertNotIn("view.artifacts", content)

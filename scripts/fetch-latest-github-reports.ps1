@@ -197,6 +197,14 @@ foreach ($run in $candidateRuns) {
 
     $runId = [string]$view.databaseId
     $downloadDir = Join-Path $NightlyDir "run-$runId"
+    if (Test-Path -LiteralPath $downloadDir) {
+        $resolvedDownloadDir = (Resolve-Path -LiteralPath $downloadDir).Path
+        $resolvedNightlyDir = (Resolve-Path -LiteralPath $NightlyDir).Path
+        if (-not $resolvedDownloadDir.StartsWith($resolvedNightlyDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "unsafe_download_dir:${resolvedDownloadDir}"
+        }
+        Remove-Item -LiteralPath $downloadDir -Recurse -Force
+    }
     New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
 
     & gh run download $runId --repo $Repo --dir $downloadDir
