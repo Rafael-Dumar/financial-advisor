@@ -183,6 +183,8 @@ Get-Content "reports\nightly-review-input.md" -TotalCount 80
 
 Use `reports\nightly-review-input.md` as the context file for a manual Codex/Public Equity Investing qualitative review. The file includes workflow run IDs/links, main and close summaries, raw artifact paths, available `analyst-review-input.md` content, and warnings when main or close is blocked/diagnostic. It does not print secrets, connect to a broker, execute orders, or suggest automatic buying.
 
+The final analyst review separates operational decision from observation labels. A diagnostic main report can still force operational `no_trade`, while assets with partial positive evidence may be labeled `watch_pending_checks`, `research_only`, or `crypto_research_only`. `blocked` is reserved for critical missing price/provider/data-mode issues; `rejected` is used for weak thesis, negative EV, or invalid setup.
+
 ## Optional Telegram for nightly analyst review
 
 The nightly Telegram step sends only the `## Telegram summary` section from `reports\analyst-final-review.md`. It does not send `latest.md`, does not send the full quantitative report, and does not print the bot token.

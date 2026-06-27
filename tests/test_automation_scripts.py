@@ -100,10 +100,10 @@ class AutomationScriptsTests(unittest.TestCase):
         self.assertIn("reports\\analyst-final-review.md", content)
         self.assertIn("reports\\history", content)
         self.assertIn("send-analyst-final-telegram.ps1", content)
-        self.assertIn("Public Equity Investing executed: false", content)
-        self.assertIn("Public Equity Investing note: not executed automatically in this environment", content)
-        self.assertIn("market_session = regular", content)
-        self.assertIn("unknown/closed", content)
+        self.assertIn("advisor.analyst_review", content)
+        self.assertIn("--input-path", content)
+        self.assertIn("--output-path", content)
+        self.assertIn("--history-path", content)
         self.assertNotIn("nao `regular,unknown`", content)
 
     def test_docs_explain_optional_telegram_for_nightly_review(self) -> None:
