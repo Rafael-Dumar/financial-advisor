@@ -159,3 +159,6 @@ class AlphaVantageSource:
 
     def daily_adjusted_url(self, symbol: str) -> str:
         return f"{self.base_url}?{urlencode({'function': 'TIME_SERIES_DAILY_ADJUSTED', 'symbol': symbol, 'apikey': self.api_key})}"
+
+    def news_sentiment_url(self, tickers: list[str], *, limit: int = 50) -> str:
+        return f"{self.base_url}?{urlencode({'function': 'NEWS_SENTIMENT', 'tickers': ','.join(tickers), 'limit': str(limit), 'apikey': self.api_key})}"

@@ -94,6 +94,81 @@ class LiveLoaderTests(unittest.TestCase):
         self.assertTrue(any(call[1] and call[1].get("type") == "candleSnapshot" for call in calls))
         self.assertTrue(any(call[1] and call[1].get("type") == "metaAndAssetCtxs" for call in calls))
 
+    def test_live_loader_attaches_alphavantage_news_to_each_symbol(self):
+        calls = []
+
+        def fake_fetch(url, *, payload=None, headers=None):
+            calls.append(url)
+            if "NEWS_SENTIMENT" in url:
+                return {
+                    "feed": [
+                        {
+                            "title": "Chip demand improves",
+                            "source": "Example Wire",
+                            "time_published": "20260630T120000",
+                            "overall_sentiment_label": "Bullish",
+                            "ticker_sentiment": [{"ticker": "AMD"}, {"ticker": "CRYPTO:BTC"}],
+                        },
+                        {
+                            "title": "Software demand slows",
+                            "source": "Example Wire",
+                            "time_published": "20260630T130000",
+                            "overall_sentiment_label": "Bearish",
+                            "ticker_sentiment": [{"ticker": "MSFT"}],
+                        },
+                    ]
+                }
+            if "historical-price-eod/full" in url:
+                return {
+                    "historical": [
+                        {"date": "2026-01-02", "open": 101, "high": 104, "low": 100, "close": 103, "volume": 2000},
+                        {"date": "2026-01-01", "open": 100, "high": 102, "low": 99, "close": 101, "volume": 1500},
+                    ]
+                }
+            if "stable/profile" in url:
+                return [{"mktCap": 3_000_000_000_000, "volAvg": 20_000_000}]
+            if "ratios-ttm" in url:
+                return [{"priceEarningsRatioTTM": 32, "pegRatioTTM": 2.1, "grossProfitMarginTTM": 0.68}]
+            if "key-metrics-ttm" in url:
+                return [{"freeCashFlowPerShareTTM": 4.5}]
+            if "/stable/key-metrics" in url:
+                return [{"peRatio": 30}, {"peRatio": 40}]
+            if "income-statement-growth" in url:
+                return [{"growthRevenue": 0.16, "growthEPS": 0.12}]
+            if "earnings-calendar" in url:
+                return [{"date": "2026-06-10"}]
+            if "coins/markets" in url:
+                return [{"id": "bitcoin", "market_cap": 1_500_000_000_000, "total_volume": 45_000_000_000}]
+            if "/klines" in url:
+                return [[1767225600000, "100", "105", "99", "104", "1000"]]
+            if "fundingRate" in url:
+                return [{"fundingRate": "0.01"}]
+            if "fundingInfo" in url:
+                return []
+            if "openInterestHist" in url:
+                return [{"sumOpenInterest": "10000"}, {"sumOpenInterest": "11000"}]
+            if "takerlongshortRatio" in url:
+                return [{"buyVol": "120", "sellVol": "100"}]
+            if "allForceOrders" in url:
+                return []
+            return {}
+
+        config = AdvisorConfig.default()
+        config.stock_watchlist = ["AMD", "MSFT"]
+        config.crypto_watchlist = ["BTC"]
+        config.fmp_api_key = "demo"
+        config.coingecko_api_key = "demo"
+        config.alphavantage_api_key = "alpha"
+        loader = LiveDataLoader(config, fetch_json=fake_fetch, today="2026-06-01")
+
+        snapshots = loader.load_snapshots()
+
+        by_symbol = {snapshot.symbol: snapshot for snapshot in snapshots}
+        self.assertEqual(by_symbol["AMD"].news_events[0]["market_effect"], "risk_on")
+        self.assertEqual(by_symbol["BTC"].news_events[0]["market_effect"], "risk_on")
+        self.assertEqual(by_symbol["MSFT"].news_events[0]["market_effect"], "risk_off")
+        self.assertEqual(len([url for url in calls if "NEWS_SENTIMENT" in url]), 1)
+
     def test_live_loader_uses_alphavantage_as_weak_price_fallback(self):
         calls = []
 
@@ -229,7 +304,7 @@ class LiveLoaderTests(unittest.TestCase):
 
         self.assertEqual(snapshots[0].candles[0].date, "2026-01-01")
         self.assertNotIn("alphavantage_price_fallback", snapshots[0].missing_data)
-        self.assertFalse(any("alphavantage.co" in url for url in calls))
+        self.assertFalse(any("TIME_SERIES_DAILY_ADJUSTED" in url for url in calls))
 
     def test_live_loader_marks_stock_price_subscription_block_as_missing_and_continues(self):
         calls = []

@@ -36,6 +36,9 @@ class DataSourceTests(unittest.TestCase):
         self.assertIn("api.coinbase.com", CoinbaseSource().public_candles_url("BTC-USD"))
         self.assertIn("api.coinbase.com", CoinbaseSource().public_product_url("BTC-USD"))
         self.assertIn("alphavantage.co", AlphaVantageSource("demo").daily_adjusted_url("MSFT"))
+        news_url = AlphaVantageSource("demo").news_sentiment_url(["AMD", "CRYPTO:BTC"])
+        self.assertIn("NEWS_SENTIMENT", news_url)
+        self.assertIn("AMD%2CCRYPTO%3ABTC", news_url)
 
 
 if __name__ == "__main__":

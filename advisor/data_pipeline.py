@@ -22,6 +22,7 @@ def stock_snapshot_from_payloads(
     data_source: str = "fmp",
     data_timestamp: str | None = None,
     cache_age_seconds: int | None = None,
+    news_events: list[dict[str, Any]] | None = None,
 ) -> AssetSnapshot:
     historical_rows = _historical_rows(historical_payload)
     candles = sorted(
@@ -98,6 +99,7 @@ def stock_snapshot_from_payloads(
         data_source=data_source,
         data_timestamp=data_timestamp,
         cache_age_seconds=cache_age_seconds,
+        news_events=list(news_events or []),
     )
 
 
@@ -143,6 +145,7 @@ def crypto_snapshot_from_payloads(
     data_source: str = "binance/coingecko",
     data_timestamp: str | None = None,
     cache_age_seconds: int | None = None,
+    news_events: list[dict[str, Any]] | None = None,
 ) -> AssetSnapshot:
     candles = [
         Candle(
@@ -200,6 +203,7 @@ def crypto_snapshot_from_payloads(
         data_source=data_source,
         data_timestamp=data_timestamp,
         cache_age_seconds=cache_age_seconds,
+        news_events=list(news_events or []),
     )
 
 

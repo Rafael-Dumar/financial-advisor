@@ -58,14 +58,13 @@ class GitHubActionsWorkflowTests(unittest.TestCase):
         self.assertIn("ADVISOR_ACTIONS_CACHE_HIT", content)
         self.assertNotIn(".env", content)
 
-    def test_workflow_has_non_blocking_telegram_notification(self) -> None:
+    def test_reports_workflow_does_not_send_preliminary_telegram(self) -> None:
         workflow_path = PROJECT_ROOT / ".github" / "workflows" / "financial-advisor-reports.yml"
         content = workflow_path.read_text(encoding="utf-8")
 
-        self.assertIn("TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}", content)
-        self.assertIn("TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}", content)
-        self.assertIn("python -m advisor notify-telegram", content)
-        self.assertIn("continue-on-error: true", content)
+        self.assertNotIn("TELEGRAM_BOT_TOKEN", content)
+        self.assertNotIn("TELEGRAM_CHAT_ID", content)
+        self.assertNotIn("python -m advisor notify-telegram", content)
 
     def test_nightly_analyst_review_workflow_runs_without_codex(self) -> None:
         workflow_path = PROJECT_ROOT / ".github" / "workflows" / "financial-advisor-nightly-review.yml"

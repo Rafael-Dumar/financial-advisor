@@ -47,7 +47,7 @@ Required variables:
 
 Optional variables:
 
-- `ALPHAVANTAGE_API_KEY`
+- `ALPHAVANTAGE_API_KEY`: optional fallback for stock prices and low-call aggregated news/sentiment context.
 - `COINBASE_API_KEY`
 - `ADVISOR_ACCOUNT_CAPITAL`
 - `ADVISOR_RISK_FRACTION`
@@ -128,7 +128,7 @@ Configure repository secrets in GitHub:
 1. Open the repository on GitHub.
 2. Go to Settings -> Secrets and variables -> Actions.
 3. Add `FMP_API_KEY` and `COINGECKO_API_KEY`.
-4. Optionally add `ALPHAVANTAGE_API_KEY`, `COINBASE_API_KEY`, `ADVISOR_ACCOUNT_CAPITAL`, `ADVISOR_RISK_FRACTION`, `ADVISOR_MAX_DAILY_LOSS_FRACTION`, and `ADVISOR_MAX_WEEKLY_LOSS_FRACTION`.
+4. Optionally add `ALPHAVANTAGE_API_KEY`, `COINBASE_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ADVISOR_ACCOUNT_CAPITAL`, `ADVISOR_RISK_FRACTION`, `ADVISOR_MAX_DAILY_LOSS_FRACTION`, and `ADVISOR_MAX_WEEKLY_LOSS_FRACTION`.
 
 Manual run:
 
@@ -153,10 +153,12 @@ The GitHub workflow also sets a conservative universe and per-run budget:
 
 - `ADVISOR_STOCK_WATCHLIST=INTC,AMD,NVDA,HIMS,MU,MSFT,USAR,CRDO,DELL,MRVL,HOOD`
 - `ADVISOR_CRYPTO_WATCHLIST=SOL,HYPE,BTC,ETH`
-- `ADVISOR_MAX_STOCKS_PER_RUN=2`
-- `ADVISOR_FMP_CALL_BUDGET_PER_RUN=20`
+- `ADVISOR_MAX_STOCKS_PER_RUN=11`
+- `ADVISOR_FMP_CALL_BUDGET_PER_RUN=90`
 
 With the current FMP data model, each stock costs about 7 FMP calls plus 2 benchmark calls when fresh data is needed. The close job is cache-first and reports `cache_reused_from_main`, `close_universe_source`, `skipped_provider_calls_due_to_cache`, and `skipped_provider_calls_due_to_rate_limit` so FMP usage stays visible.
+
+The main/close report workflow does not send Telegram. Telegram is sent only by `Financial Advisor Nightly Review`, after it has fetched the main and close artifacts and generated `reports\analyst-final-review.md`. This keeps the phone notification focused on the final conservative review instead of the raw quantitative report.
 
 ## Nightly qualitative review prep
 
@@ -195,6 +197,8 @@ Use `reports\nightly-review-input.md` as the context file for a manual Codex/Pub
 The final analyst review separates operational decision from observation labels. A diagnostic main report can still force operational `no_trade`, while assets with partial positive evidence may be labeled `watch_pending_checks`, `research_only`, or `crypto_research_only`. `blocked` is reserved for critical missing price/provider/data-mode issues; `rejected` is used for weak thesis, negative EV, or invalid setup.
 
 Crypto review separates `basic_data_status` from `flow_data_status`. Binance `http_error:451` or `binance_restricted_location` marks `binance_status: restricted` and limits Binance-dependent flow/derivatives checks, but it does not block BTC/ETH/SOL by itself when CoinGecko/Coinbase/fallback basic data is available. If basic price/liquidity/history is also missing, the asset remains `blocked`.
+
+News/catalyst context is optional and budget-conscious. When `ALPHAVANTAGE_API_KEY` is configured, the live loader requests one cached News Sentiment payload for the current stock and crypto universe, then maps relevant items back to each asset. If the key is absent, the provider is rate-limited, or no matching item is returned, reports keep `news_status` as `not_verified/not_collected`; they must not state that there is no news/event risk.
 
 ## Optional Telegram for nightly analyst review
 

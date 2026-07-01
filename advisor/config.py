@@ -65,6 +65,7 @@ class AdvisorConfig:
                 "fundamentals": 60 * 60 * 24,
                 "earnings": 60 * 60 * 12,
                 "crypto_flow": 60 * 15,
+                "news": 60 * 60 * 6,
             },
             api_limits={
                 "fmp": 250,

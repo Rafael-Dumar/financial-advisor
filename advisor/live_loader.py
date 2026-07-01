@@ -102,10 +102,11 @@ class LiveDataLoader:
     def load_snapshots(self, *, include_discovery: bool = False) -> list[AssetSnapshot]:
         snapshots = []
         stock_symbols, crypto_symbols = self.config.symbols_for_scan(include_discovery=include_discovery)
+        news_by_symbol = self._news_events_by_symbol([*stock_symbols, *crypto_symbols])
         for symbol in stock_symbols:
-            snapshots.append(self.load_stock(symbol))
+            snapshots.append(self.load_stock(symbol, news_events=news_by_symbol.get(symbol, [])))
         for symbol in crypto_symbols:
-            snapshots.append(self.load_crypto(symbol))
+            snapshots.append(self.load_crypto(symbol, news_events=news_by_symbol.get(symbol, [])))
         return snapshots
 
     def load_benchmarks(self) -> dict[str, list[Candle]]:
@@ -176,7 +177,7 @@ class LiveDataLoader:
             )
         return flows
 
-    def load_stock(self, symbol: str) -> AssetSnapshot:
+    def load_stock(self, symbol: str, *, news_events: list[dict[str, Any]] | None = None) -> AssetSnapshot:
         historical_payload = self._stock_historical_payload(symbol)
         missing_data = _stock_missing_data(
             symbol,
@@ -203,6 +204,7 @@ class LiveDataLoader:
                 data_source=data_source,
                 data_timestamp=_now_iso(),
                 cache_age_seconds=0,
+                news_events=news_events,
             )
         profile_payload = self._fetch_optional_stock_payload(
             symbol,
@@ -255,9 +257,10 @@ class LiveDataLoader:
             data_source=data_source,
             data_timestamp=_now_iso(),
             cache_age_seconds=0,
+            news_events=news_events,
         )
 
-    def load_crypto(self, symbol: str) -> AssetSnapshot:
+    def load_crypto(self, symbol: str, *, news_events: list[dict[str, Any]] | None = None) -> AssetSnapshot:
         market_payload = self._market_payload(symbol)
         if symbol == "HYPE":
             klines_payload = self._hyperliquid_klines(symbol)
@@ -308,6 +311,7 @@ class LiveDataLoader:
                         data_source="coingecko_fallback",
                         data_timestamp=_now_iso(),
                         cache_age_seconds=0,
+                        news_events=news_events,
                     )
                 raise
             raw_funding_payload = self._fetch("binance", "crypto_flow", self.binance.funding_rate_url(binance_symbol))
@@ -343,7 +347,20 @@ class LiveDataLoader:
             data_source="hyperliquid" if symbol == "HYPE" else "binance/coingecko",
             data_timestamp=_now_iso(),
             cache_age_seconds=0,
+            news_events=news_events,
         )
+
+    def _news_events_by_symbol(self, symbols: list[str]) -> dict[str, list[dict[str, Any]]]:
+        if not self.config.alphavantage_api_key or not symbols:
+            return {}
+        tickers = [_alphavantage_news_ticker(symbol) for symbol in symbols]
+        payload = self._fetch_optional(
+            "alphavantage",
+            "news",
+            self.alphavantage.news_sentiment_url(tickers),
+            default={},
+        )
+        return _news_events_from_alphavantage(payload, symbols)
 
     def _binance_funding_info_payload(self) -> Any:
         if not self._binance_funding_info_loaded:
@@ -596,6 +613,71 @@ def _coingecko_market_chart_to_klines(payload: Any) -> list[list[Any]]:
         volume = volume_by_time.get(timestamp_ms, 0.0)
         klines.append([timestamp_ms, close, close, close, close, volume])
     return sorted(klines, key=lambda item: int(item[0]))
+
+
+def _alphavantage_news_ticker(symbol: str) -> str:
+    if symbol in {"BTC", "ETH", "SOL", "HYPE", "ZEC"}:
+        return f"CRYPTO:{symbol}"
+    return symbol
+
+
+def _news_events_from_alphavantage(payload: Any, symbols: list[str]) -> dict[str, list[dict[str, Any]]]:
+    by_symbol = {symbol: [] for symbol in symbols}
+    feed = payload.get("feed") if isinstance(payload, dict) else None
+    if not isinstance(feed, list):
+        return by_symbol
+    wanted = {symbol: {_alphavantage_news_ticker(symbol), symbol} for symbol in symbols}
+    for item in feed:
+        if not isinstance(item, dict):
+            continue
+        ticker_sentiment = item.get("ticker_sentiment")
+        if not isinstance(ticker_sentiment, list):
+            continue
+        matched_symbols = _symbols_for_news_item(ticker_sentiment, wanted)
+        if not matched_symbols:
+            continue
+        event = _news_event_from_alphavantage_item(item)
+        for symbol in matched_symbols:
+            by_symbol.setdefault(symbol, []).append(event)
+    return {symbol: events[:5] for symbol, events in by_symbol.items()}
+
+
+def _symbols_for_news_item(
+    ticker_sentiment: list[Any],
+    wanted: dict[str, set[str]],
+) -> list[str]:
+    raw_tickers = {
+        str(row.get("ticker", "")).upper()
+        for row in ticker_sentiment
+        if isinstance(row, dict)
+    }
+    return [
+        symbol
+        for symbol, accepted in wanted.items()
+        if raw_tickers & {item.upper() for item in accepted}
+    ]
+
+
+def _news_event_from_alphavantage_item(item: dict[str, Any]) -> dict[str, object]:
+    sentiment_label = str(item.get("overall_sentiment_label", "neutral")).lower()
+    return {
+        "news_event_type": "news_sentiment",
+        "confirmed_status": "confirmed",
+        "already_priced": "unclear",
+        "market_effect": _market_effect_from_sentiment(sentiment_label),
+        "news_confidence": "medium",
+        "title": str(item.get("title", ""))[:160],
+        "source": str(item.get("source", "alphavantage")),
+        "time_published": str(item.get("time_published", "")),
+    }
+
+
+def _market_effect_from_sentiment(label: str) -> str:
+    if "bearish" in label:
+        return "risk_off"
+    if "bullish" in label:
+        return "risk_on"
+    return "neutral"
 
 
 def _is_fmp_price_unavailable(error: RuntimeError) -> bool:

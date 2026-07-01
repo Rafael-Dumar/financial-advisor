@@ -9,7 +9,8 @@ This v1 is intentionally simple:
 - SQLite cache and report history.
 - Markdown and HTML reports.
 - No automatic order execution.
-- No dashboard or Telegram integration.
+- No dashboard.
+- Telegram is optional and reserved for the nightly final review summary.
 
 Core commands:
 
@@ -23,7 +24,7 @@ python -m advisor backtest
 python -m advisor collect-crypto-flow
 python -m advisor report
 python -m advisor report main --include-discovery --require-live
-python -m advisor report close --include-discovery --require-live
+python -m advisor report close --from-main --require-live
 ```
 
 The report separates `investment_quality_score` from `swing_trade_score` so a good asset is not confused with a good entry right now.
@@ -43,7 +44,7 @@ Required for live scan:
 
 Optional:
 
-- `ALPHAVANTAGE_API_KEY`: weak fallback for stock prices when FMP prices are missing.
+- `ALPHAVANTAGE_API_KEY`: weak fallback for stock prices when FMP prices are missing, plus optional aggregated news/sentiment checks.
 - `COINBASE_API_KEY`: optional switch for Coinbase premium checks; public product data is used when available.
 
 Risk config:
@@ -65,11 +66,12 @@ GitHub Actions uses `.github/workflows/financial-advisor-reports.yml` to run wit
 Configure repository secrets in GitHub under Settings -> Secrets and variables -> Actions:
 
 - Required: `FMP_API_KEY`, `COINGECKO_API_KEY`.
-- Optional: `ALPHAVANTAGE_API_KEY`, `COINBASE_API_KEY`, `ADVISOR_ACCOUNT_CAPITAL`, `ADVISOR_RISK_FRACTION`, `ADVISOR_MAX_DAILY_LOSS_FRACTION`, `ADVISOR_MAX_WEEKLY_LOSS_FRACTION`.
+- Optional: `ALPHAVANTAGE_API_KEY`, `COINBASE_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ADVISOR_ACCOUNT_CAPITAL`, `ADVISOR_RISK_FRACTION`, `ADVISOR_MAX_DAILY_LOSS_FRACTION`, `ADVISOR_MAX_WEEKLY_LOSS_FRACTION`.
 
 If live validation fails in Actions, the workflow still uploads a `reports/` artifact with `Data mode: blocked` and `Decisao geral: no_trade_day`; it does not create a decision-grade report.
-The scheduled Actions workflow omits `--include-discovery` by default to preserve free-tier FMP calls. Use the direct CLI command with `--include-discovery` only when you intentionally want the larger scan.
-It also runs with a conservative default budget: `ADVISOR_STOCK_WATCHLIST=MSFT,NVDA`, `ADVISOR_CRYPTO_WATCHLIST=HYPE`, `ADVISOR_MAX_STOCKS_PER_RUN=2`, and `ADVISOR_FMP_CALL_BUDGET_PER_RUN=20`. That keeps scheduled runs around 16 estimated FMP calls each instead of scanning the full list.
+The scheduled main workflow runs with `--include-discovery`, but `ADVISOR_MAX_STOCKS_PER_RUN=11` keeps the stock scan focused on the configured watchlist before discovery extras are added.
+It also runs with a per-run FMP budget of `ADVISOR_FMP_CALL_BUDGET_PER_RUN=90`, which is designed to cover the 11 stock watchlist plus benchmarks while staying below the free daily quota when the close report reuses the same-day main cache.
+Telegram delivery is handled by `.github/workflows/financial-advisor-nightly-review.yml`, which sends only the final `Telegram summary` from `reports/analyst-final-review.md`.
 
 Discovery mode:
 
@@ -81,6 +83,7 @@ Discovery mode:
 ## Data honesty
 
 - Stock growth uses FMP income-statement growth data. Historical PE is the median of available positive annual PE observations.
+- If `ALPHAVANTAGE_API_KEY` is configured, the live loader collects one cached News Sentiment payload for the configured stock and crypto universe and attaches relevant items to each asset. Missing or rate-limited news remains `not_verified`; news context never approves an automatic trade by itself.
 - `advisor collect-crypto-flow` uses public Binance futures data for BTC/ETH/SOL/ZEC and Hyperliquid `metaAndAssetCtxs` for HYPE.
 - Funding rates are compared and reported as 8-hour equivalents. Binance adjusted intervals come from `fundingInfo`; HYPE's hourly Hyperliquid funding rate is multiplied by eight before regime and risk scoring.
 - CVD is always labeled as a proxy derived from taker buy/sell volume.
