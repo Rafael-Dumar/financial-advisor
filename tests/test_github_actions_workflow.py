@@ -64,6 +64,25 @@ class GitHubActionsWorkflowTests(unittest.TestCase):
         self.assertIn("python -m advisor notify-telegram", content)
         self.assertIn("continue-on-error: true", content)
 
+    def test_nightly_analyst_review_workflow_runs_without_codex(self) -> None:
+        workflow_path = PROJECT_ROOT / ".github" / "workflows" / "financial-advisor-nightly-review.yml"
+
+        self.assertTrue(workflow_path.exists(), "missing financial-advisor-nightly-review.yml")
+        content = workflow_path.read_text(encoding="utf-8")
+
+        self.assertIn("30 21 * * 1-5", content)
+        self.assertIn("workflow_dispatch", content)
+        self.assertIn("python-version: '3.12'", content)
+        self.assertIn("actions: read", content)
+        self.assertIn("GH_TOKEN: ${{ github.token }}", content)
+        self.assertIn("scripts/fetch-latest-github-reports.ps1", content)
+        self.assertIn("python -m advisor.analyst_review", content)
+        self.assertIn("python -m advisor.telegram_notify analyst-final", content)
+        self.assertIn("TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}", content)
+        self.assertIn("TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}", content)
+        self.assertIn("actions/upload-artifact", content)
+        self.assertIn("reports/analyst-final-review.md", content)
+
 
 if __name__ == "__main__":
     unittest.main()

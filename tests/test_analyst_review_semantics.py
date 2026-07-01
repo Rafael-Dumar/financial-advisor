@@ -100,6 +100,72 @@ No equity candidates for qualitative review
 """
 
 
+CRYPTO_BASIC_WITH_BINANCE_RESTRICTED = """# Nightly qualitative review input
+
+## Main summary
+
+- report_type: `main`
+- Data mode: `live`
+- report_grade: `diagnostic_not_decision_grade`
+- market_session: `regular,unknown`
+- WARNING: blocked_or_diagnostic
+
+## BTC
+
+- Ativo: `BTC`
+- Tipo: `crypto`
+- decision_label: `blocked`
+- Decisao: `blocked`
+- reason_codes: binance_restricted_location, cvd_proxy_unavailable, liquidations_unavailable, open_interest_change_unavailable, coinbase_premium_unavailable, news_not_collected_confidence_limited
+- data_quality: `limited`
+- missing_data_severity: `high`
+- Metricas principais: Last price: 61500.00; Market cap: 1200000000000.00; Average volume: 35000000000.00; Daily change: 1.20%; RSI: 52.00; Open interest change: n/a; CVD proxy: n/a; Coinbase premium: n/a; Liquidation imbalance: n/a
+- news_status: `not_verified`
+- Data source: coingecko
+- provider: `coingecko`
+
+## ETH
+
+- Ativo: `ETH`
+- Tipo: `crypto`
+- decision_label: `blocked`
+- Decisao: `blocked`
+- reason_codes: binance_restricted_location, cvd_proxy_unavailable, liquidations_unavailable, open_interest_change_unavailable, news_not_collected_confidence_limited
+- data_quality: `limited`
+- missing_data_severity: `high`
+- Metricas principais: Last price: 3400.00; Market cap: 410000000000.00; Average volume: 18000000000.00; Daily change: 0.80%; Open interest change: n/a; CVD proxy: n/a; Liquidation imbalance: n/a
+- news_status: `not_verified`
+- Data source: coinbase
+- provider: `coinbase`
+
+## SOL
+
+- Ativo: `SOL`
+- Tipo: `crypto`
+- decision_label: `blocked`
+- Decisao: `blocked`
+- reason_codes: binance_restricted_location, cvd_proxy_unavailable, liquidations_unavailable, open_interest_change_unavailable, news_not_collected_confidence_limited
+- data_quality: `limited`
+- missing_data_severity: `high`
+- Metricas principais: Last price: 142.00; Market cap: 65000000000.00; Average volume: 3000000000.00; Daily change: 2.10%; Open interest change: n/a; CVD proxy: n/a; Liquidation imbalance: n/a
+- news_status: `not_verified`
+- Data source: coingecko
+- provider: `coingecko`
+
+## DOGE
+
+- Ativo: `DOGE`
+- Tipo: `crypto`
+- decision_label: `blocked`
+- Decisao: `blocked`
+- reason_codes: binance_restricted_location, price_history_unavailable, insufficient_price_history
+- data_quality: `blocked`
+- missing_data_severity: `critical`
+- Metricas principais: price history: n/a
+- provider: `unknown`
+"""
+
+
 class AnalystReviewSemanticsTests(unittest.TestCase):
     def test_main_diagnostic_keeps_no_trade_but_allows_watch_pending_checks(self) -> None:
         review = generate_analyst_final_review(NIGHTLY_INPUT)
@@ -164,6 +230,90 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
         self.assertIn("Nenhum ativo aprovado como tradeable", review)
         self.assertNotIn("watch_pending_checks: tradeable", review)
         self.assertNotIn("research_only: tradeable", review)
+
+    def test_binance_restricted_does_not_block_major_crypto_with_basic_data(self) -> None:
+        review = generate_analyst_final_review(CRYPTO_BASIC_WITH_BINANCE_RESTRICTED)
+
+        for ticker in ("BTC", "ETH", "SOL"):
+            self.assertIn(f"### {ticker}", review)
+            self.assertIn("basic_data_status: live", review)
+            self.assertIn("flow_data_status: not_verified", review)
+            self.assertIn("binance_status: restricted", review)
+        self.assertIn("BTC: crypto_watch_context", review)
+        self.assertIn("ETH: crypto_watch_context", review)
+        self.assertIn("SOL: crypto_watch_context", review)
+        self.assertNotIn("BTC: blocked", review)
+        self.assertNotIn("ETH: blocked", review)
+        self.assertNotIn("SOL: blocked", review)
+
+    def test_binance_restricted_keeps_flow_not_verified(self) -> None:
+        review = generate_analyst_final_review(CRYPTO_BASIC_WITH_BINANCE_RESTRICTED)
+
+        self.assertIn("flow_data_status: not_verified", review)
+        self.assertIn("flow/derivatives nao verificados", review)
+
+    def test_basic_data_absent_still_blocks_crypto(self) -> None:
+        review = generate_analyst_final_review(CRYPTO_BASIC_WITH_BINANCE_RESTRICTED)
+
+        self.assertIn("DOGE", review)
+        self.assertIn("blocked", review)
+        self.assertIn("basic_data_status: not_verified", review)
+
+    def test_hype_with_basic_data_and_missing_flow_is_crypto_research_only(self) -> None:
+        review = generate_analyst_final_review(NIGHTLY_INPUT)
+
+        self.assertIn("HYPE", review)
+        self.assertIn("basic_data_status: live", review)
+        self.assertIn("flow_data_status: not_verified", review)
+        self.assertIn("crypto_research_only", review)
+
+    def test_crypto_research_only_never_becomes_tradeable(self) -> None:
+        review = generate_analyst_final_review(CRYPTO_BASIC_WITH_BINANCE_RESTRICTED)
+
+        self.assertIn("Nenhum ativo aprovado como tradeable", review)
+        self.assertNotIn("crypto_research_only: tradeable", review)
+        self.assertNotIn("crypto_watch_context: tradeable", review)
+
+    def test_telegram_summary_differentiates_basic_data_from_missing_flow(self) -> None:
+        review = generate_analyst_final_review(CRYPTO_BASIC_WITH_BINANCE_RESTRICTED)
+
+        telegram = review.split("## Telegram summary", 1)[1]
+        self.assertIn("Cripto: BTC/ETH/SOL apenas contexto/research", telegram)
+        self.assertIn("flow/derivatives nao verificados", telegram)
+
+    def test_crypto_basic_status_can_be_cache_or_fallback(self) -> None:
+        cached_input = CRYPTO_BASIC_WITH_BINANCE_RESTRICTED.replace(
+            "- provider: `coingecko`",
+            "- provider: `coingecko`\n- is_stale: `yes`\n- stale_reason: cache_age_exceeds_24h",
+            1,
+        )
+        fallback_input = CRYPTO_BASIC_WITH_BINANCE_RESTRICTED.replace(
+            "- Data source: coingecko\n- provider: `coingecko`",
+            "- Data source: fallback\n- provider: `fallback`",
+            1,
+        )
+
+        self.assertIn("basic_data_status: cache", generate_analyst_final_review(cached_input))
+        self.assertIn("basic_data_status: fallback", generate_analyst_final_review(fallback_input))
+
+    def test_crypto_flow_status_can_be_live_when_flow_fields_are_present(self) -> None:
+        flow_input = CRYPTO_BASIC_WITH_BINANCE_RESTRICTED.replace(
+            "reason_codes: binance_restricted_location, cvd_proxy_unavailable, liquidations_unavailable, open_interest_change_unavailable, coinbase_premium_unavailable, news_not_collected_confidence_limited",
+            "reason_codes: flow_present",
+            1,
+        ).replace(
+            "Open interest change: n/a; CVD proxy: n/a; Coinbase premium: n/a; Liquidation imbalance: n/a",
+            "Open interest change: 4.20%; CVD proxy: 1.10; Coinbase premium: 0.30%; Liquidation imbalance: 0.80",
+            1,
+        ).replace(
+            "- news_status: `not_verified`",
+            "- news_status: `verified`",
+            1,
+        )
+
+        review = generate_analyst_final_review(flow_input)
+
+        self.assertIn("flow_data_status: live", review)
 
 
 if __name__ == "__main__":

@@ -116,6 +116,7 @@ Direct CLI scan:
 Workflow file:
 
 - `.github/workflows/financial-advisor-reports.yml`
+- `.github/workflows/financial-advisor-nightly-review.yml`
 
 Schedule:
 
@@ -135,6 +136,14 @@ Manual run:
 2. Choose Run workflow.
 3. Select `report_type` as `main` or `close`.
 4. After completion, download the uploaded artifact named `financial-advisor-...`.
+
+Nightly final review:
+
+- Workflow name: `Financial Advisor Nightly Review`.
+- Schedule: weekdays at 18:30 BRT (`30 21 * * 1-5` UTC), after the close report.
+- It roda no GitHub Actions without Codex or this PC staying open.
+- It uses GitHub CLI with the workflow `GH_TOKEN` to download the latest same-day main/close artifacts, writes `reports\analyst-final-review.md`, sends only the `## Telegram summary` section when Telegram secrets are configured, and uploads the final reports artifact.
+- Public Equity Investing is not executed automatically in GitHub Actions; the generated review records `Public Equity Investing executed: false` and stays based on `nightly-review-input` plus safety rules.
 
 If `advisor config validate --require-live` fails, the workflow still runs `advisor report ... --require-live`; the CLI writes a blocked/no-trade report under `reports/` so the artifact explains the failure. It does not connect to a broker, execute orders, or recommend automatic buying.
 
@@ -184,6 +193,8 @@ Get-Content "reports\nightly-review-input.md" -TotalCount 80
 Use `reports\nightly-review-input.md` as the context file for a manual Codex/Public Equity Investing qualitative review. The file includes workflow run IDs/links, main and close summaries, raw artifact paths, available `analyst-review-input.md` content, and warnings when main or close is blocked/diagnostic. It does not print secrets, connect to a broker, execute orders, or suggest automatic buying.
 
 The final analyst review separates operational decision from observation labels. A diagnostic main report can still force operational `no_trade`, while assets with partial positive evidence may be labeled `watch_pending_checks`, `research_only`, or `crypto_research_only`. `blocked` is reserved for critical missing price/provider/data-mode issues; `rejected` is used for weak thesis, negative EV, or invalid setup.
+
+Crypto review separates `basic_data_status` from `flow_data_status`. Binance `http_error:451` or `binance_restricted_location` marks `binance_status: restricted` and limits Binance-dependent flow/derivatives checks, but it does not block BTC/ETH/SOL by itself when CoinGecko/Coinbase/fallback basic data is available. If basic price/liquidity/history is also missing, the asset remains `blocked`.
 
 ## Optional Telegram for nightly analyst review
 
@@ -320,7 +331,7 @@ Network/provider failure:
 
 - The scripts fail explicitly and leave details in `.tmp\logs\`.
 - They do not promote a non-live report to `reports\latest.md`.
-- If Binance returns `http_error:451` in GitHub Actions, the runner location is restricted by Binance. The bot marks affected Binance crypto assets as blocked by `binance_restricted_location` instead of treating them as tradeable.
+- If Binance returns `http_error:451` in GitHub Actions, the runner location is restricted by Binance. The bot marks `binance_restricted_location`, uses CoinGecko market-chart history as a basic-price fallback when available, and keeps Binance-dependent flow/derivatives as not verified. If no basic history is available, the asset remains blocked.
 
 Report says `blocked` or `no_trade_day`:
 

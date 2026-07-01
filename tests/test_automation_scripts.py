@@ -10,18 +10,18 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 class AutomationScriptsTests(unittest.TestCase):
     def test_automation_scripts_enforce_live_reporting_contract(self) -> None:
         scripts = [
-            ("run-main-report.ps1", "--include-discovery", "main"),
-            ("run-close-report.ps1", "", "close"),
+            ("run-main-report.ps1", "advisor report main", "--include-discovery", "main"),
+            ("run-close-report.ps1", "advisor report close", "--from-main", "close"),
         ]
 
-        for script_name, expected_scan_flag, history_label in scripts:
+        for script_name, expected_command, expected_flag, history_label in scripts:
             script_path = PROJECT_ROOT / "scripts" / script_name
             self.assertTrue(script_path.exists(), f"missing {script_name}")
             content = script_path.read_text(encoding="utf-8")
 
             self.assertIn(".venv\\Scripts\\Activate.ps1", content)
             self.assertIn("advisor config validate --require-live", content)
-            self.assertIn("advisor scan", content)
+            self.assertIn(expected_command, content)
             self.assertIn("--require-live", content)
             self.assertIn(".tmp\\logs", content)
             self.assertIn("reports\\latest.md", content)
@@ -30,8 +30,7 @@ class AutomationScriptsTests(unittest.TestCase):
             self.assertIn(".Contains('Data mode: `live`')", content)
             self.assertNotIn("-notlike '*Data mode: `live`*'", content)
             self.assertIn("live_validation_failed", content)
-            if expected_scan_flag:
-                self.assertIn(expected_scan_flag, content)
+            self.assertIn(expected_flag, content)
 
     def test_fetch_latest_github_reports_script_contract(self) -> None:
         script_path = PROJECT_ROOT / "scripts" / "fetch-latest-github-reports.ps1"
@@ -72,6 +71,8 @@ class AutomationScriptsTests(unittest.TestCase):
         self.assertIn("gh run download", content)
         self.assertIn("does not rely on the `artifacts` JSON field", content)
         self.assertIn("Public Equity Investing", content)
+        self.assertIn("Financial Advisor Nightly Review", content)
+        self.assertIn("roda no GitHub Actions", content)
 
     def test_send_analyst_final_telegram_script_contract(self) -> None:
         script_path = PROJECT_ROOT / "scripts" / "send-analyst-final-telegram.ps1"

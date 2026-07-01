@@ -51,9 +51,9 @@ try {
     }
 
     $ReportsDir = Join-Path $ProjectRoot 'reports'
-    & $PythonPath -m advisor scan --include-discovery --require-live --output-dir $ReportsDir
+    & $PythonPath -m advisor report main --include-discovery --require-live --output-dir $ReportsDir
     if ($LASTEXITCODE -ne 0) {
-        throw "scan_failed: advisor scan --include-discovery --require-live exited with $LASTEXITCODE"
+        throw "report_failed: advisor report main --include-discovery --require-live exited with $LASTEXITCODE"
     }
 
     $MarkdownReport = Join-Path $ReportsDir 'advisor-report.md'

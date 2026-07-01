@@ -1,0 +1,55 @@
+name: Financial Advisor Nightly Review
+
+on:
+  schedule:
+    # BRT is UTC-3: 18:30 BRT on weekdays, after the close report.
+    - cron: "30 21 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  nightly-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Fetch latest report artifacts
+        shell: pwsh
+        run: ./scripts/fetch-latest-github-reports.ps1
+
+      - name: Generate analyst final review
+        run: >
+          python -m advisor.analyst_review
+          --input-path reports/nightly-review-input.md
+          --output-path reports/analyst-final-review.md
+
+      - name: Send analyst final Telegram
+        continue-on-error: true
+        run: >
+          python -m advisor.telegram_notify analyst-final
+          --report-path reports/analyst-final-review.md
+
+      - name: Upload analyst final review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: financial-advisor-nightly-review-${{ github.run_id }}
+          path: reports/
+          if-no-files-found: error

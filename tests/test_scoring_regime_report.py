@@ -834,6 +834,21 @@ class ScoringRegimeReportTests(unittest.TestCase):
         self.assertNotIn("sem risco de noticia", report.lower())
         self.assertNotIn("sem risco de evento", report.lower())
 
+    def test_leverage_language_is_a_risk_gate_not_an_incentive(self):
+        decision = _decision("MSFT", "watch_buy", swing=74, investment=91)
+
+        report = render_markdown_report(
+            [decision],
+            stock_regime="risk_on",
+            crypto_regime="neutral",
+            data_mode="live",
+            report_type="main",
+        )
+
+        self.assertIn("Leverage risk gate:", report)
+        self.assertIn("Leverage risk gate reasons:", report)
+        self.assertNotIn("Leverage allowed:", report)
+
 
 def _decision(symbol: str, decision: str, *, swing: float, investment: float) -> AssetDecision:
     return AssetDecision(

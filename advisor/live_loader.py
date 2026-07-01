@@ -288,21 +288,24 @@ class LiveDataLoader:
                 klines_payload = self._fetch("binance", "prices", self.binance.klines_url(binance_symbol))
             except RuntimeError as error:
                 if _is_binance_restricted_location(error):
+                    coingecko_klines = self._coingecko_market_chart_klines(symbol)
+                    missing_data = ["binance_restricted_location", "binance_flow_unavailable"]
+                    if coingecko_klines:
+                        missing_data.append("coingecko_price_history_fallback")
+                    else:
+                        missing_data.append("price_history_unavailable")
                     return crypto_snapshot_from_payloads(
                         symbol=symbol,
                         theme=THEMES.get(symbol, "crypto"),
-                        klines_payload=[],
+                        klines_payload=coingecko_klines,
                         market_payload=market_payload,
                         funding_payload=[],
                         open_interest_payload={},
                         taker_payload=[],
                         coinbase_payload={},
                         liquidation_payload=[],
-                        missing_data=[
-                            "binance_restricted_location",
-                            "price_history_unavailable",
-                        ],
-                        data_source="binance_unavailable",
+                        missing_data=missing_data,
+                        data_source="coingecko_fallback",
                         data_timestamp=_now_iso(),
                         cache_age_seconds=0,
                     )
@@ -359,6 +362,16 @@ class LiveDataLoader:
         if isinstance(markets, list) and markets:
             return markets[0]
         return {}
+
+    def _coingecko_market_chart_klines(self, symbol: str) -> list[list[Any]]:
+        coin_id = CRYPTO_IDS.get(symbol, symbol.lower())
+        payload = self._fetch_optional(
+            "coingecko",
+            "prices",
+            self.coingecko.market_chart_url(coin_id),
+            default={},
+        )
+        return _coingecko_market_chart_to_klines(payload)
 
     def _hyperliquid_klines(self, symbol: str) -> list[list[Any]]:
         end_time_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
@@ -554,6 +567,35 @@ def _has_price_history(payload: Any) -> bool:
         historical = payload.get("historical")
         return isinstance(historical, list) and bool(historical)
     return False
+
+
+def _coingecko_market_chart_to_klines(payload: Any) -> list[list[Any]]:
+    if not isinstance(payload, dict):
+        return []
+    prices = payload.get("prices")
+    if not isinstance(prices, list):
+        return []
+    volume_by_time: dict[int, float] = {}
+    total_volumes = payload.get("total_volumes")
+    if isinstance(total_volumes, list):
+        for row in total_volumes:
+            if isinstance(row, list) and len(row) >= 2:
+                try:
+                    volume_by_time[int(row[0])] = float(row[1])
+                except (TypeError, ValueError):
+                    continue
+    klines: list[list[Any]] = []
+    for row in prices:
+        if not isinstance(row, list) or len(row) < 2:
+            continue
+        try:
+            timestamp_ms = int(row[0])
+            close = float(row[1])
+        except (TypeError, ValueError):
+            continue
+        volume = volume_by_time.get(timestamp_ms, 0.0)
+        klines.append([timestamp_ms, close, close, close, close, volume])
+    return sorted(klines, key=lambda item: int(item[0]))
 
 
 def _is_fmp_price_unavailable(error: RuntimeError) -> bool:

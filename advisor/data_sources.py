@@ -106,6 +106,14 @@ class CoinGeckoSource:
         }
         return f"{self.base_url}/coins/markets?{urlencode(params)}"
 
+    def market_chart_url(self, coin_id: str, vs_currency: str = "usd", days: int = 220, interval: str = "daily") -> str:
+        params = {
+            "vs_currency": vs_currency,
+            "days": str(days),
+            "interval": interval,
+        }
+        return f"{self.base_url}/coins/{coin_id}/market_chart?{urlencode(params)}"
+
 
 class HyperliquidSource:
     def info_url(self) -> str:

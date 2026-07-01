@@ -401,14 +401,30 @@ class LiveLoaderTests(unittest.TestCase):
         ):
             loader.load_snapshots()
 
-    def test_live_loader_blocks_binance_restricted_location_crypto_without_aborting_scan(self):
+    def test_live_loader_uses_coingecko_history_when_binance_is_restricted(self):
+        calls = []
+
         def fake_fetch(url, *, payload=None, headers=None):
+            calls.append(url)
             if "coins/markets" in url:
                 return [{"id": "bitcoin", "market_cap": 1_500_000_000_000, "total_volume": 45_000_000_000}]
             if "/klines" in url:
                 raise RuntimeError(
                     "http_error:451:Service unavailable from a restricted location"
                 )
+            if "market_chart" in url:
+                return {
+                    "prices": [
+                        [1767225600000, 100.0],
+                        [1767312000000, 104.0],
+                        [1767398400000, 107.0],
+                    ],
+                    "total_volumes": [
+                        [1767225600000, 1000.0],
+                        [1767312000000, 1200.0],
+                        [1767398400000, 1400.0],
+                    ],
+                }
             return {}
 
         config = AdvisorConfig.default()
@@ -422,9 +438,12 @@ class LiveLoaderTests(unittest.TestCase):
 
         self.assertEqual(len(snapshots), 1)
         self.assertEqual(snapshots[0].symbol, "BTC")
-        self.assertEqual(snapshots[0].candles, [])
+        self.assertEqual([candle.close for candle in snapshots[0].candles], [100.0, 104.0, 107.0])
         self.assertIn("binance_restricted_location", snapshots[0].missing_data)
-        self.assertIn("price_history_unavailable", snapshots[0].missing_data)
+        self.assertIn("binance_flow_unavailable", snapshots[0].missing_data)
+        self.assertIn("coingecko_price_history_fallback", snapshots[0].missing_data)
+        self.assertNotIn("price_history_unavailable", snapshots[0].missing_data)
+        self.assertTrue(any("market_chart" in url for url in calls))
 
     def test_live_loader_degrades_optional_liquidation_provider_error_payload(self):
         def fake_fetch(url, *, payload=None, headers=None):

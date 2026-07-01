@@ -19,6 +19,9 @@ class AssetReview:
     events_news: str
     risks: str
     path_to_operation: str
+    basic_data_status: str = ""
+    flow_data_status: str = ""
+    binance_status: str = ""
 
 
 def generate_analyst_final_review(
@@ -35,7 +38,10 @@ def generate_analyst_final_review(
     equities = [asset for asset in assets if asset.asset_type == "stock"]
     cryptos = [asset for asset in assets if asset.asset_type == "crypto"]
     watch_assets = [
-        asset for asset in assets if asset.decision in {"watch_only", "watch_pending_checks", "research_only", "crypto_research_only", "watch_pending_flow_confirmation"}
+        asset
+        for asset in assets
+        if asset.decision
+        in {"watch_only", "watch_pending_checks", "research_only", "crypto_research_only", "crypto_watch_context", "watch_pending_flow_confirmation"}
     ]
     rejected_or_blocked = [asset for asset in assets if asset.decision in {"rejected", "blocked"}]
     final_decision = "no_trade" if main_not_decision_grade else ("watch_only" if watch_assets else "wait")
@@ -185,18 +191,12 @@ def _classify_asset(block: str) -> AssetReview | None:
     metrics = _field(block, "Metricas principais")
     lower_block = block.lower()
 
-    critical_missing_price = any(
-        token in lower_block
-        for token in (
-            "price_history_unavailable",
-            "price history: n/a",
-            "insufficient_price_history",
-            "provider blocked",
-            "data_mode: `blocked`",
-        )
-    )
-    provider_blocked = "binance_restricted_location" in lower_block or data_quality == "blocked"
-    if severity == "critical" or critical_missing_price or provider_blocked:
+    crypto_basic_status = _crypto_basic_data_status(block)
+    crypto_flow_status = _crypto_flow_data_status(lower_block)
+    binance_status = _binance_status(lower_block)
+    critical_missing_price = _critical_price_missing(lower_block)
+    provider_blocked = data_quality == "blocked" or "provider blocked" in lower_block
+    if asset_type != "crypto" and (severity == "critical" or critical_missing_price or provider_blocked):
         return _asset_review(
             ticker,
             asset_type,
@@ -241,22 +241,62 @@ def _classify_asset(block: str) -> AssetReview | None:
         return _asset_review(ticker, asset_type, "watch_only", "Observacao sem entrada.", "Dados minimos presentes.", "Sem aprovacao operacional.", block)
 
     if asset_type == "crypto":
-        if _crypto_flow_missing(lower_block):
+        if crypto_basic_status == "not_verified":
             return _asset_review(
                 ticker,
                 asset_type,
-                "crypto_research_only",
+                "blocked",
+                "Dado basico de cripto ausente impede conclusao minima.",
+                "Nenhum sinal pode ser usado operacionalmente sem preco/liquidez basicos.",
+                "provider/preco minimo indisponivel.",
+                block,
+                basic_data_status=crypto_basic_status,
+                flow_data_status=crypto_flow_status,
+                binance_status=binance_status,
+            )
+        if _crypto_flow_missing(lower_block):
+            decision = "crypto_watch_context" if ticker in {"BTC", "ETH", "SOL"} else "crypto_research_only"
+            return _asset_review(
+                ticker,
+                asset_type,
+                decision,
                 "Setup/ativo pode ser acompanhado, mas flow/news not_verified impedem trade.",
                 "Preco/liquidez/setup basico parecem existir no pacote.",
-                "flow/news not_verified; CVD/OI/liquidations/premium ausentes.",
+                "flow/derivatives nao verificados; CVD/OI/liquidations/premium ausentes.",
                 block,
+                basic_data_status=crypto_basic_status,
+                flow_data_status=crypto_flow_status,
+                binance_status=binance_status,
             )
-        return _asset_review(ticker, asset_type, "watch_pending_flow_confirmation", "Observar cripto ate confirmacao de fluxo.", "Dados basicos presentes.", "Fluxo precisa confirmar.", block)
+        return _asset_review(
+            ticker,
+            asset_type,
+            "watch_pending_flow_confirmation",
+            "Observar cripto ate confirmacao de fluxo.",
+            "Dados basicos presentes.",
+            "Fluxo precisa confirmar.",
+            block,
+            basic_data_status=crypto_basic_status,
+            flow_data_status=crypto_flow_status,
+            binance_status=binance_status,
+        )
 
     return None
 
 
-def _asset_review(ticker: str, asset_type: str, decision: str, thesis: str, confirms: str, contradicts: str, block: str) -> AssetReview:
+def _asset_review(
+    ticker: str,
+    asset_type: str,
+    decision: str,
+    thesis: str,
+    confirms: str,
+    contradicts: str,
+    block: str,
+    *,
+    basic_data_status: str = "",
+    flow_data_status: str = "",
+    binance_status: str = "",
+) -> AssetReview:
     return AssetReview(
         ticker=ticker,
         asset_type=asset_type,
@@ -268,6 +308,9 @@ def _asset_review(ticker: str, asset_type: str, decision: str, thesis: str, conf
         events_news=_events_line(block),
         risks=_risks_line(block),
         path_to_operation=_path_to_operation(decision, asset_type),
+        basic_data_status=basic_data_status,
+        flow_data_status=flow_data_status,
+        binance_status=binance_status,
     )
 
 
@@ -279,6 +322,58 @@ def _has_positive_equity_signals(block: str, metrics: str, investment_score: flo
 
 def _crypto_flow_missing(lower_block: str) -> bool:
     return any(token in lower_block for token in ("cvd_proxy_unavailable", "open_interest_change_unavailable", "liquidations_unavailable", "coinbase_premium_unavailable", "news_not_collected", "news_status: `not_verified`"))
+
+
+def _critical_price_missing(lower_block: str) -> bool:
+    return any(
+        token in lower_block
+        for token in (
+            "price_history_unavailable",
+            "price history: n/a",
+            "insufficient_price_history",
+            "data_mode: `blocked`",
+        )
+    )
+
+
+def _crypto_basic_data_status(block: str) -> str:
+    lower_block = block.lower()
+    if "data_mode: `blocked`" in lower_block or "price history: n/a" in lower_block:
+        return "not_verified"
+    metrics = _field(block, "Metricas principais").lower()
+    provider = (_field(block, "provider") or _field(block, "Data source")).lower()
+    data_source = _field(block, "Data source").lower()
+    has_basic_provider = any(source in provider for source in ("coingecko", "coinbase", "hyperliquid", "fallback"))
+    has_price_or_liquidity = any(token in metrics for token in ("last price:", "market cap:", "average volume:", "daily change:", "rsi:"))
+    has_missing_price = "price_history_unavailable" in lower_block or "insufficient_price_history" in lower_block
+    if not (has_price_or_liquidity and (has_basic_provider or not has_missing_price)):
+        return "not_verified"
+    if "fallback" in lower_block or data_source in {"alphavantage", "yahoo", "stooq"}:
+        return "fallback"
+    if "is_stale: `yes`" in lower_block or ("stale_reason:" in lower_block and "not_stale" not in lower_block):
+        return "cache"
+    if "cache age:" in lower_block and "cache age: unknown" not in lower_block and "cache age: 0s" not in lower_block:
+        return "cache"
+    return "live"
+
+
+def _crypto_flow_data_status(lower_block: str) -> str:
+    if _crypto_flow_missing(lower_block):
+        return "not_verified"
+    flow_tokens = ("funding rate", "open interest", "open interest change", "liquidation", "cvd", "premium")
+    if all(token in lower_block for token in ("open interest", "cvd", "premium")) and "n/a" not in lower_block:
+        return "live"
+    if any(token in lower_block for token in flow_tokens):
+        return "partial"
+    return "unavailable"
+
+
+def _binance_status(lower_block: str) -> str:
+    if "binance_restricted_location" in lower_block or "http_error:451" in lower_block:
+        return "restricted"
+    if "binance" in lower_block:
+        return "ok"
+    return "not_used"
 
 
 def _valuation_line(block: str) -> str:
@@ -319,6 +414,7 @@ def _asset_lines(assets: list[AssetReview]) -> list[str]:
                 f"### {asset.ticker}",
                 "",
                 f"* ticker: {asset.ticker}",
+                f"* decision: {asset.decision}",
                 f"* decisao final: {asset.decision}",
                 f"* tese: {asset.thesis}",
                 f"* o que confirma: {asset.confirms}",
@@ -330,17 +426,40 @@ def _asset_lines(assets: list[AssetReview]) -> list[str]:
                 "",
             ]
         )
+        if asset.asset_type == "crypto":
+            insert_at = len(lines) - 7
+            lines[insert_at:insert_at] = [
+                f"* basic_data_status: {asset.basic_data_status}",
+                f"* flow_data_status: {asset.flow_data_status}",
+                f"* binance_status: {asset.binance_status}",
+            ]
     return lines
 
 
 def _telegram_summary(final_decision: str, watch_assets: list[AssetReview], main_not_decision_grade: bool) -> str:
     candidates = "; ".join(f"{asset.ticker} em {asset.decision}" for asset in watch_assets) if watch_assets else "nenhum"
     reason = "main nao decision-grade e dados de news/earnings/flow ainda nao verificados" if main_not_decision_grade else "checks pendentes ainda nao liberam entrada"
+    crypto_context = _telegram_crypto_context(watch_assets)
+    crypto_sentence = f" {crypto_context}" if crypto_context else ""
     return (
         f"Decisao operacional: {final_decision}. Nenhum ativo aprovado para entrada. "
-        f"Para observar amanha: {candidates}. Motivo: {reason}. "
+        f"Para observar amanha: {candidates}.{crypto_sentence} Motivo: {reason}. "
         "Sem broker, sem ordem automatica, sem compra automatica."
     )
+
+
+def _telegram_crypto_context(watch_assets: list[AssetReview]) -> str:
+    tickers = [
+        asset.ticker
+        for asset in watch_assets
+        if asset.asset_type == "crypto" and asset.decision in {"crypto_watch_context", "crypto_research_only"} and asset.basic_data_status != "not_verified" and asset.flow_data_status in {"not_verified", "unavailable"}
+    ]
+    majors = [ticker for ticker in ("BTC", "ETH", "SOL") if ticker in tickers]
+    if majors:
+        return f"Cripto: {'/'.join(majors)} apenas contexto/research; flow/derivatives nao verificados."
+    if tickers:
+        return f"Cripto: {','.join(tickers)} apenas research; flow/derivatives nao verificados."
+    return ""
 
 
 def _watch_summary(assets: list[AssetReview]) -> str:
