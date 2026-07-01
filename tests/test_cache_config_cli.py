@@ -681,6 +681,60 @@ class CacheConfigCliTests(unittest.TestCase):
             self.assertEqual(used_config.stock_watchlist, ["MSFT"])
             self.assertIn("- close_universe_source: `main_baseline`", report_text)
 
+    def test_report_close_from_main_uses_full_coverage_universe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "reports"
+            db_path = Path(tmp) / "advisor.db"
+            SQLiteCache(db_path).save_latest_report(
+                "\n".join(
+                    [
+                        "# Investment and Swing Trade Advisor",
+                        "- report_type: `main`",
+                        "- Data mode: `live`",
+                        "## Coverage universe",
+                        "",
+                        "| Ticker | Type | Last price | Daily change | Trend | Bucket | Data status | Reason |",
+                        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+                        "| INTC | stock | 10.00 | 1.00% | flat | wait | live | wait |",
+                        "| AMD | stock | 100.00 | 1.00% | up | watchlist | live | watch_buy |",
+                        "| NVDA | stock | 200.00 | 1.00% | up | research_queue | live | technical_unvalidated |",
+                        "| BTC | crypto | 60000.00 | 1.00% | flat | wait | live | wait |",
+                        "| ETH | crypto | 3000.00 | 1.00% | flat | wait | live | wait |",
+                        "| SOL | crypto | 150.00 | 1.00% | flat | wait | live | wait |",
+                        "| HYPE | crypto | 40.00 | 1.00% | flat | wait | live | wait |",
+                        "",
+                    ]
+                ),
+                "<html></html>",
+            )
+            config = AdvisorConfig.default()
+            config.fmp_api_key = "test_fmp"
+            config.coingecko_api_key = "test_coingecko"
+
+            with (
+                patch("advisor.cli.AdvisorConfig.default", return_value=config),
+                patch("advisor.cli.LiveDataLoader") as loader_class,
+            ):
+                loader_class.return_value.load_snapshots.return_value = []
+                loader_class.return_value.load_benchmarks.return_value = {}
+                exit_code = advisor_main(
+                    [
+                        "report",
+                        "close",
+                        "--from-main",
+                        "--require-live",
+                        "--db",
+                        str(db_path),
+                        "--output-dir",
+                        str(output_dir),
+                    ]
+                )
+
+            used_config = loader_class.call_args.args[0]
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(used_config.stock_watchlist, ["INTC", "AMD", "NVDA"])
+            self.assertEqual(used_config.crypto_watchlist, ["BTC", "ETH", "SOL", "HYPE"])
+
     def test_report_close_fmp_429_marks_rate_limited_and_no_trade(self):
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp) / "reports"

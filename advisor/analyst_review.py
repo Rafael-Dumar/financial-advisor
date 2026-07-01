@@ -116,7 +116,7 @@ def generate_analyst_final_review(
             "",
             "## Telegram summary",
             "",
-            _telegram_summary(final_decision, watch_assets, main_not_decision_grade),
+            _telegram_summary(final_decision, assets, main_not_decision_grade),
         ]
     )
     return "\n".join(lines).strip() + "\n"
@@ -436,16 +436,38 @@ def _asset_lines(assets: list[AssetReview]) -> list[str]:
     return lines
 
 
-def _telegram_summary(final_decision: str, watch_assets: list[AssetReview], main_not_decision_grade: bool) -> str:
+def _telegram_summary(final_decision: str, assets: list[AssetReview], main_not_decision_grade: bool) -> str:
+    watch_assets = [
+        asset
+        for asset in assets
+        if asset.decision in {"watch_only", "watch_pending_checks", "research_only", "crypto_research_only", "crypto_watch_context", "watch_pending_flow_confirmation"}
+    ]
     candidates = "; ".join(f"{asset.ticker} em {asset.decision}" for asset in watch_assets) if watch_assets else "nenhum"
     reason = "main nao decision-grade e dados de news/earnings/flow ainda nao verificados" if main_not_decision_grade else "checks pendentes ainda nao liberam entrada"
+    universe_context = _telegram_universe_context(assets)
     crypto_context = _telegram_crypto_context(watch_assets)
+    universe_sentence = f" {universe_context}" if universe_context else ""
     crypto_sentence = f" {crypto_context}" if crypto_context else ""
     return (
         f"Decisao operacional: {final_decision}. Nenhum ativo aprovado para entrada. "
-        f"Para observar amanha: {candidates}.{crypto_sentence} Motivo: {reason}. "
+        f"Para observar amanha: {candidates}.{universe_sentence}{crypto_sentence} Motivo: {reason}. "
         "Sem broker, sem ordem automatica, sem compra automatica."
     )
+
+
+def _telegram_universe_context(assets: list[AssetReview]) -> str:
+    stocks = [asset for asset in assets if asset.asset_type == "stock"]
+    cryptos = [asset for asset in assets if asset.asset_type == "crypto"]
+    parts = []
+    if stocks:
+        parts.append(f"Acoes: {_telegram_asset_statuses(stocks)}.")
+    if cryptos:
+        parts.append(f"Cripto: {_telegram_asset_statuses(cryptos)}.")
+    return " ".join(parts)
+
+
+def _telegram_asset_statuses(assets: list[AssetReview]) -> str:
+    return "; ".join(f"{asset.ticker}={asset.decision}" for asset in assets)
 
 
 def _telegram_crypto_context(watch_assets: list[AssetReview]) -> str:

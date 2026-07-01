@@ -35,6 +35,9 @@ class GitHubActionsWorkflowTests(unittest.TestCase):
         self.assertIn("python -m advisor report close --from-main --require-live --output-dir reports", content)
         self.assertIn("ADVISOR_STOCK_WATCHLIST: INTC,AMD,NVDA,HIMS,MU,MSFT,USAR,CRDO,DELL,MRVL,HOOD", content)
         self.assertIn("ADVISOR_CRYPTO_WATCHLIST: SOL,HYPE,BTC,ETH", content)
+        self.assertIn("ADVISOR_MAX_STOCKS_PER_RUN: 11", content)
+        self.assertIn("ADVISOR_FMP_CALL_BUDGET_PER_RUN: 90", content)
+        self.assertNotIn("ADVISOR_MAX_STOCKS_PER_RUN: 2", content)
 
     def test_scheduled_report_type_selection_is_explicit(self) -> None:
         workflow_path = PROJECT_ROOT / ".github" / "workflows" / "financial-advisor-reports.yml"

@@ -166,6 +166,146 @@ CRYPTO_BASIC_WITH_BINANCE_RESTRICTED = """# Nightly qualitative review input
 """
 
 
+FULL_UNIVERSE_INPUT = """# Nightly qualitative review input
+
+## Main summary
+
+- report_type: `main`
+- Data mode: `live`
+- report_grade: `diagnostic_not_decision_grade`
+- market_session: `regular,unknown`
+- WARNING: blocked_or_diagnostic
+
+## INTC
+- Ativo: `INTC`
+- Tipo: `stock`
+- decision_label: `avoid`
+- Decisao: `avoid`
+- expected_value_r: -0.10
+- Metricas principais: RSI: 40.00; PE: -10.00
+
+## AMD
+- Ativo: `AMD`
+- Tipo: `stock`
+- decision_label: `technical_unvalidated`
+- Decisao: `technical_unvalidated`
+- Investment Quality Score: 70
+- Metricas principais: RSI: 55.00; EMA 9: 10.00; EMA 21: 9.00; Average volume: 1000000.00; Revenue growth: 20.00%; EPS growth: 30.00%
+- news_status: `not_verified`
+
+## NVDA
+- Ativo: `NVDA`
+- Tipo: `stock`
+- decision_label: `wait`
+- Decisao: `wait`
+- Metricas principais: RSI: 60.00; PE: 50.00
+
+## HIMS
+- Ativo: `HIMS`
+- Tipo: `stock`
+- decision_label: `wait`
+- Decisao: `wait`
+- Metricas principais: RSI: 48.00; PE: 80.00
+
+## MU
+- Ativo: `MU`
+- Tipo: `stock`
+- decision_label: `wait`
+- Decisao: `wait`
+- Metricas principais: RSI: 50.00; PE: 25.00
+
+## MSFT
+- Ativo: `MSFT`
+- Tipo: `stock`
+- decision_label: `wait`
+- Decisao: `wait`
+- Metricas principais: RSI: 53.00; PE: 35.00
+
+## USAR
+- Ativo: `USAR`
+- Tipo: `stock`
+- decision_label: `wait`
+- Decisao: `wait`
+- Metricas principais: RSI: 51.00; PE: 30.00
+
+## CRDO
+- Ativo: `CRDO`
+- Tipo: `stock`
+- decision_label: `wait`
+- Decisao: `wait`
+- Metricas principais: RSI: 52.00; PE: 45.00
+
+## DELL
+- Ativo: `DELL`
+- Tipo: `stock`
+- decision_label: `wait`
+- Decisao: `wait`
+- Metricas principais: RSI: 49.00; PE: 20.00
+
+## MRVL
+- Ativo: `MRVL`
+- Tipo: `stock`
+- decision_label: `wait`
+- Decisao: `wait`
+- Metricas principais: RSI: 47.00; PE: 40.00
+
+## HOOD
+- Ativo: `HOOD`
+- Tipo: `stock`
+- decision_label: `wait`
+- Decisao: `wait`
+- Metricas principais: RSI: 54.00; PE: 60.00
+
+## BTC
+- Ativo: `BTC`
+- Tipo: `crypto`
+- decision_label: `blocked`
+- Decisao: `blocked`
+- reason_codes: cvd_proxy_unavailable, liquidations_unavailable, open_interest_change_unavailable, coinbase_premium_unavailable, news_not_collected_confidence_limited
+- data_quality: `limited`
+- missing_data_severity: `high`
+- Metricas principais: Last price: 61500.00; Market cap: 1200000000000.00; Average volume: 35000000000.00; Daily change: 1.20%; Open interest change: n/a; CVD proxy: n/a; Coinbase premium: n/a; Liquidation imbalance: n/a
+- news_status: `not_verified`
+- provider: `coingecko`
+
+## ETH
+- Ativo: `ETH`
+- Tipo: `crypto`
+- decision_label: `blocked`
+- Decisao: `blocked`
+- reason_codes: cvd_proxy_unavailable, liquidations_unavailable, open_interest_change_unavailable, coinbase_premium_unavailable, news_not_collected_confidence_limited
+- data_quality: `limited`
+- missing_data_severity: `high`
+- Metricas principais: Last price: 3400.00; Market cap: 410000000000.00; Average volume: 18000000000.00; Daily change: 0.80%; Open interest change: n/a; CVD proxy: n/a; Coinbase premium: n/a; Liquidation imbalance: n/a
+- news_status: `not_verified`
+- provider: `coingecko`
+
+## SOL
+- Ativo: `SOL`
+- Tipo: `crypto`
+- decision_label: `blocked`
+- Decisao: `blocked`
+- reason_codes: cvd_proxy_unavailable, liquidations_unavailable, open_interest_change_unavailable, coinbase_premium_unavailable, news_not_collected_confidence_limited
+- data_quality: `limited`
+- missing_data_severity: `high`
+- Metricas principais: Last price: 142.00; Market cap: 65000000000.00; Average volume: 3000000000.00; Daily change: 2.10%; Open interest change: n/a; CVD proxy: n/a; Coinbase premium: n/a; Liquidation imbalance: n/a
+- news_status: `not_verified`
+- provider: `coingecko`
+
+## HYPE
+- Ativo: `HYPE`
+- Tipo: `crypto`
+- decision_label: `technical_unvalidated`
+- Decisao: `technical_unvalidated`
+- reason_codes: cvd_proxy_unavailable, liquidations_unavailable, open_interest_change_unavailable, coinbase_premium_unavailable, news_not_collected_confidence_limited
+- data_quality: `limited`
+- missing_data_severity: `high`
+- Metricas principais: Last price: 40.00; Market cap: 13795509248.00; Average volume: 809812260.00; Daily change: 0.50%; Open interest change: n/a; CVD proxy: n/a; Coinbase premium: n/a; Liquidation imbalance: n/a
+- news_status: `not_verified`
+- provider: `hyperliquid`
+"""
+
+
 class AnalystReviewSemanticsTests(unittest.TestCase):
     def test_main_diagnostic_keeps_no_trade_but_allows_watch_pending_checks(self) -> None:
         review = generate_analyst_final_review(NIGHTLY_INPUT)
@@ -314,6 +454,16 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
         review = generate_analyst_final_review(flow_input)
 
         self.assertIn("flow_data_status: live", review)
+
+    def test_telegram_summary_lists_every_named_stock_and_crypto(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+        telegram = review.split("## Telegram summary", 1)[1]
+
+        for ticker in ("INTC", "AMD", "NVDA", "HIMS", "MU", "MSFT", "USAR", "CRDO", "DELL", "MRVL", "HOOD", "BTC", "ETH", "SOL", "HYPE"):
+            self.assertIn(ticker, telegram)
+        self.assertIn("Acoes:", telegram)
+        self.assertIn("Cripto:", telegram)
+        self.assertIn("no_trade", telegram)
 
 
 if __name__ == "__main__":

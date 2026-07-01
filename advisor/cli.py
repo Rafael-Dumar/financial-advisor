@@ -469,6 +469,7 @@ def _main_baseline_is_blocked(markdown: str) -> bool:
 
 def _symbols_from_main_baseline(markdown: str) -> list[str]:
     wanted_sections = {
+        "Coverage universe",
         "Tradeable hoje",
         "Watchlist aprovada",
         "Watchlist apenas",
@@ -485,12 +486,30 @@ def _symbols_from_main_baseline(markdown: str) -> list[str]:
             continue
         if not active:
             continue
+        table_symbol = _symbol_from_coverage_row(line)
+        if table_symbol and table_symbol not in symbols:
+            symbols.append(table_symbol)
+            continue
         match = re.match(r"- `([A-Z0-9.-]+)`", line)
         if match:
             symbol = match.group(1).upper()
             if symbol not in symbols:
                 symbols.append(symbol)
     return symbols
+
+
+def _symbol_from_coverage_row(line: str) -> str | None:
+    if not line.startswith("|"):
+        return None
+    columns = [column.strip() for column in line.strip("|").split("|")]
+    if len(columns) < 2:
+        return None
+    symbol = columns[0].upper()
+    if symbol in {"", "TICKER", "---"} or set(symbol) == {"-"}:
+        return None
+    if not re.fullmatch(r"[A-Z0-9.-]{1,12}", symbol):
+        return None
+    return symbol
 
 
 def _apply_close_universe_to_config(config: AdvisorConfig, symbols: list[str]) -> None:
