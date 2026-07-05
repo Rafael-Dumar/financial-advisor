@@ -107,12 +107,15 @@ class CacheConfigCliTests(unittest.TestCase):
 
     def test_estimated_live_call_budget_includes_discovery(self):
         config = AdvisorConfig.default()
+        config.alphavantage_api_key = "alpha"
         base_calls = config.estimated_live_calls(include_discovery=False)
         discovery_calls = config.estimated_live_calls(include_discovery=True)
 
         self.assertEqual(base_calls["fmp"], (len(config.stock_watchlist) * 7) + 2)
+        self.assertEqual(base_calls["alphavantage"], 1)
         self.assertEqual(base_calls["hyperliquid"], 2)
         self.assertEqual(base_calls["binance"], 16)
+        self.assertEqual(discovery_calls["alphavantage"], 1)
         self.assertEqual(discovery_calls["binance"], 36)
         self.assertGreater(discovery_calls["fmp"], base_calls["fmp"])
         self.assertLessEqual(discovery_calls["fmp"], config.api_limits["fmp"])

@@ -147,12 +147,14 @@ class AdvisorConfig:
     def estimated_live_calls(self, *, include_discovery: bool) -> dict[str, int]:
         stocks, cryptos = self.symbols_for_scan(include_discovery=include_discovery)
         non_hype_crypto_count = len([symbol for symbol in cryptos if symbol != "HYPE"])
+        has_news_universe = bool(stocks or cryptos)
         return {
             "fmp": (len(stocks) * 7) + 2,
             "coingecko": len(cryptos),
             "binance": (non_hype_crypto_count * 5) + (1 if non_hype_crypto_count else 0),
             "hyperliquid": 2 if "HYPE" in cryptos else 0,
             "coinbase": non_hype_crypto_count if self.coinbase_api_key else 0,
+            "alphavantage": 1 if self.alphavantage_api_key and has_news_universe else 0,
             "yahoo": 0,
         }
 

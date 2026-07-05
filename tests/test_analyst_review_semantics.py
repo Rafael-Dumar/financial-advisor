@@ -465,6 +465,24 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
         self.assertIn("Cripto:", telegram)
         self.assertIn("no_trade", telegram)
 
+    def test_telegram_summary_explains_ranking_instead_of_only_listing_labels(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+        telegram = review.split("## Telegram summary", 1)[1]
+
+        self.assertIn("Por que nao operar:", telegram)
+        self.assertIn("Melhores sinais:", telegram)
+        self.assertIn("Evitar/rejeitados:", telegram)
+        self.assertIn("Checklist de liberacao:", telegram)
+
+    def test_final_review_starts_with_objective_reading(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+
+        self.assertIn("## Leitura objetiva", review)
+        objective = review.split("## Leitura objetiva", 1)[1].split("## Resumo do dia", 1)[0]
+        self.assertIn("Melhores sinais:", objective)
+        self.assertIn("Evitar/rejeitados:", objective)
+        self.assertIn("Proximo passo pratico:", objective)
+
 
 if __name__ == "__main__":
     unittest.main()

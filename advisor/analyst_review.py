@@ -63,6 +63,10 @@ def generate_analyst_final_review(
         "",
         "Decisao operacional conservadora. Nenhum ativo aprovado como tradeable. Sem broker; sem ordem automatica; sem compra automatica.",
         "",
+        "## Leitura objetiva",
+        "",
+        *_objective_reading_lines(final_decision, assets, watch_assets, main_not_decision_grade),
+        "",
         "## Resumo do dia",
         "",
         f"* Decisao operacional: {final_decision}.",
@@ -120,6 +124,22 @@ def generate_analyst_final_review(
         ]
     )
     return "\n".join(lines).strip() + "\n"
+
+
+def _objective_reading_lines(
+    final_decision: str,
+    assets: list[AssetReview],
+    watch_assets: list[AssetReview],
+    main_not_decision_grade: bool,
+) -> list[str]:
+    reason = "main nao decision-grade e dados de news/earnings/flow ainda nao verificados" if main_not_decision_grade else "checks pendentes ainda nao liberam entrada"
+    return [
+        f"* Decisao pratica: {final_decision}. Nao ha entrada aprovada.",
+        f"* Por que nao operar: {reason}.",
+        f"* Melhores sinais: {_telegram_candidate_summary(watch_assets)}.",
+        f"* Evitar/rejeitados: {_telegram_rejected_summary(assets)}.",
+        f"* Proximo passo pratico: esperar main decision-grade, validar noticias/eventos e liberar fluxo cripto antes de transformar watch/research em operacao manual.",
+    ]
 
 
 def generate_from_file(input_path: Path, output_path: Path, history_path: Path | None = None) -> None:
@@ -442,17 +462,56 @@ def _telegram_summary(final_decision: str, assets: list[AssetReview], main_not_d
         for asset in assets
         if asset.decision in {"watch_only", "watch_pending_checks", "research_only", "crypto_research_only", "crypto_watch_context", "watch_pending_flow_confirmation"}
     ]
-    candidates = "; ".join(f"{asset.ticker} em {asset.decision}" for asset in watch_assets) if watch_assets else "nenhum"
     reason = "main nao decision-grade e dados de news/earnings/flow ainda nao verificados" if main_not_decision_grade else "checks pendentes ainda nao liberam entrada"
     universe_context = _telegram_universe_context(assets)
     crypto_context = _telegram_crypto_context(watch_assets)
-    universe_sentence = f" {universe_context}" if universe_context else ""
-    crypto_sentence = f" {crypto_context}" if crypto_context else ""
-    return (
-        f"Decisao operacional: {final_decision}. Nenhum ativo aprovado para entrada. "
-        f"Para observar amanha: {candidates}.{universe_sentence}{crypto_sentence} Motivo: {reason}. "
-        "Sem broker, sem ordem automatica, sem compra automatica."
+    lines = [
+        f"Decisao operacional: {final_decision}. Nenhum ativo aprovado para entrada.",
+        f"Por que nao operar: {reason}.",
+        f"Melhores sinais: {_telegram_candidate_summary(watch_assets)}.",
+        f"Evitar/rejeitados: {_telegram_rejected_summary(assets)}.",
+        f"Cripto: {_telegram_crypto_decision_summary([asset for asset in assets if asset.asset_type == 'crypto'])}.",
+    ]
+    if crypto_context:
+        lines.append(crypto_context)
+    if universe_context:
+        lines.append(f"Status completo: {universe_context}")
+    lines.extend(
+        [
+            "Checklist de liberacao: main decision-grade; news/earnings verificados; flow crypto verificado; stop/invalidation definido; sizing sem alavancagem se confidence low.",
+            "Sem broker, sem ordem automatica, sem compra automatica.",
+        ]
     )
+    return "\n".join(lines)
+
+
+def _telegram_candidate_summary(assets: list[AssetReview]) -> str:
+    if not assets:
+        return "nenhum"
+    return "; ".join(f"{asset.ticker} em {asset.decision}" for asset in assets[:10])
+
+
+def _telegram_rejected_summary(assets: list[AssetReview]) -> str:
+    rejected = [asset for asset in assets if asset.decision in {"rejected", "blocked"}]
+    if not rejected:
+        return "nenhum"
+    return "; ".join(f"{asset.ticker}={asset.decision}" for asset in rejected[:12])
+
+
+def _telegram_crypto_decision_summary(assets: list[AssetReview]) -> str:
+    if not assets:
+        return "nenhum"
+    context = [asset.ticker for asset in assets if asset.decision == "crypto_watch_context"]
+    research = [asset.ticker for asset in assets if asset.decision == "crypto_research_only"]
+    blocked = [asset.ticker for asset in assets if asset.decision == "blocked"]
+    pieces = []
+    if context:
+        pieces.append(f"contexto/research {','.join(context)}")
+    if research:
+        pieces.append(f"research_only {','.join(research)}")
+    if blocked:
+        pieces.append(f"blocked {','.join(blocked)}")
+    return "; ".join(pieces) if pieces else _telegram_asset_statuses(assets)
 
 
 def _telegram_universe_context(assets: list[AssetReview]) -> str:
