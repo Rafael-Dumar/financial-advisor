@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 from pathlib import Path
 import re
@@ -16,7 +16,7 @@ from advisor.data_pipeline import (
     hyperliquid_crypto_flow_from_payload,
     stock_snapshot_from_payloads,
 )
-from advisor.data_sources import AlphaVantageSource, BinanceSource, CoinbaseSource, CoinGeckoSource, FmpSource, HyperliquidSource, StooqSource, YahooChartSource
+from advisor.data_sources import AlphaVantageSource, BinanceSource, CoinbaseSource, CoinGeckoSource, FmpSource, HyperliquidSource, SecEdgarSource, StooqSource, YahooChartSource
 from advisor.http_client import fetch_json, fetch_text
 from advisor.models import AssetSnapshot, Candle
 
@@ -60,6 +60,19 @@ THEMES = {
     "ZEC": "crypto",
 }
 
+SEC_CIKS = {
+    "AMD": "0000002488",
+    "CRDO": "0001807794",
+    "DELL": "0001571996",
+    "HIMS": "0001773751",
+    "HOOD": "0001783879",
+    "INTC": "0000050863",
+    "MRVL": "0001835632",
+    "MSFT": "0000789019",
+    "MU": "0000723125",
+    "NVDA": "0001045810",
+}
+
 
 class LiveDataLoader:
     def __init__(
@@ -98,13 +111,15 @@ class LiveDataLoader:
         self.hyperliquid = HyperliquidSource()
         self.stooq = StooqSource()
         self.yahoo = YahooChartSource()
+        self.sec = SecEdgarSource()
 
     def load_snapshots(self, *, include_discovery: bool = False) -> list[AssetSnapshot]:
         snapshots = []
         stock_symbols, crypto_symbols = self.config.symbols_for_scan(include_discovery=include_discovery)
         news_by_symbol = self._news_events_by_symbol([*stock_symbols, *crypto_symbols])
+        sec_by_symbol = self._sec_events_by_symbol(stock_symbols)
         for symbol in stock_symbols:
-            snapshots.append(self.load_stock(symbol, news_events=news_by_symbol.get(symbol, [])))
+            snapshots.append(self.load_stock(symbol, news_events=[*news_by_symbol.get(symbol, []), *sec_by_symbol.get(symbol, [])]))
         for symbol in crypto_symbols:
             snapshots.append(self.load_crypto(symbol, news_events=news_by_symbol.get(symbol, [])))
         return snapshots
@@ -292,7 +307,10 @@ class LiveDataLoader:
             except RuntimeError as error:
                 if _is_binance_restricted_location(error):
                     coingecko_klines = self._coingecko_market_chart_klines(symbol)
+                    flow = self._hyperliquid_flow(symbol)
                     missing_data = ["binance_restricted_location", "binance_flow_unavailable"]
+                    if flow.get("funding_rate") is not None or flow.get("open_interest") is not None:
+                        missing_data.append("hyperliquid_flow_fallback")
                     if coingecko_klines:
                         missing_data.append("coingecko_price_history_fallback")
                     else:
@@ -302,10 +320,18 @@ class LiveDataLoader:
                         theme=THEMES.get(symbol, "crypto"),
                         klines_payload=coingecko_klines,
                         market_payload=market_payload,
-                        funding_payload=[],
-                        open_interest_payload={},
+                        funding_payload=(
+                            [{"fundingRate": flow["funding_rate"]}]
+                            if flow.get("funding_rate") is not None
+                            else []
+                        ),
+                        open_interest_payload=(
+                            {"openInterest": flow["open_interest"]}
+                            if flow.get("open_interest") is not None
+                            else {}
+                        ),
                         taker_payload=[],
-                        coinbase_payload={},
+                        coinbase_payload=self._coinbase_payload(symbol),
                         liquidation_payload=[],
                         missing_data=missing_data,
                         data_source="coingecko_fallback",
@@ -362,6 +388,21 @@ class LiveDataLoader:
         )
         return _news_events_from_alphavantage(payload, symbols)
 
+    def _sec_events_by_symbol(self, symbols: list[str]) -> dict[str, list[dict[str, Any]]]:
+        events: dict[str, list[dict[str, Any]]] = {symbol: [] for symbol in symbols}
+        for symbol in symbols:
+            cik = SEC_CIKS.get(symbol)
+            if not cik:
+                continue
+            payload = self._fetch_optional(
+                "sec",
+                "news",
+                self.sec.submissions_url(cik),
+                default={},
+            )
+            events[symbol] = _sec_events_from_submissions(payload, symbol=symbol, today=self.today)
+        return events
+
     def _binance_funding_info_payload(self) -> Any:
         if not self._binance_funding_info_loaded:
             self._binance_funding_info = self._fetch_optional(
@@ -404,9 +445,17 @@ class LiveDataLoader:
             for row in rows
         ]
 
+    def _hyperliquid_flow(self, symbol: str) -> dict[str, Any]:
+        payload = self._fetch_optional(
+            "hyperliquid",
+            "crypto_flow",
+            self.hyperliquid.info_url(),
+            payload=self.hyperliquid.meta_and_asset_contexts_payload(),
+            default=[],
+        )
+        return hyperliquid_crypto_flow_from_payload(payload, symbol=symbol)
+
     def _coinbase_payload(self, symbol: str) -> dict[str, Any]:
-        if not self.config.coinbase_api_key:
-            return {}
         return self._fetch_optional(
             "coinbase",
             "prices",
@@ -568,6 +617,8 @@ class LiveDataLoader:
     def _headers_for(self, provider: str) -> dict[str, str]:
         if provider == "coingecko" and self.config.coingecko_api_key:
             return {"x-cg-demo-api-key": self.config.coingecko_api_key}
+        if provider == "sec":
+            return {"User-Agent": "financial-advisor-v1 contact@example.com"}
         return {}
 
 
@@ -678,6 +729,60 @@ def _market_effect_from_sentiment(label: str) -> str:
     if "bullish" in label:
         return "risk_on"
     return "neutral"
+
+
+def _sec_events_from_submissions(payload: Any, *, symbol: str, today: str) -> list[dict[str, object]]:
+    recent = payload.get("filings", {}).get("recent", {}) if isinstance(payload, dict) else {}
+    if not isinstance(recent, dict):
+        return []
+    forms = recent.get("form", [])
+    filing_dates = recent.get("filingDate", [])
+    accession_numbers = recent.get("accessionNumber", [])
+    primary_documents = recent.get("primaryDocument", [])
+    if not isinstance(forms, list) or not isinstance(filing_dates, list):
+        return []
+    today_date = _parse_yyyy_mm_dd(today)
+    events = []
+    for index, form in enumerate(forms):
+        form_name = str(form)
+        if form_name not in {"8-K", "10-Q", "10-K", "20-F", "6-K"}:
+            continue
+        filing_date = _list_value(filing_dates, index)
+        filing_day = _parse_yyyy_mm_dd(str(filing_date))
+        if today_date and filing_day and today_date - filing_day > timedelta(days=45):
+            continue
+        accession = str(_list_value(accession_numbers, index) or "")
+        primary_document = str(_list_value(primary_documents, index) or "")
+        events.append(
+            {
+                "news_event_type": f"sec_{form_name.lower().replace('-', '')}",
+                "confirmed_status": "confirmed",
+                "already_priced": "unclear",
+                "market_effect": "neutral",
+                "news_confidence": "medium",
+                "title": f"{symbol} SEC filing {form_name} filed {filing_date}",
+                "source": "sec_edgar",
+                "filing_date": str(filing_date),
+                "accession_number": accession,
+                "primary_document": primary_document,
+            }
+        )
+        if len(events) >= 3:
+            break
+    return events
+
+
+def _list_value(values: Any, index: int) -> Any:
+    if isinstance(values, list) and index < len(values):
+        return values[index]
+    return None
+
+
+def _parse_yyyy_mm_dd(value: str) -> date | None:
+    try:
+        return datetime.fromisoformat(value[:10]).date()
+    except ValueError:
+        return None
 
 
 def _is_fmp_price_unavailable(error: RuntimeError) -> bool:

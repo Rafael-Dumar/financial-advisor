@@ -74,6 +74,7 @@ class AdvisorConfig:
                 "hyperliquid": 100_000,
                 "coinbase": 100_000,
                 "alphavantage": 25,
+                "sec": 100_000,
                 "yahoo": 100_000,
             },
             api_run_limits=_run_limits_from_env(file_env),
@@ -153,8 +154,9 @@ class AdvisorConfig:
             "coingecko": len(cryptos),
             "binance": (non_hype_crypto_count * 5) + (1 if non_hype_crypto_count else 0),
             "hyperliquid": 2 if "HYPE" in cryptos else 0,
-            "coinbase": non_hype_crypto_count if self.coinbase_api_key else 0,
+            "coinbase": non_hype_crypto_count,
             "alphavantage": 1 if self.alphavantage_api_key and has_news_universe else 0,
+            "sec": len(stocks),
             "yahoo": 0,
         }
 

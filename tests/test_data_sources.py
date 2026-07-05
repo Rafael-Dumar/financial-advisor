@@ -7,6 +7,7 @@ from advisor.data_sources import (
     CoinbaseSource,
     FmpSource,
     HyperliquidSource,
+    SecEdgarSource,
 )
 
 
@@ -39,6 +40,10 @@ class DataSourceTests(unittest.TestCase):
         news_url = AlphaVantageSource("demo").news_sentiment_url(["AMD", "CRYPTO:BTC"])
         self.assertIn("NEWS_SENTIMENT", news_url)
         self.assertIn("AMD%2CCRYPTO%3ABTC", news_url)
+        self.assertEqual(
+            SecEdgarSource().submissions_url("2488"),
+            "https://data.sec.gov/submissions/CIK0000002488.json",
+        )
 
 
 if __name__ == "__main__":

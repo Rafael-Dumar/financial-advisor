@@ -169,6 +169,56 @@ class LiveLoaderTests(unittest.TestCase):
         self.assertEqual(by_symbol["MSFT"].news_events[0]["market_effect"], "risk_off")
         self.assertEqual(len([url for url in calls if "NEWS_SENTIMENT" in url]), 1)
 
+    def test_live_loader_attaches_recent_sec_filings_to_stocks(self):
+        calls = []
+
+        def fake_fetch(url, *, payload=None, headers=None):
+            calls.append((url, headers or {}))
+            if "data.sec.gov/submissions" in url:
+                return {
+                    "filings": {
+                        "recent": {
+                            "form": ["8-K", "10-Q", "4"],
+                            "filingDate": ["2026-06-28", "2026-05-20", "2026-06-29"],
+                            "accessionNumber": ["0000002488-26-000001", "0000002488-26-000002", "0000002488-26-000003"],
+                            "primaryDocument": ["amd-20260628.htm", "amd-20260520.htm", "xslF345X05/doc4.xml"],
+                        }
+                    }
+                }
+            if "historical-price-eod/full" in url:
+                return {
+                    "historical": [
+                        {"date": "2026-01-02", "open": 101, "high": 104, "low": 100, "close": 103, "volume": 2000},
+                        {"date": "2026-01-01", "open": 100, "high": 102, "low": 99, "close": 101, "volume": 1500},
+                    ]
+                }
+            if "stable/profile" in url:
+                return [{"mktCap": 300_000_000_000, "volAvg": 20_000_000}]
+            if "ratios-ttm" in url:
+                return [{"priceEarningsRatioTTM": 32, "pegRatioTTM": 2.1, "grossProfitMarginTTM": 0.68}]
+            if "key-metrics-ttm" in url:
+                return [{"freeCashFlowPerShareTTM": 4.5}]
+            if "/stable/key-metrics" in url:
+                return [{"peRatio": 30}]
+            if "income-statement-growth" in url:
+                return [{"growthRevenue": 0.16, "growthEPS": 0.12}]
+            if "earnings-calendar" in url:
+                return [{"date": "2026-08-10"}]
+            return {}
+
+        config = AdvisorConfig.default()
+        config.stock_watchlist = ["AMD"]
+        config.crypto_watchlist = []
+        config.fmp_api_key = "demo"
+        config.coingecko_api_key = "demo"
+        loader = LiveDataLoader(config, fetch_json=fake_fetch, today="2026-07-01")
+
+        snapshot = loader.load_snapshots()[0]
+
+        self.assertEqual([event["news_event_type"] for event in snapshot.news_events], ["sec_8k", "sec_10q"])
+        self.assertTrue(any("data.sec.gov/submissions/CIK0000002488.json" in call[0] for call in calls))
+        self.assertTrue(any(call[1].get("User-Agent", "").startswith("financial-advisor-v1") for call in calls))
+
     def test_live_loader_uses_alphavantage_as_weak_price_fallback(self):
         calls = []
 
@@ -500,6 +550,13 @@ class LiveLoaderTests(unittest.TestCase):
                         [1767398400000, 1400.0],
                     ],
                 }
+            if payload and payload.get("type") == "metaAndAssetCtxs":
+                return [
+                    {"universe": [{"name": "BTC"}]},
+                    [{"funding": "0.0001", "openInterest": "250"}],
+                ]
+            if "api.coinbase.com" in url:
+                return {"price": "108.07"}
             return {}
 
         config = AdvisorConfig.default()
@@ -516,9 +573,14 @@ class LiveLoaderTests(unittest.TestCase):
         self.assertEqual([candle.close for candle in snapshots[0].candles], [100.0, 104.0, 107.0])
         self.assertIn("binance_restricted_location", snapshots[0].missing_data)
         self.assertIn("binance_flow_unavailable", snapshots[0].missing_data)
+        self.assertIn("hyperliquid_flow_fallback", snapshots[0].missing_data)
         self.assertIn("coingecko_price_history_fallback", snapshots[0].missing_data)
         self.assertNotIn("price_history_unavailable", snapshots[0].missing_data)
+        self.assertAlmostEqual(snapshots[0].funding_rate, 0.0008)
+        self.assertAlmostEqual(snapshots[0].coinbase_premium, 0.01)
         self.assertTrue(any("market_chart" in url for url in calls))
+        self.assertTrue(any("api.hyperliquid.xyz" in url for url in calls))
+        self.assertTrue(any("api.coinbase.com" in url for url in calls))
 
     def test_live_loader_degrades_optional_liquidation_provider_error_payload(self):
         def fake_fetch(url, *, payload=None, headers=None):
@@ -586,7 +648,8 @@ class LiveLoaderTests(unittest.TestCase):
             loader.load_snapshots()
             loader.load_snapshots()
 
-        self.assertEqual(len(calls), 7)
+        self.assertEqual(len(calls), 8)
+        self.assertEqual(sum("data.sec.gov/submissions" in call[0] for call in calls), 1)
 
     def test_live_loader_raises_when_api_limit_is_exhausted_without_cache(self):
         def fake_fetch(url, *, payload=None, headers=None):

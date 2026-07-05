@@ -84,6 +84,8 @@ Discovery mode:
 
 - Stock growth uses FMP income-statement growth data. Historical PE is the median of available positive annual PE observations.
 - If `ALPHAVANTAGE_API_KEY` is configured, the live loader collects one cached News Sentiment payload for the configured stock and crypto universe and attaches relevant items to each asset. Missing or rate-limited news remains `not_verified`; news context never approves an automatic trade by itself.
+- SEC EDGAR submissions are used without an API key for supported equities, adding recent 8-K, 10-Q, 10-K, 20-F, and 6-K filings as confirmed corporate events.
+- If Binance is blocked by runner location, crypto falls back to CoinGecko basic price history, Hyperliquid funding/open-interest context when available, and public Coinbase product data for premium checks.
 - `advisor collect-crypto-flow` uses public Binance futures data for BTC/ETH/SOL/ZEC and Hyperliquid `metaAndAssetCtxs` for HYPE.
 - Funding rates are compared and reported as 8-hour equivalents. Binance adjusted intervals come from `fundingInfo`; HYPE's hourly Hyperliquid funding rate is multiplied by eight before regime and risk scoring.
 - CVD is always labeled as a proxy derived from taker buy/sell volume.

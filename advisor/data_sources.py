@@ -162,3 +162,10 @@ class AlphaVantageSource:
 
     def news_sentiment_url(self, tickers: list[str], *, limit: int = 50) -> str:
         return f"{self.base_url}?{urlencode({'function': 'NEWS_SENTIMENT', 'tickers': ','.join(tickers), 'limit': str(limit), 'apikey': self.api_key})}"
+
+
+class SecEdgarSource:
+    base_url = "https://data.sec.gov"
+
+    def submissions_url(self, cik: str) -> str:
+        return f"{self.base_url}/submissions/CIK{cik.zfill(10)}.json"

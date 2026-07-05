@@ -47,7 +47,7 @@ Required variables:
 
 Optional variables:
 
-- `ALPHAVANTAGE_API_KEY`: optional fallback for stock prices and low-call aggregated news/sentiment context.
+- `ALPHAVANTAGE_API_KEY`: optional fallback for stock prices and low-call aggregated news/sentiment context. Get it at `https://www.alphavantage.co/support/#api-key`; the free plan is enough for the bot's single cached news/sentiment request per report.
 - `COINBASE_API_KEY`
 - `ADVISOR_ACCOUNT_CAPITAL`
 - `ADVISOR_RISK_FRACTION`
@@ -199,6 +199,10 @@ The final analyst review separates operational decision from observation labels.
 Crypto review separates `basic_data_status` from `flow_data_status`. Binance `http_error:451` or `binance_restricted_location` marks `binance_status: restricted` and limits Binance-dependent flow/derivatives checks, but it does not block BTC/ETH/SOL by itself when CoinGecko/Coinbase/fallback basic data is available. If basic price/liquidity/history is also missing, the asset remains `blocked`.
 
 News/catalyst context is optional and budget-conscious. When `ALPHAVANTAGE_API_KEY` is configured, the live loader requests one cached News Sentiment payload for the current stock and crypto universe, then maps relevant items back to each asset. If the key is absent, the provider is rate-limited, or no matching item is returned, reports keep `news_status` as `not_verified/not_collected`; they must not state that there is no news/event risk.
+
+SEC EDGAR is used as a no-key filing source for supported US equities. The loader checks recent 8-K, 10-Q, 10-K, 20-F, and 6-K submissions from `data.sec.gov` and attaches them as confirmed corporate events. SEC filings improve catalyst context, but they do not approve a trade by themselves.
+
+When Binance is restricted in the GitHub runner, the crypto loader falls back to CoinGecko for basic price history, Hyperliquid for available funding/open-interest context, and public Coinbase product data for premium checks. CVD and liquidations can still remain `not_verified` if no free source is available.
 
 ## Optional Telegram for nightly analyst review
 
