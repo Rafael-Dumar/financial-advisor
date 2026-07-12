@@ -1,0 +1,231 @@
+{
+  "audit_generated_at_utc": "2026-07-12T15:36:29+00:00",
+  "intentionally_unimplemented": [
+    {
+      "capability": "liquidations",
+      "endpoint_name": "liquidation_orders",
+      "implemented": false,
+      "provider": "binance",
+      "reason": "invalid_liquidation_endpoint_is_not_called",
+      "status": "not_implemented"
+    },
+    {
+      "capability": "open_interest_change",
+      "endpoint_name": "not_applicable",
+      "implemented": false,
+      "provider": "hyperliquid",
+      "reason": "independent_metric_not_collected",
+      "status": "not_implemented"
+    },
+    {
+      "capability": "cvd",
+      "endpoint_name": "not_applicable",
+      "implemented": false,
+      "provider": "hyperliquid",
+      "reason": "independent_metric_not_collected",
+      "status": "not_implemented"
+    },
+    {
+      "capability": "guidance",
+      "endpoint_name": "not_applicable",
+      "implemented": false,
+      "provider": "system",
+      "reason": "event_guidance_collector_not_implemented",
+      "status": "not_implemented"
+    },
+    {
+      "capability": "macro_regime",
+      "endpoint_name": "not_applicable",
+      "implemented": false,
+      "provider": "system",
+      "reason": "macro_collector_not_implemented",
+      "status": "not_implemented"
+    }
+  ],
+  "network_mode": "no_network",
+  "providers": [
+    {
+      "capabilities": [
+        {
+          "capability": "news_sentiment",
+          "configured": false,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "not_configured",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "prices",
+          "configured": false,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "not_configured",
+          "supported_by_plan": true
+        }
+      ],
+      "provider": "alphavantage",
+      "status": "not_configured"
+    },
+    {
+      "capabilities": [
+        {
+          "capability": "crypto_flow",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "prices",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "provider": "binance",
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        {
+          "capability": "prices",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "provider": "coinbase",
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        {
+          "capability": "fundamentals",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "prices",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "provider": "coingecko",
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        {
+          "capability": "earnings",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "fundamentals",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "historical_prices",
+          "configured": true,
+          "fallback_available": true,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "historical_prices_light",
+          "configured": true,
+          "fallback_available": true,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "provider": "fmp",
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        {
+          "capability": "crypto_flow",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "prices",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "provider": "hyperliquid",
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        {
+          "capability": "sec_filings",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "provider": "sec",
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        {
+          "capability": "prices",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "provider": "stooq",
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        {
+          "capability": "prices",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "provider": "yahoo",
+      "status": "available"
+    }
+  ],
+  "schema_version": "phase2-v1"
+}

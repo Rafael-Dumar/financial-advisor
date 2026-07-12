@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from advisor.backtest import backtest_similar_setups, summarize_backtest_setups
+from advisor.audit import run_data_audit
 from advisor.cache import SQLiteCache
 from advisor.config import AdvisorConfig
 from advisor.fixtures import benchmarks_from_fixture, load_scan_fixture, snapshots_from_fixture
@@ -67,6 +68,20 @@ def main(argv: list[str] | None = None) -> int:
     validate_parser.add_argument("--allow-missing-keys", action="store_true")
     validate_parser.add_argument("--require-live", action="store_true")
 
+    audit_parser = subparsers.add_parser("audit")
+    audit_subparsers = audit_parser.add_subparsers(dest="audit_command", required=True)
+    audit_data_parser = audit_subparsers.add_parser("data")
+    audit_data_parser.add_argument("--require-live", action="store_true")
+    audit_data_parser.add_argument("--include-discovery", action="store_true")
+    audit_data_parser.add_argument("--output-dir", type=Path, default=Path("reports/audit"))
+    audit_data_parser.add_argument("--source-db", type=Path, default=Path("data/advisor.db"))
+    audit_data_parser.add_argument("--db", dest="source_db", type=Path, default=argparse.SUPPRESS)
+    audit_data_parser.add_argument("--audit-db", type=Path, default=Path("reports/audit/audit.db"))
+    audit_data_parser.add_argument("--symbols", default="")
+    audit_data_parser.add_argument("--no-network", action="store_true")
+    audit_data_parser.add_argument("--trace-gates", action="store_true")
+    audit_data_parser.add_argument("--fail-on-schema-drift", action="store_true")
+
     args = parser.parse_args(argv)
     if args.command == "scan":
         return _scan(args)
@@ -82,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
         return _signals_update_results(args, default_db=args.db)
     if args.command == "config" and args.config_command == "validate":
         return _validate_config(args)
+    if args.command == "audit" and args.audit_command == "data":
+        return _audit_data(args)
     return 1
 
 
@@ -598,6 +615,35 @@ def _validate_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def _audit_data(args: argparse.Namespace) -> int:
+    if args.require_live and args.no_network:
+        print("require_live_conflicts_with_no_network")
+        return 1
+    symbols = [symbol.strip().upper() for symbol in args.symbols.split(",") if symbol.strip()] or None
+    try:
+        result = run_data_audit(
+            config=AdvisorConfig.default(),
+            source_db=args.source_db,
+            audit_db=args.audit_db,
+            output_dir=args.output_dir,
+            symbols=symbols,
+            include_discovery=args.include_discovery,
+            require_live=args.require_live,
+            no_network=args.no_network or not args.require_live,
+            trace_gates=args.trace_gates,
+            fail_on_schema_drift=args.fail_on_schema_drift,
+        )
+    except ValueError as error:
+        print(str(error))
+        return 1
+    print(f"data_audit_written={args.output_dir}")
+    if result.get("schema_drift"):
+        print("schema_drift=true")
+    for error in result.get("errors", []):
+        print(str(error))
+    return int(result.get("exit_code", 0))
+
+
 def _config_summary(config: AdvisorConfig) -> list[str]:
     base_stocks, base_cryptos = config.symbols_for_scan(include_discovery=False)
     discovery_stocks, discovery_cryptos = config.symbols_for_scan(include_discovery=True)
@@ -721,6 +767,7 @@ def _provider_budget_summary(
         "skipped_provider_calls_due_to_cache": skipped_provider_calls_due_to_cache,
         "skipped_provider_calls_due_to_rate_limit": skipped_provider_calls_due_to_rate_limit,
         "fmp_status": _provider_status("fmp", errors, provider_statuses),
+        "coingecko_status": _provider_status("coingecko", errors, provider_statuses),
         "retry_after": provider_retry_after.get("fmp") or _retry_after_from_errors(errors),
     }
 

@@ -1,0 +1,1324 @@
+{
+  "audit_generated_at_utc": "2026-07-12T15:36:29+00:00",
+  "cache_databases": [
+    {
+      "access": "read_only",
+      "database": "source",
+      "rows": [
+        {
+          "cache_age_seconds": 2036791,
+          "cache_expired": true,
+          "key_sanitized": "https://api.hyperliquid.xyz/info|{\"type\": \"metaAndAssetCtxs\"}",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:58+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2036797,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/fundingInfo",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:52+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2036742,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=AVAXUSDT&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:50:47+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036748,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=BNBUSDT&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:50:41+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036798,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:51+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036795,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=ETHUSDT&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:54+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036744,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=LINKUSDT&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:50:45+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036794,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=SOLUSDT&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:55+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036746,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=XRPUSDT&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:50:43+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036791,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=ZECUSDT&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:58+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036742,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/openInterestHist?symbol=AVAXUSDT&period=1d&limit=30",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:50:47+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036748,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/openInterestHist?symbol=BNBUSDT&period=1d&limit=30",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:50:41+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036797,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/openInterestHist?symbol=BTCUSDT&period=1d&limit=30",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:52+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036795,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/openInterestHist?symbol=ETHUSDT&period=1d&limit=30",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:54+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036744,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/openInterestHist?symbol=LINKUSDT&period=1d&limit=30",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:50:45+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036793,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/openInterestHist?symbol=SOLUSDT&period=1d&limit=30",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:56+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036746,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/openInterestHist?symbol=XRPUSDT&period=1d&limit=30",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:50:43+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036790,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/openInterestHist?symbol=ZECUSDT&period=1d&limit=30",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:59+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036742,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=AVAXUSDT&period=5m&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:50:47+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036747,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=BNBUSDT&period=5m&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:50:42+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036797,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=BTCUSDT&period=5m&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:52+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036795,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=ETHUSDT&period=5m&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:54+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036743,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=LINKUSDT&period=5m&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:50:46+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036793,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=SOLUSDT&period=5m&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:56+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036745,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=XRPUSDT&period=5m&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:50:44+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036790,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=ZECUSDT&period=5m&limit=100",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-19T01:49:59+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 3264301,
+          "cache_expired": true,
+          "key_sanitized": "latest",
+          "namespace": "crypto_flow",
+          "original_fetched_at": "2026-06-04T20:51:28+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703800,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=AAPL&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:19:49+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703849,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=AMD&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:19:00+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703778,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=AMZN&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:20:11+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 2036768,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=ASML&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-19T01:50:21+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703794,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=AVGO&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:19:55+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703817,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=CRDO&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:19:32+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 2036757,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=CRM&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-19T01:50:32+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703805,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=DELL&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:19:44+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703789,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=GOOGL&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:20:00+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703839,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=HIMS&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:19:10+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703855,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=INTC&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:18:54+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703783,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=META&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:20:06+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703828,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=MSFT&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:19:21+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703811,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=MSTR&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:19:38+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703833,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=MU&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:19:16+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 2036752,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=NOW&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-19T01:50:37+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703844,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=NVDA&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:19:05+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 2036762,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=ORCL&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-19T01:50:27+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703773,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=TSM&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:20:16+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 1703822,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=USAR&apikey=REDACTED",
+          "namespace": "earnings",
+          "original_fetched_at": "2026-06-22T22:19:27+00:00",
+          "source_age_seconds": 2734589,
+          "source_data_latest_timestamp": "2026-06-11"
+        },
+        {
+          "cache_age_seconds": 2119812,
+          "cache_expired": true,
+          "key_sanitized": "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=avax&order=market_cap_desc&sparkline=false",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-18T02:46:17+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2119833,
+          "cache_expired": true,
+          "key_sanitized": "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin&order=market_cap_desc&sparkline=false",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-18T02:45:56+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2119820,
+          "cache_expired": true,
+          "key_sanitized": "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bnb&order=market_cap_desc&sparkline=false",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-18T02:46:09+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2119830,
+          "cache_expired": true,
+          "key_sanitized": "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=ethereum&order=market_cap_desc&sparkline=false",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-18T02:45:59+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2119825,
+          "cache_expired": true,
+          "key_sanitized": "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=hyperliquid&order=market_cap_desc&sparkline=false",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-18T02:46:04+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2119815,
+          "cache_expired": true,
+          "key_sanitized": "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=link&order=market_cap_desc&sparkline=false",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-18T02:46:14+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2119827,
+          "cache_expired": true,
+          "key_sanitized": "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=solana&order=market_cap_desc&sparkline=false",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-18T02:46:02+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2119817,
+          "cache_expired": true,
+          "key_sanitized": "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=xrp&order=market_cap_desc&sparkline=false",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-18T02:46:12+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2119823,
+          "cache_expired": true,
+          "key_sanitized": "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=zcash&order=market_cap_desc&sparkline=false",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-18T02:46:06+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703801,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/income-statement-growth?symbol=AAPL&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:48+00:00",
+          "source_age_seconds": 24939389,
+          "source_data_latest_timestamp": "2025-09-27"
+        },
+        {
+          "cache_age_seconds": 1703850,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/income-statement-growth?symbol=AMD&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:18:59+00:00",
+          "source_age_seconds": 17076989,
+          "source_data_latest_timestamp": "2025-12-27"
+        },
+        {
+          "cache_age_seconds": 1703779,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/income-statement-growth?symbol=AMZN&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:10+00:00",
+          "source_age_seconds": 16731389,
+          "source_data_latest_timestamp": "2025-12-31"
+        },
+        {
+          "cache_age_seconds": 1703790,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/income-statement-growth?symbol=GOOGL&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:59+00:00",
+          "source_age_seconds": 16731389,
+          "source_data_latest_timestamp": "2025-12-31"
+        },
+        {
+          "cache_age_seconds": 1703855,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/income-statement-growth?symbol=INTC&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:18:54+00:00",
+          "source_age_seconds": 17076989,
+          "source_data_latest_timestamp": "2025-12-27"
+        },
+        {
+          "cache_age_seconds": 1703784,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/income-statement-growth?symbol=META&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:05+00:00",
+          "source_age_seconds": 16731389,
+          "source_data_latest_timestamp": "2025-12-31"
+        },
+        {
+          "cache_age_seconds": 1703829,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/income-statement-growth?symbol=MSFT&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:20+00:00",
+          "source_age_seconds": 32628989,
+          "source_data_latest_timestamp": "2025-06-30"
+        },
+        {
+          "cache_age_seconds": 1703845,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/income-statement-growth?symbol=NVDA&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:04+00:00",
+          "source_age_seconds": 14571389,
+          "source_data_latest_timestamp": "2026-01-25"
+        },
+        {
+          "cache_age_seconds": 1703774,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/income-statement-growth?symbol=TSM&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:15+00:00",
+          "source_age_seconds": 16731389,
+          "source_data_latest_timestamp": "2025-12-31"
+        },
+        {
+          "cache_age_seconds": 1703802,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics-ttm?symbol=AAPL&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:47+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703852,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics-ttm?symbol=AMD&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:18:57+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703780,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics-ttm?symbol=AMZN&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:09+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703791,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics-ttm?symbol=GOOGL&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:58+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703857,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics-ttm?symbol=INTC&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:18:52+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703785,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics-ttm?symbol=META&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:04+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703830,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics-ttm?symbol=MSFT&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:19+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703846,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics-ttm?symbol=NVDA&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:03+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703775,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics-ttm?symbol=TSM&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:14+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703801,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics?symbol=AAPL&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:48+00:00",
+          "source_age_seconds": 24939389,
+          "source_data_latest_timestamp": "2025-09-27"
+        },
+        {
+          "cache_age_seconds": 1703851,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics?symbol=AMD&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:18:58+00:00",
+          "source_age_seconds": 17076989,
+          "source_data_latest_timestamp": "2025-12-27"
+        },
+        {
+          "cache_age_seconds": 1703780,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics?symbol=AMZN&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:09+00:00",
+          "source_age_seconds": 16731389,
+          "source_data_latest_timestamp": "2025-12-31"
+        },
+        {
+          "cache_age_seconds": 1703791,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics?symbol=GOOGL&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:58+00:00",
+          "source_age_seconds": 16731389,
+          "source_data_latest_timestamp": "2025-12-31"
+        },
+        {
+          "cache_age_seconds": 1703856,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics?symbol=INTC&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:18:53+00:00",
+          "source_age_seconds": 17076989,
+          "source_data_latest_timestamp": "2025-12-27"
+        },
+        {
+          "cache_age_seconds": 1703785,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics?symbol=META&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:04+00:00",
+          "source_age_seconds": 16731389,
+          "source_data_latest_timestamp": "2025-12-31"
+        },
+        {
+          "cache_age_seconds": 1703830,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics?symbol=MSFT&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:19+00:00",
+          "source_age_seconds": 32628989,
+          "source_data_latest_timestamp": "2025-06-30"
+        },
+        {
+          "cache_age_seconds": 1703845,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics?symbol=NVDA&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:04+00:00",
+          "source_age_seconds": 14571389,
+          "source_data_latest_timestamp": "2026-01-25"
+        },
+        {
+          "cache_age_seconds": 1703775,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/key-metrics?symbol=TSM&period=annual&limit=5&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:14+00:00",
+          "source_age_seconds": 16731389,
+          "source_data_latest_timestamp": "2025-12-31"
+        },
+        {
+          "cache_age_seconds": 1703803,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=AAPL&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:46+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703853,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=AMD&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:18:56+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703782,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=AMZN&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:07+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703771,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=ASML&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:18+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703798,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=AVGO&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:51+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703820,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=CRDO&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:29+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2119843,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=CRM&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-18T02:45:46+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703808,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=DELL&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:41+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703793,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=GOOGL&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:56+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703842,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=HIMS&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:07+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703858,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=INTC&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:18:51+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703787,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=META&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:02+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703831,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=MSFT&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:18+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703814,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=MSTR&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:35+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703836,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=MU&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:13+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2119837,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=NOW&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-18T02:45:52+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703847,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=NVDA&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:02+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2119848,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=ORCL&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-18T02:45:41+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703777,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=TSM&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:12+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703826,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=USAR&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:23+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703803,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/ratios-ttm?symbol=AAPL&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:46+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703852,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/ratios-ttm?symbol=AMD&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:18:57+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703781,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/ratios-ttm?symbol=AMZN&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:08+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703792,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/ratios-ttm?symbol=GOOGL&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:57+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703857,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/ratios-ttm?symbol=INTC&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:18:52+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703786,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/ratios-ttm?symbol=META&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:03+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703831,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/ratios-ttm?symbol=MSFT&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:18+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703847,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/ratios-ttm?symbol=NVDA&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:19:02+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 1703776,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/ratios-ttm?symbol=TSM&apikey=REDACTED",
+          "namespace": "fundamentals",
+          "original_fetched_at": "2026-06-22T22:20:13+00:00",
+          "source_age_seconds": null,
+          "source_data_latest_timestamp": null
+        },
+        {
+          "cache_age_seconds": 2119824,
+          "cache_expired": true,
+          "key_sanitized": "https://api.hyperliquid.xyz/info|{\"req\": {\"coin\": \"HYPE\", \"endTime\": 1781750764868, \"interval\": \"1d\", \"startTime\": 1762742764868}, \"type\": \"candleSnapshot\"}",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-18T02:46:05+00:00",
+          "source_age_seconds": 2129789,
+          "source_data_latest_timestamp": "2026-06-18"
+        },
+        {
+          "cache_age_seconds": 2119550,
+          "cache_expired": true,
+          "key_sanitized": "https://api.hyperliquid.xyz/info|{\"req\": {\"coin\": \"HYPE\", \"endTime\": 1781751038265, \"interval\": \"1d\", \"startTime\": 1762743038265}, \"type\": \"candleSnapshot\"}",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-18T02:50:39+00:00",
+          "source_age_seconds": 2129789,
+          "source_data_latest_timestamp": "2026-06-18"
+        },
+        {
+          "cache_age_seconds": 2036792,
+          "cache_expired": true,
+          "key_sanitized": "https://api.hyperliquid.xyz/info|{\"req\": {\"coin\": \"HYPE\", \"endTime\": 1781833796854, \"interval\": \"1d\", \"startTime\": 1762825796854}, \"type\": \"candleSnapshot\"}",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:49:57+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036749,
+          "cache_expired": true,
+          "key_sanitized": "https://api.hyperliquid.xyz/info|{\"req\": {\"coin\": \"HYPE\", \"endTime\": 1781833838664, \"interval\": \"1d\", \"startTime\": 1762825838664}, \"type\": \"candleSnapshot\"}",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:50:40+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036743,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/klines?symbol=AVAXUSDT&interval=1d&limit=500",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:50:46+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036748,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/klines?symbol=BNBUSDT&interval=1d&limit=500",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:50:41+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036798,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=1d&limit=500",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:49:51+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036796,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=1d&limit=500",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:49:53+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036745,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/klines?symbol=LINKUSDT&interval=1d&limit=500",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:50:44+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036794,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/klines?symbol=SOLUSDT&interval=1d&limit=500",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:49:55+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036746,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/klines?symbol=XRPUSDT&interval=1d&limit=500",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:50:43+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 2036791,
+          "cache_expired": true,
+          "key_sanitized": "https://fapi.binance.com/fapi/v1/klines?symbol=ZECUSDT&interval=1d&limit=500",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:49:58+00:00",
+          "source_age_seconds": 2043389,
+          "source_data_latest_timestamp": "2026-06-19"
+        },
+        {
+          "cache_age_seconds": 1703804,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=AAPL&apikey=REDACTED",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:19:45+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 1703853,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=AMD&apikey=REDACTED",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:18:56+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 1703782,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=AMZN&apikey=REDACTED",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:20:07+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 1703793,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=GOOGL&apikey=REDACTED",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:19:56+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 1703858,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=INTC&apikey=REDACTED",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:18:51+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 1703788,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=META&apikey=REDACTED",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:20:01+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 1703832,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=MSFT&apikey=REDACTED",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:19:17+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 1703848,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=NVDA&apikey=REDACTED",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:19:01+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 2036788,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=SPY&apikey=REDACTED",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:50:01+00:00",
+          "source_age_seconds": 2129789,
+          "source_data_latest_timestamp": "2026-06-18"
+        },
+        {
+          "cache_age_seconds": 1703777,
+          "cache_expired": true,
+          "key_sanitized": "https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=TSM&apikey=REDACTED",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:20:12+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 1703771,
+          "cache_expired": true,
+          "key_sanitized": "https://query1.finance.yahoo.com/v8/finance/chart/ASML?range=1y&interval=1d",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:20:18+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 1703798,
+          "cache_expired": true,
+          "key_sanitized": "https://query1.finance.yahoo.com/v8/finance/chart/AVGO?range=1y&interval=1d",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:19:51+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 1703821,
+          "cache_expired": true,
+          "key_sanitized": "https://query1.finance.yahoo.com/v8/finance/chart/CRDO?range=1y&interval=1d",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:19:28+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 2036761,
+          "cache_expired": true,
+          "key_sanitized": "https://query1.finance.yahoo.com/v8/finance/chart/CRM?range=1y&interval=1d",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:50:28+00:00",
+          "source_age_seconds": 2129789,
+          "source_data_latest_timestamp": "2026-06-18"
+        },
+        {
+          "cache_age_seconds": 1703809,
+          "cache_expired": true,
+          "key_sanitized": "https://query1.finance.yahoo.com/v8/finance/chart/DELL?range=1y&interval=1d",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:19:40+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 1703842,
+          "cache_expired": true,
+          "key_sanitized": "https://query1.finance.yahoo.com/v8/finance/chart/HIMS?range=1y&interval=1d",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:19:07+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 1703816,
+          "cache_expired": true,
+          "key_sanitized": "https://query1.finance.yahoo.com/v8/finance/chart/MSTR?range=1y&interval=1d",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:19:33+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 1703837,
+          "cache_expired": true,
+          "key_sanitized": "https://query1.finance.yahoo.com/v8/finance/chart/MU?range=1y&interval=1d",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:19:12+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        },
+        {
+          "cache_age_seconds": 2036755,
+          "cache_expired": true,
+          "key_sanitized": "https://query1.finance.yahoo.com/v8/finance/chart/NOW?range=1y&interval=1d",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:50:34+00:00",
+          "source_age_seconds": 2129789,
+          "source_data_latest_timestamp": "2026-06-18"
+        },
+        {
+          "cache_age_seconds": 2036766,
+          "cache_expired": true,
+          "key_sanitized": "https://query1.finance.yahoo.com/v8/finance/chart/ORCL?range=1y&interval=1d",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-19T01:50:23+00:00",
+          "source_age_seconds": 2129789,
+          "source_data_latest_timestamp": "2026-06-18"
+        },
+        {
+          "cache_age_seconds": 1703826,
+          "cache_expired": true,
+          "key_sanitized": "https://query1.finance.yahoo.com/v8/finance/chart/USAR?range=1y&interval=1d",
+          "namespace": "prices",
+          "original_fetched_at": "2026-06-22T22:19:23+00:00",
+          "source_age_seconds": 1784189,
+          "source_data_latest_timestamp": "2026-06-22"
+        }
+      ]
+    }
+  ],
+  "network_mode": "no_network",
+  "schema_version": "phase2-v1",
+  "timestamp_semantics": {
+    "cache_age_seconds": "age_since_original_fetched_at",
+    "original_fetched_at": "cache_entry_write_time",
+    "source_age_seconds": "age_of_source_data_when_available",
+    "source_data_latest_timestamp": "latest_timestamp_in_source_payload"
+  }
+}

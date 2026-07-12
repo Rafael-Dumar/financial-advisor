@@ -1,0 +1,435 @@
+{
+  "audit_generated_at_utc": "2026-07-12T15:36:29+00:00",
+  "invalid_or_unimplemented": [
+    {
+      "capability": "liquidations",
+      "endpoint_name": "liquidation_orders",
+      "implemented": false,
+      "provider": "binance",
+      "reason": "invalid_liquidation_endpoint_is_not_called",
+      "status": "not_implemented"
+    },
+    {
+      "capability": "open_interest_change",
+      "endpoint_name": "not_applicable",
+      "implemented": false,
+      "provider": "hyperliquid",
+      "reason": "independent_metric_not_collected",
+      "status": "not_implemented"
+    },
+    {
+      "capability": "cvd",
+      "endpoint_name": "not_applicable",
+      "implemented": false,
+      "provider": "hyperliquid",
+      "reason": "independent_metric_not_collected",
+      "status": "not_implemented"
+    },
+    {
+      "capability": "guidance",
+      "endpoint_name": "not_applicable",
+      "implemented": false,
+      "provider": "system",
+      "reason": "event_guidance_collector_not_implemented",
+      "status": "not_implemented"
+    },
+    {
+      "capability": "macro_regime",
+      "endpoint_name": "not_applicable",
+      "implemented": false,
+      "provider": "system",
+      "reason": "macro_collector_not_implemented",
+      "status": "not_implemented"
+    }
+  ],
+  "network_mode": "no_network",
+  "providers": [
+    {
+      "calls": [],
+      "capabilities": [
+        {
+          "capability": "news_sentiment",
+          "configured": false,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "not_configured",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "prices",
+          "configured": false,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "not_configured",
+          "supported_by_plan": true
+        }
+      ],
+      "configured": false,
+      "endpoints": [
+        {
+          "auth": "key_missing",
+          "endpoint_name": "news_sentiment",
+          "method": "GET",
+          "namespace": "news",
+          "url_sanitized": "https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=AMD&limit=50&apikey=REDACTED"
+        },
+        {
+          "auth": "key_missing",
+          "endpoint_name": "time_series_daily_adjusted",
+          "method": "GET",
+          "namespace": "prices",
+          "url_sanitized": "https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=AMD&apikey=REDACTED"
+        }
+      ],
+      "provider": "alphavantage",
+      "status": "not_configured"
+    },
+    {
+      "calls": [],
+      "capabilities": [
+        {
+          "capability": "crypto_flow",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "prices",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "configured": true,
+      "endpoints": [
+        {
+          "auth": "public",
+          "endpoint_name": "klines",
+          "method": "GET",
+          "namespace": "prices",
+          "url_sanitized": "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=1d&limit=500"
+        },
+        {
+          "auth": "public",
+          "endpoint_name": "funding_rate",
+          "method": "GET",
+          "namespace": "crypto_flow",
+          "url_sanitized": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=100"
+        },
+        {
+          "auth": "public",
+          "endpoint_name": "funding_info",
+          "method": "GET",
+          "namespace": "crypto_flow",
+          "url_sanitized": "https://fapi.binance.com/fapi/v1/fundingInfo"
+        },
+        {
+          "auth": "public",
+          "endpoint_name": "open_interest",
+          "method": "GET",
+          "namespace": "crypto_flow",
+          "url_sanitized": "https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT"
+        },
+        {
+          "auth": "public",
+          "endpoint_name": "open_interest_history",
+          "method": "GET",
+          "namespace": "crypto_flow",
+          "url_sanitized": "https://fapi.binance.com/futures/data/openInterestHist?symbol=BTCUSDT&period=1d&limit=30"
+        },
+        {
+          "auth": "public",
+          "endpoint_name": "taker_long_short_ratio",
+          "method": "GET",
+          "namespace": "crypto_flow",
+          "url_sanitized": "https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=BTCUSDT&period=5m&limit=100"
+        }
+      ],
+      "provider": "binance",
+      "status": "available"
+    },
+    {
+      "calls": [],
+      "capabilities": [
+        {
+          "capability": "prices",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "configured": true,
+      "endpoints": [
+        {
+          "auth": "public",
+          "endpoint_name": "coinbase_product",
+          "method": "GET",
+          "namespace": "prices",
+          "url_sanitized": "https://api.coinbase.com/api/v3/brokerage/market/products/BTC-USD"
+        }
+      ],
+      "provider": "coinbase",
+      "status": "available"
+    },
+    {
+      "calls": [],
+      "capabilities": [
+        {
+          "capability": "fundamentals",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "prices",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "configured": true,
+      "endpoints": [
+        {
+          "auth": "key_present",
+          "endpoint_name": "markets",
+          "method": "GET",
+          "namespace": "fundamentals",
+          "url_sanitized": "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin&order=market_cap_desc&sparkline=false"
+        },
+        {
+          "auth": "key_present",
+          "endpoint_name": "market_chart",
+          "method": "GET",
+          "namespace": "prices",
+          "url_sanitized": "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=220&interval=daily"
+        }
+      ],
+      "provider": "coingecko",
+      "status": "available"
+    },
+    {
+      "calls": [],
+      "capabilities": [
+        {
+          "capability": "earnings",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "fundamentals",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "historical_prices",
+          "configured": true,
+          "fallback_available": true,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "historical_prices_light",
+          "configured": true,
+          "fallback_available": true,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "configured": true,
+      "endpoints": [
+        {
+          "auth": "key_present",
+          "endpoint_name": "historical_prices",
+          "method": "GET",
+          "namespace": "prices",
+          "url_sanitized": "https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=AMD&apikey=REDACTED"
+        },
+        {
+          "auth": "key_present",
+          "endpoint_name": "historical_prices_light",
+          "method": "GET",
+          "namespace": "prices",
+          "url_sanitized": "https://financialmodelingprep.com/stable/historical-price-eod/light?symbol=AMD&apikey=REDACTED"
+        },
+        {
+          "auth": "key_present",
+          "endpoint_name": "profile",
+          "method": "GET",
+          "namespace": "fundamentals",
+          "url_sanitized": "https://financialmodelingprep.com/stable/profile?symbol=AMD&apikey=REDACTED"
+        },
+        {
+          "auth": "key_present",
+          "endpoint_name": "ratios",
+          "method": "GET",
+          "namespace": "fundamentals",
+          "url_sanitized": "https://financialmodelingprep.com/stable/ratios-ttm?symbol=AMD&apikey=REDACTED"
+        },
+        {
+          "auth": "key_present",
+          "endpoint_name": "key_metrics_ttm",
+          "method": "GET",
+          "namespace": "fundamentals",
+          "url_sanitized": "https://financialmodelingprep.com/stable/key-metrics-ttm?symbol=AMD&apikey=REDACTED"
+        },
+        {
+          "auth": "key_present",
+          "endpoint_name": "historical_key_metrics",
+          "method": "GET",
+          "namespace": "fundamentals",
+          "url_sanitized": "https://financialmodelingprep.com/stable/key-metrics?symbol=AMD&period=annual&limit=5&apikey=REDACTED"
+        },
+        {
+          "auth": "key_present",
+          "endpoint_name": "growth",
+          "method": "GET",
+          "namespace": "fundamentals",
+          "url_sanitized": "https://financialmodelingprep.com/stable/income-statement-growth?symbol=AMD&period=annual&limit=5&apikey=REDACTED"
+        },
+        {
+          "auth": "key_present",
+          "endpoint_name": "earnings_calendar",
+          "method": "GET",
+          "namespace": "earnings",
+          "url_sanitized": "https://financialmodelingprep.com/stable/earnings-calendar?symbol=AMD&apikey=REDACTED"
+        }
+      ],
+      "provider": "fmp",
+      "status": "available"
+    },
+    {
+      "calls": [],
+      "capabilities": [
+        {
+          "capability": "crypto_flow",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        },
+        {
+          "capability": "prices",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "configured": true,
+      "endpoints": [
+        {
+          "auth": "public",
+          "endpoint_name": "candleSnapshot",
+          "method": "POST",
+          "namespace": "prices",
+          "url_sanitized": "https://api.hyperliquid.xyz/info"
+        },
+        {
+          "auth": "public",
+          "endpoint_name": "metaAndAssetCtxs",
+          "method": "POST",
+          "namespace": "crypto_flow",
+          "url_sanitized": "https://api.hyperliquid.xyz/info"
+        }
+      ],
+      "provider": "hyperliquid",
+      "status": "available"
+    },
+    {
+      "calls": [],
+      "capabilities": [
+        {
+          "capability": "sec_filings",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "configured": true,
+      "endpoints": [
+        {
+          "auth": "public",
+          "endpoint_name": "sec_submissions",
+          "method": "GET",
+          "namespace": "news",
+          "url_sanitized": "https://data.sec.gov/submissions/CIK0000002488.json"
+        }
+      ],
+      "provider": "sec",
+      "status": "available"
+    },
+    {
+      "calls": [],
+      "capabilities": [
+        {
+          "capability": "prices",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "configured": true,
+      "endpoints": [
+        {
+          "auth": "public",
+          "endpoint_name": "stooq_daily_csv",
+          "method": "GET",
+          "namespace": "prices",
+          "url_sanitized": "https://stooq.com/q/d/l/?s=amd.us&i=d"
+        }
+      ],
+      "provider": "stooq",
+      "status": "available"
+    },
+    {
+      "calls": [],
+      "capabilities": [
+        {
+          "capability": "prices",
+          "configured": true,
+          "fallback_available": false,
+          "implemented": true,
+          "last_status": "available",
+          "supported_by_plan": true
+        }
+      ],
+      "configured": true,
+      "endpoints": [
+        {
+          "auth": "public",
+          "endpoint_name": "yahoo_daily_chart",
+          "method": "GET",
+          "namespace": "prices",
+          "url_sanitized": "https://query1.finance.yahoo.com/v8/finance/chart/AMD?range=1y&interval=1d"
+        }
+      ],
+      "provider": "yahoo",
+      "status": "available"
+    }
+  ],
+  "schema_version": "phase2-v1"
+}
