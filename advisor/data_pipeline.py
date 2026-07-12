@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from typing import Any
 
-from advisor.models import AssetSnapshot, Candle, EventInfo, Fundamentals
+from advisor.models import AssetSnapshot, Candle, DataFetchMetadata, EventInfo, Fundamentals, ProviderCapability
 
 
 def stock_snapshot_from_payloads(
@@ -22,7 +23,24 @@ def stock_snapshot_from_payloads(
     data_source: str = "fmp",
     data_timestamp: str | None = None,
     cache_age_seconds: int | None = None,
+    data_fetch_metadata: DataFetchMetadata | None = None,
     news_events: list[dict[str, Any]] | None = None,
+    quote_status: str = "not_requested",
+    quote_price: float | None = None,
+    quote_timestamp: str | None = None,
+    quote_source: str | None = None,
+    quote_age_seconds: int | None = None,
+    quote_is_intraday: bool = False,
+    previous_close: float | None = None,
+    daily_change: float | None = None,
+    daily_change_pct: float | None = None,
+    benchmark_provenance: dict[str, object] | None = None,
+    provider_capabilities: list[ProviderCapability] | None = None,
+    earnings_status: str | None = None,
+    guidance_status: str = "not_implemented",
+    macro_status: str = "not_implemented",
+    news_status: str = "not_configured",
+    sec_filings_status: str = "not_implemented",
 ) -> AssetSnapshot:
     historical_rows = _historical_rows(historical_payload)
     candles = sorted(
@@ -43,8 +61,10 @@ def stock_snapshot_from_payloads(
     ratios = _first(ratios_payload)
     metrics = _first(metrics_payload)
     growth = _first(growth_payload)
-    earnings_date = _next_earnings_date(earnings_payload, today)
-    last_earnings_date = _last_earnings_date(earnings_payload, today)
+    parseable_earnings_payload = earnings_payload if _earnings_payload_is_parseable(earnings_payload) else []
+    earnings_date = _next_earnings_date(parseable_earnings_payload, today)
+    last_earnings_date = _last_earnings_date(parseable_earnings_payload, today)
+    resolved_earnings_status = earnings_status or _earnings_status(earnings_payload, earnings_date)
 
     fundamentals = Fundamentals(
         pe=_get_number(ratios, "priceEarningsRatioTTM", "priceToEarningsRatioTTM", "peRatioTTM", "pe"),
@@ -88,6 +108,12 @@ def stock_snapshot_from_payloads(
         last_earnings_date=last_earnings_date.isoformat() if last_earnings_date else None,
         next_earnings_date=earnings_date.isoformat() if earnings_date else None,
     )
+    price_metadata = _price_fetch_metadata(
+        data_fetch_metadata,
+        provider=data_source,
+        endpoint="historical_prices",
+        source_timestamp=candles[-1].date if candles else None,
+    )
     return AssetSnapshot(
         symbol=symbol,
         asset_type="stock",
@@ -97,9 +123,26 @@ def stock_snapshot_from_payloads(
         event=event,
         missing_data=sorted(set(stock_missing_data)),
         data_source=data_source,
-        data_timestamp=data_timestamp,
-        cache_age_seconds=cache_age_seconds,
+        data_timestamp=price_metadata.source_timestamp or data_timestamp,
+        cache_age_seconds=price_metadata.cache_age_seconds if price_metadata.cache_age_seconds is not None else cache_age_seconds,
+        data_fetch_metadata=price_metadata,
         news_events=list(news_events or []),
+        provider_capabilities=list(provider_capabilities or []),
+        earnings_status=resolved_earnings_status,
+        guidance_status=guidance_status,
+        macro_status=macro_status,
+        news_status=news_status,
+        sec_filings_status=sec_filings_status,
+        quote_status=quote_status,
+        quote_price=quote_price,
+        quote_timestamp=quote_timestamp,
+        quote_source=quote_source,
+        quote_age_seconds=quote_age_seconds,
+        quote_is_intraday=quote_is_intraday,
+        previous_close=previous_close,
+        daily_change=daily_change,
+        daily_change_pct=daily_change_pct,
+        benchmark_provenance=dict(benchmark_provenance or {}),
     )
 
 
@@ -130,6 +173,27 @@ def _historical_rows(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _earnings_status(payload: Any, next_earnings_date: date | None) -> str:
+    if not _earnings_payload_is_parseable(payload):
+        return "schema_error"
+    if not payload:
+        return "no_upcoming_event_found"
+    return "verified" if next_earnings_date is not None else "no_upcoming_event_found"
+
+
+def _earnings_payload_is_parseable(payload: Any) -> bool:
+    if not isinstance(payload, list):
+        return False
+    for row in payload:
+        if not isinstance(row, dict) or not isinstance(row.get("date"), str):
+            return False
+        try:
+            date.fromisoformat(row["date"][:10])
+        except ValueError:
+            return False
+    return True
+
+
 def crypto_snapshot_from_payloads(
     *,
     symbol: str,
@@ -145,7 +209,11 @@ def crypto_snapshot_from_payloads(
     data_source: str = "binance/coingecko",
     data_timestamp: str | None = None,
     cache_age_seconds: int | None = None,
+    data_fetch_metadata: DataFetchMetadata | None = None,
     news_events: list[dict[str, Any]] | None = None,
+    provider_capabilities: list[ProviderCapability] | None = None,
+    news_status: str = "not_configured",
+    crypto_metric_provenance: dict[str, dict[str, object]] | None = None,
 ) -> AssetSnapshot:
     candles = [
         Candle(
@@ -161,8 +229,27 @@ def crypto_snapshot_from_payloads(
     funding = _get_number(_last(funding_payload), "fundingRate")
     open_interest_change = _open_interest_change(open_interest_payload)
     cvd_proxy = _cvd_proxy(taker_payload)
-    coinbase_premium = _coinbase_premium(coinbase_payload or {}, candles[-1].close if candles else None)
-    liquidation_imbalance = _liquidation_imbalance(liquidation_payload or [])
+    # Retain the argument for caller compatibility, but no validated public
+    # liquidation collector is available to turn arbitrary rows into a signal.
+    liquidation_imbalance = None
+    metric_provenance = _crypto_metric_provenance(
+        supplied=crypto_metric_provenance,
+        data_source=data_source,
+        price_metadata=data_fetch_metadata,
+        candles=candles,
+        funding_rate=funding,
+        current_open_interest=_current_open_interest(open_interest_payload),
+        open_interest_change=open_interest_change,
+        cvd_proxy=cvd_proxy,
+        coinbase_payload=coinbase_payload or {},
+        liquidation_imbalance=liquidation_imbalance,
+    )
+    coinbase_premium = _coinbase_premium(
+        coinbase_payload or {},
+        candles[-1].close if candles else None,
+        timestamps_compatible=bool(metric_provenance["premium"].get("timestamps_compatible")),
+    )
+    metric_provenance["premium"]["value"] = coinbase_premium
     missing_data = list(missing_data or [])
     if not taker_payload:
         missing_data.append("cvd_proxy_unavailable")
@@ -187,6 +274,12 @@ def crypto_snapshot_from_payloads(
         average_volume=_get_number(market_payload, "total_volume"),
         market_cap_rank=_get_int(market_payload, "market_cap_rank"),
     )
+    price_metadata = _price_fetch_metadata(
+        data_fetch_metadata,
+        provider=data_source,
+        endpoint="klines",
+        source_timestamp=candles[-1].date if candles else None,
+    )
     return AssetSnapshot(
         symbol=symbol,
         asset_type="crypto",
@@ -201,10 +294,52 @@ def crypto_snapshot_from_payloads(
         liquidation_imbalance=liquidation_imbalance,
         missing_data=missing_data,
         data_source=data_source,
-        data_timestamp=data_timestamp,
-        cache_age_seconds=cache_age_seconds,
+        data_timestamp=price_metadata.source_timestamp or data_timestamp,
+        cache_age_seconds=price_metadata.cache_age_seconds if price_metadata.cache_age_seconds is not None else cache_age_seconds,
+        data_fetch_metadata=price_metadata,
         news_events=list(news_events or []),
+        provider_capabilities=list(provider_capabilities or []),
+        news_status=news_status,
+        crypto_metric_provenance=metric_provenance,
     )
+
+
+def _price_fetch_metadata(
+    metadata: DataFetchMetadata | None,
+    *,
+    provider: str,
+    endpoint: str,
+    source_timestamp: str | None,
+) -> DataFetchMetadata:
+    if metadata is None:
+        return DataFetchMetadata(
+            provider=provider,
+            endpoint=endpoint,
+            source_timestamp=source_timestamp,
+            source_age_seconds=_source_age_seconds(source_timestamp),
+            granularity="daily",
+            market_data_kind="eod_candle",
+        )
+    normalized_source_timestamp = source_timestamp or metadata.source_timestamp
+    return replace(
+        metadata,
+        source_timestamp=normalized_source_timestamp,
+        source_age_seconds=_source_age_seconds(normalized_source_timestamp),
+        granularity=metadata.granularity or "daily",
+        market_data_kind=metadata.market_data_kind or "eod_candle",
+    )
+
+
+def _source_age_seconds(source_timestamp: str | None) -> int | None:
+    if not source_timestamp:
+        return None
+    try:
+        source_time = datetime.fromisoformat(source_timestamp)
+    except ValueError:
+        return None
+    if source_time.tzinfo is None:
+        source_time = source_time.replace(tzinfo=timezone.utc)
+    return max(0, int((datetime.now(timezone.utc) - source_time).total_seconds()))
 
 
 def binance_crypto_flow_from_payloads(
@@ -215,6 +350,7 @@ def binance_crypto_flow_from_payloads(
     open_interest_payload: Any,
     taker_payload: Any,
     liquidation_payload: Any,
+    current_open_interest_payload: Any = None,
 ) -> dict[str, Any]:
     funding_rate = binance_funding_rate_8h_from_payloads(
         funding_payload=funding_payload,
@@ -222,10 +358,11 @@ def binance_crypto_flow_from_payloads(
         symbol=symbol,
     )
     open_interest_change = _open_interest_change(open_interest_payload)
-    open_interest = _get_number(_last(open_interest_payload), "sumOpenInterest", "openInterest")
+    open_interest = _current_open_interest(current_open_interest_payload) or _get_number(_last(open_interest_payload), "sumOpenInterest", "openInterest")
     cvd_proxy = _cvd_proxy(taker_payload if isinstance(taker_payload, list) else [])
-    liquidation_rows = liquidation_payload if isinstance(liquidation_payload, list) else []
-    liquidation_imbalance = _liquidation_imbalance(liquidation_rows)
+    # Retain the argument for caller compatibility, but never publish a
+    # liquidation signal from unvalidated rows.
+    liquidation_imbalance = None
     limitations = []
     if funding_rate is None:
         limitations.append("funding_rate_unavailable")
@@ -237,8 +374,6 @@ def binance_crypto_flow_from_payloads(
         limitations.append("cvd_proxy_unavailable")
     if liquidation_imbalance is None:
         limitations.append("liquidations_unavailable")
-    else:
-        limitations.append("liquidations_history_may_be_incomplete")
     return {
         "source": "binance",
         "funding_rate": funding_rate,
@@ -249,6 +384,18 @@ def binance_crypto_flow_from_payloads(
         "cvd_is_proxy": True,
         "liquidation_imbalance": liquidation_imbalance,
         "limitations": sorted(limitations),
+        "metric_provenance": _crypto_metric_provenance(
+            supplied=None,
+            data_source="binance",
+            price_metadata=None,
+            candles=[],
+            funding_rate=funding_rate,
+            current_open_interest=open_interest,
+            open_interest_change=open_interest_change,
+            cvd_proxy=cvd_proxy,
+            coinbase_payload={},
+            liquidation_imbalance=liquidation_imbalance,
+        ),
     }
 
 
@@ -314,6 +461,24 @@ def hyperliquid_crypto_flow_from_payload(payload: Any, *, symbol: str) -> dict[s
         "mark_price": _get_number(context, "markPx"),
         "day_notional_volume": _get_number(context, "dayNtlVlm"),
         "limitations": sorted(limitations),
+        "metric_provenance": _crypto_metric_provenance(
+            supplied={
+                "funding": {"provider": "hyperliquid", "endpoint": "metaAndAssetCtxs", "status": "available" if funding_rate is not None else "provider_unavailable"},
+                "current_open_interest": {"provider": "hyperliquid", "endpoint": "metaAndAssetCtxs", "status": "available" if open_interest is not None else "provider_unavailable"},
+                "open_interest_change": {"provider": "hyperliquid", "endpoint": None, "status": "not_implemented"},
+                "cvd": {"provider": "hyperliquid", "endpoint": None, "status": "not_implemented"},
+                "liquidations": {"provider": "hyperliquid", "endpoint": None, "status": "not_implemented"},
+            },
+            data_source="hyperliquid",
+            price_metadata=None,
+            candles=[],
+            funding_rate=funding_rate,
+            current_open_interest=open_interest,
+            open_interest_change=None,
+            cvd_proxy=None,
+            coinbase_payload={},
+            liquidation_imbalance=None,
+        ),
     }
 
 
@@ -343,6 +508,10 @@ def _get_number(payload: dict[str, Any], *keys: str) -> float | None:
         except (TypeError, ValueError):
             continue
     return None
+
+
+def _current_open_interest(payload: Any) -> float | None:
+    return _get_number(payload, "openInterest") if isinstance(payload, dict) else _get_number(_last(payload), "sumOpenInterest", "openInterest")
 
 
 def _get_int(payload: dict[str, Any], *keys: str) -> int | None:
@@ -467,8 +636,13 @@ def _open_interest_change(payload: Any) -> float | None:
     return (last - first) / first
 
 
-def _coinbase_premium(payload: dict[str, Any], reference_close: float | None) -> float | None:
-    if not reference_close:
+def _coinbase_premium(
+    payload: dict[str, Any],
+    reference_close: float | None,
+    *,
+    timestamps_compatible: bool = False,
+) -> float | None:
+    if not reference_close or not timestamps_compatible:
         return None
     coinbase_price = _get_number(payload, "price", "last", "close")
     if coinbase_price is None:
@@ -476,19 +650,35 @@ def _coinbase_premium(payload: dict[str, Any], reference_close: float | None) ->
     return (coinbase_price - reference_close) / reference_close
 
 
-def _liquidation_imbalance(rows: list[dict[str, Any]]) -> float | None:
-    long_liquidations = 0.0
-    short_liquidations = 0.0
-    for row in rows:
-        qty = _get_number(row, "executedQty", "origQty", "quantity") or 0.0
-        price = _get_number(row, "averagePrice", "avgPrice", "price") or 0.0
-        notional = qty * price
-        side = str(row.get("side", "")).upper()
-        if side == "SELL":
-            long_liquidations += notional
-        elif side == "BUY":
-            short_liquidations += notional
-    total = long_liquidations + short_liquidations
-    if total == 0:
-        return None
-    return (long_liquidations - short_liquidations) / total
+def _crypto_metric_provenance(
+    *,
+    supplied: dict[str, dict[str, object]] | None,
+    data_source: str,
+    price_metadata: DataFetchMetadata | None,
+    candles: list[Candle],
+    funding_rate: float | None,
+    current_open_interest: float | None,
+    open_interest_change: float | None,
+    cvd_proxy: float | None,
+    coinbase_payload: dict[str, Any],
+    liquidation_imbalance: float | None,
+) -> dict[str, dict[str, object]]:
+    price_provider = price_metadata.provider if price_metadata is not None else data_source
+    price_endpoint = price_metadata.endpoint if price_metadata is not None else "klines"
+    price_kind = price_metadata.market_data_kind if price_metadata is not None else "eod_candle"
+    price_granularity = price_metadata.granularity if price_metadata is not None else "daily"
+    default = {
+        "candles": {"provider": price_provider, "endpoint": price_endpoint, "status": "available" if candles else "provider_unavailable", "granularity": price_granularity, "market_data_kind": price_kind},
+        "spot": {"provider": price_provider, "endpoint": price_endpoint, "status": "available" if candles else "provider_unavailable", "granularity": price_granularity, "market_data_kind": price_kind},
+        "funding": {"provider": "binance", "endpoint": "funding_rate", "status": "available" if funding_rate is not None else "provider_unavailable", "value": funding_rate},
+        "current_open_interest": {"provider": "binance", "endpoint": "open_interest", "status": "available" if current_open_interest is not None else "provider_unavailable", "value": current_open_interest},
+        "open_interest_change": {"provider": "binance", "endpoint": "open_interest_history", "status": "available" if open_interest_change is not None else "provider_unavailable", "value": open_interest_change},
+        "cvd": {"provider": "binance", "endpoint": "taker_long_short_ratio", "status": "available" if cvd_proxy is not None else "provider_unavailable", "value": cvd_proxy, "is_proxy": True},
+        "premium": {"provider": "coinbase", "endpoint": "coinbase_product", "status": "incompatible_time" if _get_number(coinbase_payload, "price", "last", "close") is not None and candles else "provider_unavailable", "timestamps_compatible": False},
+        "liquidations": {"provider": "binance", "endpoint": None, "status": "not_implemented" if liquidation_imbalance is None else "available", "value": liquidation_imbalance},
+    }
+    for metric, values in (supplied or {}).items():
+        if metric in {"candles", "spot"} and candles and values.get("status") == "provider_unavailable":
+            continue
+        default.setdefault(metric, {}).update(values)
+    return default
