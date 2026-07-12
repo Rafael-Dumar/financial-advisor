@@ -11,12 +11,75 @@ from advisor.models import AssetDecision, Candle
 
 
 class SQLiteCache:
-    def __init__(self, db_path: Path | str):
+    def __init__(self, db_path: Path | str, *, read_only: bool = False):
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
+        self.read_only = read_only
+        if not read_only:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._ensure_schema()
+
+    def inspect(
+        self,
+        namespace: str | None = None,
+        *,
+        now: str | None = None,
+        freshness_seconds: dict[str, int] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Inspect cache metadata without creating or modifying the database."""
+        if not self.db_path.exists():
+            return []
+        query = "select namespace, key, payload, fetched_at from cache"
+        parameters: tuple[Any, ...] = ()
+        if namespace is not None:
+            query += " where namespace = ?"
+            parameters = (namespace,)
+        query += " order by namespace, key"
+        try:
+            with closing(self._read_only_connection()) as connection:
+                rows = connection.execute(query, parameters).fetchall()
+        except sqlite3.OperationalError:
+            return []
+
+        now_dt = _parse_iso(now or _now_iso())
+        freshness_seconds = freshness_seconds or {}
+        inspected = []
+        for row_namespace, key, payload_text, fetched_at in rows:
+            payload = _safe_json_loads(payload_text)
+            age = max(0, int((now_dt - _parse_iso(fetched_at)).total_seconds()))
+            freshness = freshness_seconds.get(row_namespace)
+            inspected.append(
+                {
+                    "namespace": row_namespace,
+                    "key": key,
+                    "fetched_at": fetched_at,
+                    "cache_age_seconds": age,
+                    "freshness_seconds": freshness,
+                    "expired": bool(freshness is not None and age > freshness),
+                    "payload_record_count": _payload_record_count(payload),
+                    "latest_source_timestamp": _latest_source_timestamp(payload),
+                }
+            )
+        return inspected
+
+    def inspect_entry(
+        self,
+        namespace: str,
+        key: str,
+        *,
+        now: str | None = None,
+        freshness_seconds: dict[str, int] | None = None,
+    ) -> dict[str, object] | None:
+        for row in self.inspect(namespace=namespace, now=now, freshness_seconds=freshness_seconds):
+            if row["key"] == key:
+                return row
+        return None
+
+    def _read_only_connection(self) -> sqlite3.Connection:
+        uri = f"file:{self.db_path.resolve().as_posix()}?mode=ro"
+        return sqlite3.connect(uri, uri=True)
 
     def set_json(self, namespace: str, key: str, payload: Any, fetched_at: str | None = None) -> None:
+        self._assert_writable()
         fetched_at = fetched_at or _now_iso()
         with closing(sqlite3.connect(self.db_path)) as connection:
             with connection:
@@ -53,7 +116,34 @@ class SQLiteCache:
             return None
         return json.loads(payload)
 
+    def get_json_with_metadata(
+        self,
+        namespace: str,
+        key: str,
+        *,
+        max_age_seconds: int,
+        now: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Return a cache payload with its original fetch timestamp and freshness."""
+        now_dt = _parse_iso(now or _now_iso())
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            row = connection.execute(
+                "select payload, fetched_at from cache where namespace = ? and key = ?",
+                (namespace, key),
+            ).fetchone()
+        if row is None:
+            return None
+        payload, fetched_at = row
+        cache_age_seconds = max(0, int((now_dt - _parse_iso(fetched_at)).total_seconds()))
+        return {
+            "payload": json.loads(payload),
+            "fetched_at": fetched_at,
+            "cache_age_seconds": cache_age_seconds,
+            "is_expired": cache_age_seconds > max_age_seconds,
+        }
+
     def save_latest_report(self, markdown: str, html: str) -> None:
+        self._assert_writable()
         with closing(sqlite3.connect(self.db_path)) as connection:
             with connection:
                 connection.execute(
@@ -69,6 +159,7 @@ class SQLiteCache:
         return tuple(row) if row else None
 
     def save_signal_journal(self, decisions: list[AssetDecision], *, report_file: str) -> None:
+        self._assert_writable()
         generated_at = _now_iso()
         with closing(sqlite3.connect(self.db_path)) as connection:
             with connection:
@@ -95,6 +186,7 @@ class SQLiteCache:
         return [dict(row) for row in rows]
 
     def update_signal_results(self, candles_by_asset: dict[str, list[Candle]]) -> int:
+        self._assert_writable()
         updated = 0
         with closing(sqlite3.connect(self.db_path)) as connection:
             connection.row_factory = sqlite3.Row
@@ -165,6 +257,7 @@ class SQLiteCache:
                     )
                     """
                 )
+
                 connection.execute(
                     """
                     create table if not exists api_usage(
@@ -232,6 +325,11 @@ class SQLiteCache:
                 )
 
 
+    def _assert_writable(self) -> None:
+        if self.read_only:
+            raise RuntimeError("cache_read_only")
+
+
 class ApiLimiter:
     def __init__(self, db_path: Path | str):
         self.db_path = Path(db_path)
@@ -268,6 +366,79 @@ def _parse_iso(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed
+
+
+def _safe_json_loads(value: str) -> Any:
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _payload_record_count(payload: Any) -> int:
+    if isinstance(payload, list):
+        return len(payload)
+    if isinstance(payload, dict):
+        for key in ("historical", "feed", "data", "prices", "total_volumes"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return len(value)
+        return 1 if payload else 0
+    return 0
+
+
+def _latest_source_timestamp(payload: Any) -> str | None:
+    candidates: list[str] = []
+
+    def add_timestamp(value: Any) -> None:
+        if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+            normalized = _normalize_source_timestamp(value)
+            if normalized is not None:
+                candidates.append(normalized)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                add_timestamp(item)
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                normalized = str(key).lower()
+                if normalized in {"date", "timestamp", "time", "time_published", "fundingtime", "t", "ts"}:
+                    add_timestamp(item)
+                else:
+                    visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, (list, tuple)) and item:
+                    add_timestamp(item[0])
+                else:
+                    visit(item)
+
+    visit(payload)
+    return max(candidates) if candidates else None
+
+
+def _normalize_source_timestamp(value: str | int | float) -> str | None:
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00")).date().isoformat()
+        except ValueError:
+            pass
+    try:
+        timestamp = float(value)
+    except (TypeError, ValueError):
+        return None
+    if 1_000_000_000 <= timestamp <= 10_000_000_000:
+        seconds = timestamp
+    elif 1_000_000_000_000 <= timestamp <= 10_000_000_000_000:
+        seconds = timestamp / 1000
+    else:
+        return None
+    try:
+        return datetime.fromtimestamp(seconds, timezone.utc).date().isoformat()
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def _signal_row(generated_at: str, decision: AssetDecision, report_file: str) -> tuple[Any, ...]:

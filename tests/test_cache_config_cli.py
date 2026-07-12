@@ -36,6 +36,23 @@ class CacheConfigCliTests(unittest.TestCase):
             self.assertEqual(fresh["close"], 100)
             self.assertIsNone(stale)
 
+    def test_sqlite_cache_metadata_preserves_original_fetch_timestamp_and_age(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = SQLiteCache(Path(tmp) / "advisor.db")
+            cache.set_json("prices", "MSFT", {"close": 100}, fetched_at="2026-07-10T10:00:00+00:00")
+
+            cached = cache.get_json_with_metadata(
+                "prices",
+                "MSFT",
+                max_age_seconds=3600,
+                now="2026-07-10T10:30:00+00:00",
+            )
+
+        self.assertEqual(cached["payload"], {"close": 100})
+        self.assertEqual(cached["fetched_at"], "2026-07-10T10:00:00+00:00")
+        self.assertEqual(cached["cache_age_seconds"], 1800)
+        self.assertFalse(cached["is_expired"])
+
     def test_scan_fixture_loader_accepts_utf8_bom_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             fixture_dir = Path(tmp)

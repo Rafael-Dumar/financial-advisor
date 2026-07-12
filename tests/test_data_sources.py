@@ -26,7 +26,7 @@ class DataSourceTests(unittest.TestCase):
         self.assertIn("/fapi/v1/fundingInfo", BinanceSource().funding_info_url())
         self.assertIn("/fapi/v1/openInterest", BinanceSource().open_interest_url("BTCUSDT"))
         self.assertIn("/futures/data/openInterestHist", BinanceSource().open_interest_history_url("BTCUSDT"))
-        self.assertIn("/fapi/v1/allForceOrders", BinanceSource().liquidation_orders_url("BTCUSDT"))
+        self.assertFalse(hasattr(BinanceSource(), "liquidation_orders_url"))
         self.assertIn("api.coingecko.com", CoinGeckoSource("demo").markets_url(["bitcoin"]))
         self.assertEqual(HyperliquidSource().info_url(), "https://api.hyperliquid.xyz/info")
         self.assertEqual(
@@ -44,6 +44,12 @@ class DataSourceTests(unittest.TestCase):
             SecEdgarSource().submissions_url("2488"),
             "https://data.sec.gov/submissions/CIK0000002488.json",
         )
+
+    def test_fmp_batch_quote_url_keeps_all_symbols_in_one_request(self):
+        url = FmpSource("demo").batch_quote_url(["AMD", "NVDA"])
+
+        self.assertIn("/stable/quote", url)
+        self.assertIn("symbol=AMD%2CNVDA", url)
 
 
 if __name__ == "__main__":

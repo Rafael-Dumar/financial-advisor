@@ -15,6 +15,9 @@ class FmpSource:
     def historical_prices_light_url(self, symbol: str) -> str:
         return self._url("/stable/historical-price-eod/light", {"symbol": symbol, "apikey": self.api_key})
 
+    def batch_quote_url(self, symbols: list[str]) -> str:
+        return self._url("/stable/quote", {"symbol": ",".join(symbols), "apikey": self.api_key})
+
     def profile_url(self, symbol: str) -> str:
         return self._url("/stable/profile", {"symbol": symbol, "apikey": self.api_key})
 
@@ -83,9 +86,6 @@ class BinanceSource:
             "/futures/data/takerlongshortRatio",
             {"symbol": symbol, "period": period, "limit": str(limit)},
         )
-
-    def liquidation_orders_url(self, symbol: str, limit: int = 100) -> str:
-        return self._url("/fapi/v1/allForceOrders", {"symbol": symbol, "limit": str(limit)})
 
     def _url(self, path: str, params: dict[str, str]) -> str:
         return f"{self.base_url}{path}?{urlencode(params)}"

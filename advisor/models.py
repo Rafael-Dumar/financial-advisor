@@ -37,6 +37,35 @@ class EventInfo:
 
 
 @dataclass(frozen=True)
+class DataFetchMetadata:
+    provider: str
+    endpoint: str
+    fetched_at: str | None = None
+    cache_fetched_at: str | None = None
+    source_timestamp: str | None = None
+    cache_age_seconds: int | None = None
+    source_age_seconds: int | None = None
+    is_fresh: bool | None = None
+    cache_hit: bool = False
+    fallback_used: bool = False
+    fallback_from: str | None = None
+    fallback_to: str | None = None
+    granularity: str | None = None
+    market_data_kind: str | None = None
+
+
+@dataclass(frozen=True)
+class ProviderCapability:
+    provider: str
+    capability: str
+    configured: bool
+    supported_by_plan: bool
+    implemented: bool
+    last_status: str
+    fallback_available: bool
+
+
+@dataclass(frozen=True)
 class AssetSnapshot:
     symbol: str
     asset_type: str
@@ -51,9 +80,27 @@ class AssetSnapshot:
     liquidation_imbalance: float | None = None
     missing_data: list[str] = field(default_factory=list)
     news_events: list[dict[str, object]] = field(default_factory=list)
+    provider_capabilities: list[ProviderCapability] = field(default_factory=list)
+    earnings_status: str = "not_implemented"
+    guidance_status: str = "not_implemented"
+    macro_status: str = "not_implemented"
+    news_status: str = "not_configured"
+    sec_filings_status: str = "not_implemented"
     data_source: str = "unknown"
     data_timestamp: str | None = None
     cache_age_seconds: int | None = None
+    data_fetch_metadata: DataFetchMetadata | None = None
+    quote_status: str = "not_requested"
+    quote_price: float | None = None
+    quote_timestamp: str | None = None
+    quote_source: str | None = None
+    quote_age_seconds: int | None = None
+    quote_is_intraday: bool = False
+    previous_close: float | None = None
+    daily_change: float | None = None
+    daily_change_pct: float | None = None
+    benchmark_provenance: dict[str, object] = field(default_factory=dict)
+    crypto_metric_provenance: dict[str, dict[str, object]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
