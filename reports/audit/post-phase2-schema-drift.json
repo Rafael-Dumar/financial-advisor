@@ -1,0 +1,102 @@
+{
+  "occurrences": [
+    {
+      "actual_fields": [],
+      "actual_top_level_type": "list",
+      "endpoint_name": "markets",
+      "expected_schema": [
+        "market_cap",
+        "total_volume"
+      ],
+      "impact": "snapshot_degraded",
+      "missing_expected_fields": [
+        "market_cap",
+        "total_volume"
+      ],
+      "parser": "audit.validate_schema",
+      "payload_preview_sanitized": {
+        "failure_cause": "schema_error",
+        "http_status": 200,
+        "records_returned": 0,
+        "status": "temporarily_unavailable"
+      },
+      "provider": "coingecko",
+      "symbol": "AVAX",
+      "unexpected_fields": []
+    },
+    {
+      "actual_fields": [],
+      "actual_top_level_type": "list",
+      "endpoint_name": "markets",
+      "expected_schema": [
+        "market_cap",
+        "total_volume"
+      ],
+      "impact": "snapshot_degraded",
+      "missing_expected_fields": [
+        "market_cap",
+        "total_volume"
+      ],
+      "parser": "audit.validate_schema",
+      "payload_preview_sanitized": {
+        "failure_cause": "schema_error",
+        "http_status": 200,
+        "records_returned": 0,
+        "status": "temporarily_unavailable"
+      },
+      "provider": "coingecko",
+      "symbol": "BNB",
+      "unexpected_fields": []
+    },
+    {
+      "actual_fields": [],
+      "actual_top_level_type": "list",
+      "endpoint_name": "markets",
+      "expected_schema": [
+        "market_cap",
+        "total_volume"
+      ],
+      "impact": "snapshot_degraded",
+      "missing_expected_fields": [
+        "market_cap",
+        "total_volume"
+      ],
+      "parser": "audit.validate_schema",
+      "payload_preview_sanitized": {
+        "failure_cause": "schema_error",
+        "http_status": 200,
+        "records_returned": 0,
+        "status": "temporarily_unavailable"
+      },
+      "provider": "coingecko",
+      "symbol": "LINK",
+      "unexpected_fields": []
+    },
+    {
+      "actual_fields": [],
+      "actual_top_level_type": "list",
+      "endpoint_name": "markets",
+      "expected_schema": [
+        "market_cap",
+        "total_volume"
+      ],
+      "impact": "snapshot_degraded",
+      "missing_expected_fields": [
+        "market_cap",
+        "total_volume"
+      ],
+      "parser": "audit.validate_schema",
+      "payload_preview_sanitized": {
+        "failure_cause": "schema_error",
+        "http_status": 200,
+        "records_returned": 0,
+        "status": "temporarily_unavailable"
+      },
+      "provider": "coingecko",
+      "symbol": "XRP",
+      "unexpected_fields": []
+    }
+  ],
+  "sanitized": true,
+  "schema_version": "post-phase2-schema-drift-v1"
+}

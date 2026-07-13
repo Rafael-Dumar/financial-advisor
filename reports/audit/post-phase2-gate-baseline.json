@@ -1,0 +1,3627 @@
+{
+  "assets": [
+    {
+      "asset_type": "stock",
+      "base_decision": "tradeable",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:04+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-10",
+        "earnings_status": "no_upcoming_event_found",
+        "guidance_status": "not_implemented",
+        "latest_candle_date": "2026-07-10",
+        "liquidations_status": "unknown",
+        "macro_status": "unknown",
+        "news_status": "not_configured",
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "available",
+        "sector_benchmark_status": null
+      },
+      "diagnostic_counterfactuals": {
+        "current": "technical_unvalidated",
+        "preserving_only_real_risks": "technical_unvalidated",
+        "without_backtest_hard_gate": "technical_unvalidated",
+        "without_not_implemented": "technical_unvalidated",
+        "without_optional_context_missing": "technical_unvalidated"
+      },
+      "final_decision": "technical_unvalidated",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "recent_gap_risk",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "technical_unvalidated",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "200-201"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "earnings_data_missing",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "guidance_recent_not_collected",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "possible_priced_in",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "valuation_extreme",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 55,
+        "investment_quality": 70,
+        "swing_trade": 83.0
+      },
+      "symbol": "AMD"
+    },
+    {
+      "asset_type": "crypto",
+      "base_decision": "avoid",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:35+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-12",
+        "earnings_status": "unknown",
+        "guidance_status": "unknown",
+        "latest_candle_date": "2026-07-12",
+        "liquidations_status": "not_implemented",
+        "macro_status": "unknown",
+        "news_status": null,
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "unknown",
+        "sector_benchmark_status": "unknown"
+      },
+      "diagnostic_counterfactuals": {
+        "current": "avoid",
+        "preserving_only_real_risks": "avoid",
+        "without_backtest_hard_gate": "avoid",
+        "without_not_implemented": "avoid",
+        "without_optional_context_missing": "avoid"
+      },
+      "final_decision": "avoid",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "optional_context_missing",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "coinbase_premium_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "cvd_proxy_uses_taker_buy_sell_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "liquidations_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_average_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_market_cap",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "relative_strength_weak",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 0,
+        "decision_confidence": 0,
+        "investment_quality": 39.0,
+        "swing_trade": 11.0
+      },
+      "symbol": "AVAX"
+    },
+    {
+      "asset_type": "crypto",
+      "base_decision": "avoid",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:37+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-12",
+        "earnings_status": "unknown",
+        "guidance_status": "unknown",
+        "latest_candle_date": "2026-07-12",
+        "liquidations_status": "not_implemented",
+        "macro_status": "unknown",
+        "news_status": null,
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "unknown",
+        "sector_benchmark_status": "unknown"
+      },
+      "diagnostic_counterfactuals": {
+        "current": "avoid",
+        "preserving_only_real_risks": "avoid",
+        "without_backtest_hard_gate": "avoid",
+        "without_not_implemented": "avoid",
+        "without_optional_context_missing": "avoid"
+      },
+      "final_decision": "avoid",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "optional_context_missing",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "coinbase_premium_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "cvd_proxy_uses_taker_buy_sell_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "liquidations_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_average_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_market_cap",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "relative_strength_weak",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 0,
+        "decision_confidence": 0,
+        "investment_quality": 39.0,
+        "swing_trade": 31.0
+      },
+      "symbol": "BNB"
+    },
+    {
+      "asset_type": "crypto",
+      "base_decision": "wait",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:31+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-12",
+        "earnings_status": "unknown",
+        "guidance_status": "unknown",
+        "latest_candle_date": "2026-07-12",
+        "liquidations_status": "not_implemented",
+        "macro_status": "unknown",
+        "news_status": null,
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "unknown",
+        "sector_benchmark_status": "unknown"
+      },
+      "diagnostic_counterfactuals": {
+        "current": "wait",
+        "preserving_only_real_risks": "wait",
+        "without_backtest_hard_gate": "wait",
+        "without_not_implemented": "wait",
+        "without_optional_context_missing": "wait"
+      },
+      "final_decision": "wait",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "optional_context_missing",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "coinbase_premium_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "cvd_proxy_uses_taker_buy_sell_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "liquidations_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 45,
+        "investment_quality": 75.0,
+        "swing_trade": 57.0
+      },
+      "symbol": "BTC"
+    },
+    {
+      "asset_type": "stock",
+      "base_decision": "watch_buy",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:21+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-10",
+        "earnings_status": "no_upcoming_event_found",
+        "guidance_status": "not_implemented",
+        "latest_candle_date": "2026-07-10",
+        "liquidations_status": "unknown",
+        "macro_status": "unknown",
+        "news_status": "not_configured",
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "available",
+        "sector_benchmark_status": null
+      },
+      "diagnostic_counterfactuals": {
+        "current": "technical_unvalidated",
+        "preserving_only_real_risks": "technical_unvalidated",
+        "without_backtest_hard_gate": "technical_unvalidated",
+        "without_not_implemented": "technical_unvalidated",
+        "without_optional_context_missing": "technical_unvalidated"
+      },
+      "final_decision": "technical_unvalidated",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "earnings_data_missing",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "fundamentals_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "guidance_recent_not_collected",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "high_volatility",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_average_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_eps_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_free_cash_flow",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_margin_trend",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_market_cap",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_pe_history",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_peg",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_revenue_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "mixed_provider_data",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "possible_priced_in",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "source_mismatch_possible",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "yahoo_price_fallback",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 45,
+        "investment_quality": 29.0,
+        "swing_trade": 67.0
+      },
+      "symbol": "CRDO"
+    },
+    {
+      "asset_type": "stock",
+      "base_decision": "technical_unvalidated",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:22+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-10",
+        "earnings_status": "no_upcoming_event_found",
+        "guidance_status": "not_implemented",
+        "latest_candle_date": "2026-07-10",
+        "liquidations_status": "unknown",
+        "macro_status": "unknown",
+        "news_status": "not_configured",
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "available",
+        "sector_benchmark_status": null
+      },
+      "diagnostic_counterfactuals": {
+        "current": "technical_unvalidated",
+        "preserving_only_real_risks": "technical_unvalidated",
+        "without_backtest_hard_gate": "technical_unvalidated",
+        "without_not_implemented": "technical_unvalidated",
+        "without_optional_context_missing": "technical_unvalidated"
+      },
+      "final_decision": "technical_unvalidated",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "technical_unvalidated",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "200-201"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "earnings_data_missing",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "fundamentals_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "guidance_recent_not_collected",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "missing_average_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "missing_eps_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "missing_free_cash_flow",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "missing_margin_trend",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "missing_market_cap",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "missing_pe_history",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "missing_peg",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "missing_revenue_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "mixed_provider_data",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "possible_priced_in",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "source_mismatch_possible",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "technical_unvalidated",
+          "reason_code": "yahoo_price_fallback",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 55,
+        "investment_quality": 29.0,
+        "swing_trade": 83.0
+      },
+      "symbol": "DELL"
+    },
+    {
+      "asset_type": "crypto",
+      "base_decision": "tradeable",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:33+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-12",
+        "earnings_status": "unknown",
+        "guidance_status": "unknown",
+        "latest_candle_date": "2026-07-12",
+        "liquidations_status": "not_implemented",
+        "macro_status": "unknown",
+        "news_status": null,
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "unknown",
+        "sector_benchmark_status": "unknown"
+      },
+      "diagnostic_counterfactuals": {
+        "current": "technical_unvalidated",
+        "preserving_only_real_risks": "technical_unvalidated",
+        "without_backtest_hard_gate": "technical_unvalidated",
+        "without_not_implemented": "technical_unvalidated",
+        "without_optional_context_missing": "technical_unvalidated"
+      },
+      "final_decision": "technical_unvalidated",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "technical_unvalidated",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "200-201"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "optional_context_missing",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "coinbase_premium_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "cvd_proxy_uses_taker_buy_sell_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "tradeable",
+          "reason_code": "liquidations_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 50,
+        "investment_quality": 75.0,
+        "swing_trade": 75.0
+      },
+      "symbol": "ETH"
+    },
+    {
+      "asset_type": "stock",
+      "base_decision": "wait",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:15+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-10",
+        "earnings_status": "no_upcoming_event_found",
+        "guidance_status": "not_implemented",
+        "latest_candle_date": "2026-07-10",
+        "liquidations_status": "unknown",
+        "macro_status": "unknown",
+        "news_status": "not_configured",
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "available",
+        "sector_benchmark_status": null
+      },
+      "diagnostic_counterfactuals": {
+        "current": "avoid",
+        "preserving_only_real_risks": "avoid",
+        "without_backtest_hard_gate": "avoid",
+        "without_not_implemented": "avoid",
+        "without_optional_context_missing": "avoid"
+      },
+      "final_decision": "avoid",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "below_minimum_market_cap",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "earnings_data_missing",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "fundamentals_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "guidance_recent_not_collected",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "missing_eps_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "missing_free_cash_flow",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "missing_margin_trend",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "missing_pe_history",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "missing_peg",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "missing_revenue_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "mixed_provider_data",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "possible_priced_in",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "source_mismatch_possible",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "avoid",
+          "decision_before": "wait",
+          "reason_code": "yahoo_price_fallback",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 45,
+        "investment_quality": 38.0,
+        "swing_trade": 53.0
+      },
+      "symbol": "HIMS"
+    },
+    {
+      "asset_type": "stock",
+      "base_decision": "watch_buy",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:25+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-10",
+        "earnings_status": "no_upcoming_event_found",
+        "guidance_status": "not_implemented",
+        "latest_candle_date": "2026-07-10",
+        "liquidations_status": "unknown",
+        "macro_status": "unknown",
+        "news_status": "not_configured",
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "available",
+        "sector_benchmark_status": null
+      },
+      "diagnostic_counterfactuals": {
+        "current": "technical_unvalidated",
+        "preserving_only_real_risks": "technical_unvalidated",
+        "without_backtest_hard_gate": "technical_unvalidated",
+        "without_not_implemented": "technical_unvalidated",
+        "without_optional_context_missing": "technical_unvalidated"
+      },
+      "final_decision": "technical_unvalidated",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "earnings_data_missing",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "fundamentals_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "guidance_recent_not_collected",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_average_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_eps_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_free_cash_flow",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_margin_trend",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_market_cap",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_pe_history",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_peg",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_revenue_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "mixed_provider_data",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "possible_priced_in",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "source_mismatch_possible",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "yahoo_price_fallback",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 45,
+        "investment_quality": 29.0,
+        "swing_trade": 69.0
+      },
+      "symbol": "HOOD"
+    },
+    {
+      "asset_type": "crypto",
+      "base_decision": "watch_buy",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:29+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-12",
+        "earnings_status": "unknown",
+        "guidance_status": "unknown",
+        "latest_candle_date": "2026-07-12",
+        "liquidations_status": "not_implemented",
+        "macro_status": "unknown",
+        "news_status": null,
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "unknown",
+        "sector_benchmark_status": "unknown"
+      },
+      "diagnostic_counterfactuals": {
+        "current": "technical_unvalidated",
+        "preserving_only_real_risks": "technical_unvalidated",
+        "without_backtest_hard_gate": "technical_unvalidated",
+        "without_not_implemented": "technical_unvalidated",
+        "without_optional_context_missing": "technical_unvalidated"
+      },
+      "final_decision": "technical_unvalidated",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "technical_unvalidated",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "200-201"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "optional_context_missing",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "coinbase_premium_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "optional_context_missing",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "cvd_proxy_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "liquidations_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "optional_context_missing",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "open_interest_change_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 55,
+        "investment_quality": 75.0,
+        "swing_trade": 73.0
+      },
+      "symbol": "HYPE"
+    },
+    {
+      "asset_type": "stock",
+      "base_decision": "avoid",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:03:59+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-10",
+        "earnings_status": "no_upcoming_event_found",
+        "guidance_status": "not_implemented",
+        "latest_candle_date": "2026-07-10",
+        "liquidations_status": "unknown",
+        "macro_status": "unknown",
+        "news_status": "not_configured",
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "available",
+        "sector_benchmark_status": null
+      },
+      "diagnostic_counterfactuals": {
+        "current": "avoid",
+        "preserving_only_real_risks": "avoid",
+        "without_backtest_hard_gate": "avoid",
+        "without_not_implemented": "avoid",
+        "without_optional_context_missing": "avoid"
+      },
+      "final_decision": "avoid",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "earnings_data_missing",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "guidance_recent_not_collected",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "high_volatility",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "negative_or_invalid_pe",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "negative_or_invalid_peg",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 28,
+        "investment_quality": 34.0,
+        "swing_trade": 21.0
+      },
+      "symbol": "INTC"
+    },
+    {
+      "asset_type": "crypto",
+      "base_decision": "watch_buy",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:40+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-12",
+        "earnings_status": "unknown",
+        "guidance_status": "unknown",
+        "latest_candle_date": "2026-07-12",
+        "liquidations_status": "not_implemented",
+        "macro_status": "unknown",
+        "news_status": null,
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "unknown",
+        "sector_benchmark_status": "unknown"
+      },
+      "diagnostic_counterfactuals": {
+        "current": "technical_unvalidated",
+        "preserving_only_real_risks": "technical_unvalidated",
+        "without_backtest_hard_gate": "technical_unvalidated",
+        "without_not_implemented": "technical_unvalidated",
+        "without_optional_context_missing": "technical_unvalidated"
+      },
+      "final_decision": "technical_unvalidated",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "optional_context_missing",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "coinbase_premium_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "cvd_proxy_uses_taker_buy_sell_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "liquidations_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_average_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "technical_unvalidated",
+          "decision_before": "watch_buy",
+          "reason_code": "missing_market_cap",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 0,
+        "decision_confidence": 0,
+        "investment_quality": 39.0,
+        "swing_trade": 69.0
+      },
+      "symbol": "LINK"
+    },
+    {
+      "asset_type": "stock",
+      "base_decision": "wait",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:23+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-10",
+        "earnings_status": "no_upcoming_event_found",
+        "guidance_status": "not_implemented",
+        "latest_candle_date": "2026-07-10",
+        "liquidations_status": "unknown",
+        "macro_status": "unknown",
+        "news_status": "not_configured",
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "available",
+        "sector_benchmark_status": null
+      },
+      "diagnostic_counterfactuals": {
+        "current": "wait",
+        "preserving_only_real_risks": "wait",
+        "without_backtest_hard_gate": "wait",
+        "without_not_implemented": "wait",
+        "without_optional_context_missing": "wait"
+      },
+      "final_decision": "wait",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "recent_gap_risk",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "earnings_data_missing",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "fundamentals_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "guidance_recent_not_collected",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "high_volatility",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_average_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_eps_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_free_cash_flow",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_margin_trend",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_market_cap",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_pe_history",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_peg",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_revenue_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "mixed_provider_data",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "possible_priced_in",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "source_mismatch_possible",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "yahoo_price_fallback",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 42,
+        "investment_quality": 29.0,
+        "swing_trade": 55.0
+      },
+      "symbol": "MRVL"
+    },
+    {
+      "asset_type": "stock",
+      "base_decision": "avoid",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:19+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-10",
+        "earnings_status": "no_upcoming_event_found",
+        "guidance_status": "not_implemented",
+        "latest_candle_date": "2026-07-10",
+        "liquidations_status": "unknown",
+        "macro_status": "unknown",
+        "news_status": "not_configured",
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "available",
+        "sector_benchmark_status": null
+      },
+      "diagnostic_counterfactuals": {
+        "current": "avoid",
+        "preserving_only_real_risks": "avoid",
+        "without_backtest_hard_gate": "avoid",
+        "without_not_implemented": "avoid",
+        "without_optional_context_missing": "avoid"
+      },
+      "final_decision": "avoid",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "earnings_data_missing",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "fundamentals_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "guidance_recent_not_collected",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_average_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_eps_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_free_cash_flow",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_margin_trend",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_market_cap",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_pe_history",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_peg",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_revenue_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "mixed_provider_data",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "possible_priced_in",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "source_mismatch_possible",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "yahoo_price_fallback",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 29,
+        "investment_quality": 29.0,
+        "swing_trade": 29.0
+      },
+      "symbol": "MSFT"
+    },
+    {
+      "asset_type": "stock",
+      "base_decision": "wait",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:17+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-10",
+        "earnings_status": "no_upcoming_event_found",
+        "guidance_status": "not_implemented",
+        "latest_candle_date": "2026-07-10",
+        "liquidations_status": "unknown",
+        "macro_status": "unknown",
+        "news_status": "not_configured",
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "available",
+        "sector_benchmark_status": null
+      },
+      "diagnostic_counterfactuals": {
+        "current": "wait",
+        "preserving_only_real_risks": "wait",
+        "without_backtest_hard_gate": "wait",
+        "without_not_implemented": "wait",
+        "without_optional_context_missing": "wait"
+      },
+      "final_decision": "wait",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "recent_gap_risk",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "earnings_data_missing",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "fundamentals_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "guidance_recent_not_collected",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "high_volatility",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_average_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_eps_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_free_cash_flow",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_margin_trend",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_market_cap",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_pe_history",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_peg",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "missing_revenue_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "mixed_provider_data",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "possible_priced_in",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "source_mismatch_possible",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "yahoo_price_fallback",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 42,
+        "investment_quality": 29.0,
+        "swing_trade": 55.0
+      },
+      "symbol": "MU"
+    },
+    {
+      "asset_type": "stock",
+      "base_decision": "watch_buy",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:10+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-10",
+        "earnings_status": "no_upcoming_event_found",
+        "guidance_status": "not_implemented",
+        "latest_candle_date": "2026-07-10",
+        "liquidations_status": "unknown",
+        "macro_status": "unknown",
+        "news_status": "not_configured",
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "available",
+        "sector_benchmark_status": null
+      },
+      "diagnostic_counterfactuals": {
+        "current": "wait",
+        "preserving_only_real_risks": "wait",
+        "without_backtest_hard_gate": "wait",
+        "without_not_implemented": "wait",
+        "without_optional_context_missing": "wait"
+      },
+      "final_decision": "wait",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "wait",
+          "decision_before": "watch_buy",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "wait",
+          "decision_before": "watch_buy",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "wait",
+          "decision_before": "watch_buy",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "wait",
+          "decision_before": "watch_buy",
+          "reason_code": "earnings_data_missing",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "wait",
+          "decision_before": "watch_buy",
+          "reason_code": "guidance_recent_not_collected",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "wait",
+          "decision_before": "watch_buy",
+          "reason_code": "possible_priced_in",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 55,
+        "investment_quality": 100.0,
+        "swing_trade": 67.0
+      },
+      "symbol": "NVDA"
+    },
+    {
+      "asset_type": "crypto",
+      "base_decision": "wait",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:26+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-12",
+        "earnings_status": "unknown",
+        "guidance_status": "unknown",
+        "latest_candle_date": "2026-07-12",
+        "liquidations_status": "not_implemented",
+        "macro_status": "unknown",
+        "news_status": null,
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "unknown",
+        "sector_benchmark_status": "unknown"
+      },
+      "diagnostic_counterfactuals": {
+        "current": "wait",
+        "preserving_only_real_risks": "wait",
+        "without_backtest_hard_gate": "wait",
+        "without_not_implemented": "wait",
+        "without_optional_context_missing": "wait"
+      },
+      "final_decision": "wait",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "optional_context_missing",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "coinbase_premium_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "cvd_proxy_uses_taker_buy_sell_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "wait",
+          "decision_before": "wait",
+          "reason_code": "liquidations_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 45,
+        "investment_quality": 75.0,
+        "swing_trade": 59.0
+      },
+      "symbol": "SOL"
+    },
+    {
+      "asset_type": "stock",
+      "base_decision": "avoid",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:20+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-10",
+        "earnings_status": "no_upcoming_event_found",
+        "guidance_status": "not_implemented",
+        "latest_candle_date": "2026-07-10",
+        "liquidations_status": "unknown",
+        "macro_status": "unknown",
+        "news_status": "not_configured",
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "not_implemented",
+        "sector_benchmark_status": null
+      },
+      "diagnostic_counterfactuals": {
+        "current": "avoid",
+        "preserving_only_real_risks": "avoid",
+        "without_backtest_hard_gate": "avoid",
+        "without_not_implemented": "avoid",
+        "without_optional_context_missing": "avoid"
+      },
+      "final_decision": "avoid",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "earnings_data_missing",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "fundamentals_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "guidance_recent_not_collected",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "high_volatility",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_average_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_eps_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_free_cash_flow",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_margin_trend",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_market_cap",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_pe_history",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_peg",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_revenue_growth",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "mixed_provider_data",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "source_mismatch_possible",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "real_data_failure",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "yahoo_price_fallback",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 55,
+        "decision_confidence": 25,
+        "investment_quality": 29.0,
+        "swing_trade": 21.0
+      },
+      "symbol": "USAR"
+    },
+    {
+      "asset_type": "crypto",
+      "base_decision": "avoid",
+      "data_summary": {
+        "cache_age_seconds": 0,
+        "cache_fetched_at": "2026-07-12T16:04:42+00:00",
+        "candle_data_kind": "eod_candle",
+        "candle_source_timestamp": "2026-07-12",
+        "earnings_status": "unknown",
+        "guidance_status": "unknown",
+        "latest_candle_date": "2026-07-12",
+        "liquidations_status": "not_implemented",
+        "macro_status": "unknown",
+        "news_status": null,
+        "quote_age_seconds": null,
+        "quote_provider": null,
+        "quote_status": "unavailable",
+        "quote_timestamp": null,
+        "sec_filings_status": "unknown",
+        "sector_benchmark_status": "unknown"
+      },
+      "diagnostic_counterfactuals": {
+        "current": "avoid",
+        "preserving_only_real_risks": "avoid",
+        "without_backtest_hard_gate": "avoid",
+        "without_not_implemented": "avoid",
+        "without_optional_context_missing": "avoid"
+      },
+      "final_decision": "avoid",
+      "gate_sequence": [
+        {
+          "cap_applied": "cap_to_watch_buy",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "confidence_limiting_data_gap",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "_has_confidence_limiting_data_gap"
+        },
+        {
+          "cap_applied": "cap_to_wait_or_watch_buy",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "market_not_risk_on",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "hard_gates"
+        },
+        {
+          "cap_applied": "cap_to_technical_unvalidated",
+          "category": "reporting_only",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "high_severity_data_not_watchlist",
+          "severity": "cap",
+          "source_file": "advisor/scoring.py",
+          "source_function": "159-161"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "optional_context_missing",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "coinbase_premium_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "cvd_proxy_uses_taker_buy_sell_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "not_implemented",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "liquidations_unavailable",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_average_volume",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_asset_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "missing_market_cap",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        },
+        {
+          "cap_applied": "input_to_classification",
+          "category": "genuine_market_risk",
+          "decision_after": "avoid",
+          "decision_before": "avoid",
+          "reason_code": "relative_strength_weak",
+          "severity": "observed",
+          "source_file": "advisor/scoring.py",
+          "source_function": "score_asset"
+        }
+      ],
+      "scores": {
+        "data_quality": 0,
+        "decision_confidence": 0,
+        "investment_quality": 39.0,
+        "swing_trade": 19.0
+      },
+      "symbol": "XRP"
+    }
+  ],
+  "commit_sha": "dc0a2546e91127e9105983ea17579a06180dd103",
+  "diagnostic_only": true,
+  "generated_at_utc": "2026-07-13T02:17:21+00:00",
+  "recurring_gates": [
+    {
+      "assets_affected": [
+        "AMD",
+        "AVAX",
+        "BNB",
+        "BTC",
+        "CRDO",
+        "DELL",
+        "ETH",
+        "HIMS",
+        "HOOD",
+        "HYPE",
+        "INTC",
+        "LINK",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "NVDA",
+        "SOL",
+        "USAR",
+        "XRP"
+      ],
+      "cap_applied": "cap_to_watch_buy",
+      "category": "reporting_only",
+      "frequency": 19,
+      "gate": "confidence_limiting_data_gap"
+    },
+    {
+      "assets_affected": [
+        "AMD",
+        "AVAX",
+        "BNB",
+        "BTC",
+        "CRDO",
+        "DELL",
+        "ETH",
+        "HIMS",
+        "HOOD",
+        "HYPE",
+        "INTC",
+        "LINK",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "NVDA",
+        "SOL",
+        "USAR",
+        "XRP"
+      ],
+      "cap_applied": "cap_to_technical_unvalidated",
+      "category": "reporting_only",
+      "frequency": 19,
+      "gate": "high_severity_data_not_watchlist"
+    },
+    {
+      "assets_affected": [
+        "AMD",
+        "AVAX",
+        "BNB",
+        "BTC",
+        "CRDO",
+        "DELL",
+        "ETH",
+        "HIMS",
+        "HOOD",
+        "HYPE",
+        "INTC",
+        "LINK",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "NVDA",
+        "SOL",
+        "USAR",
+        "XRP"
+      ],
+      "cap_applied": "cap_to_wait_or_watch_buy",
+      "category": "genuine_market_risk",
+      "frequency": 19,
+      "gate": "market_not_risk_on"
+    },
+    {
+      "assets_affected": [
+        "AMD",
+        "CRDO",
+        "DELL",
+        "HIMS",
+        "HOOD",
+        "INTC",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "NVDA",
+        "USAR"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "real_data_failure",
+      "frequency": 11,
+      "gate": "earnings_data_missing"
+    },
+    {
+      "assets_affected": [
+        "AMD",
+        "CRDO",
+        "DELL",
+        "HIMS",
+        "HOOD",
+        "INTC",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "NVDA",
+        "USAR"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "not_implemented",
+      "frequency": 11,
+      "gate": "guidance_recent_not_collected"
+    },
+    {
+      "assets_affected": [
+        "AVAX",
+        "BNB",
+        "CRDO",
+        "DELL",
+        "HOOD",
+        "LINK",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "USAR",
+        "XRP"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 11,
+      "gate": "missing_average_volume"
+    },
+    {
+      "assets_affected": [
+        "AVAX",
+        "BNB",
+        "CRDO",
+        "DELL",
+        "HOOD",
+        "LINK",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "USAR",
+        "XRP"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 11,
+      "gate": "missing_market_cap"
+    },
+    {
+      "assets_affected": [
+        "AMD",
+        "CRDO",
+        "DELL",
+        "HIMS",
+        "HOOD",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "NVDA"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_market_risk",
+      "frequency": 9,
+      "gate": "possible_priced_in"
+    },
+    {
+      "assets_affected": [
+        "AVAX",
+        "BNB",
+        "BTC",
+        "ETH",
+        "HYPE",
+        "LINK",
+        "SOL",
+        "XRP"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "optional_context_missing",
+      "frequency": 8,
+      "gate": "coinbase_premium_unavailable"
+    },
+    {
+      "assets_affected": [
+        "CRDO",
+        "DELL",
+        "HIMS",
+        "HOOD",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "USAR"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "real_data_failure",
+      "frequency": 8,
+      "gate": "fundamentals_unavailable"
+    },
+    {
+      "assets_affected": [
+        "AVAX",
+        "BNB",
+        "BTC",
+        "ETH",
+        "HYPE",
+        "LINK",
+        "SOL",
+        "XRP"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "not_implemented",
+      "frequency": 8,
+      "gate": "liquidations_unavailable"
+    },
+    {
+      "assets_affected": [
+        "CRDO",
+        "DELL",
+        "HIMS",
+        "HOOD",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "USAR"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 8,
+      "gate": "missing_eps_growth"
+    },
+    {
+      "assets_affected": [
+        "CRDO",
+        "DELL",
+        "HIMS",
+        "HOOD",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "USAR"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 8,
+      "gate": "missing_free_cash_flow"
+    },
+    {
+      "assets_affected": [
+        "CRDO",
+        "DELL",
+        "HIMS",
+        "HOOD",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "USAR"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 8,
+      "gate": "missing_margin_trend"
+    },
+    {
+      "assets_affected": [
+        "CRDO",
+        "DELL",
+        "HIMS",
+        "HOOD",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "USAR"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 8,
+      "gate": "missing_pe_history"
+    },
+    {
+      "assets_affected": [
+        "CRDO",
+        "DELL",
+        "HIMS",
+        "HOOD",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "USAR"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 8,
+      "gate": "missing_peg"
+    },
+    {
+      "assets_affected": [
+        "CRDO",
+        "DELL",
+        "HIMS",
+        "HOOD",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "USAR"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 8,
+      "gate": "missing_revenue_growth"
+    },
+    {
+      "assets_affected": [
+        "CRDO",
+        "DELL",
+        "HIMS",
+        "HOOD",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "USAR"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "real_data_failure",
+      "frequency": 8,
+      "gate": "mixed_provider_data"
+    },
+    {
+      "assets_affected": [
+        "CRDO",
+        "DELL",
+        "HIMS",
+        "HOOD",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "USAR"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 8,
+      "gate": "source_mismatch_possible"
+    },
+    {
+      "assets_affected": [
+        "CRDO",
+        "DELL",
+        "HIMS",
+        "HOOD",
+        "MRVL",
+        "MSFT",
+        "MU",
+        "USAR"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "real_data_failure",
+      "frequency": 8,
+      "gate": "yahoo_price_fallback"
+    },
+    {
+      "assets_affected": [
+        "AVAX",
+        "BNB",
+        "BTC",
+        "ETH",
+        "LINK",
+        "SOL",
+        "XRP"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 7,
+      "gate": "cvd_proxy_uses_taker_buy_sell_volume"
+    },
+    {
+      "assets_affected": [
+        "CRDO",
+        "INTC",
+        "MRVL",
+        "MU",
+        "USAR"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_market_risk",
+      "frequency": 5,
+      "gate": "high_volatility"
+    },
+    {
+      "assets_affected": [
+        "AMD",
+        "DELL",
+        "ETH",
+        "HYPE"
+      ],
+      "cap_applied": "cap_to_technical_unvalidated",
+      "category": "reporting_only",
+      "frequency": 4,
+      "gate": "technical_unvalidated"
+    },
+    {
+      "assets_affected": [
+        "AMD",
+        "MRVL",
+        "MU"
+      ],
+      "cap_applied": "cap_to_wait_or_watch_buy",
+      "category": "genuine_market_risk",
+      "frequency": 3,
+      "gate": "recent_gap_risk"
+    },
+    {
+      "assets_affected": [
+        "AVAX",
+        "BNB",
+        "XRP"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_market_risk",
+      "frequency": 3,
+      "gate": "relative_strength_weak"
+    },
+    {
+      "assets_affected": [
+        "HIMS"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 1,
+      "gate": "below_minimum_market_cap"
+    },
+    {
+      "assets_affected": [
+        "HYPE"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "optional_context_missing",
+      "frequency": 1,
+      "gate": "cvd_proxy_unavailable"
+    },
+    {
+      "assets_affected": [
+        "INTC"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 1,
+      "gate": "negative_or_invalid_pe"
+    },
+    {
+      "assets_affected": [
+        "INTC"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 1,
+      "gate": "negative_or_invalid_peg"
+    },
+    {
+      "assets_affected": [
+        "HYPE"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "optional_context_missing",
+      "frequency": 1,
+      "gate": "open_interest_change_unavailable"
+    },
+    {
+      "assets_affected": [
+        "AMD"
+      ],
+      "cap_applied": "input_to_classification",
+      "category": "genuine_asset_risk",
+      "frequency": 1,
+      "gate": "valuation_extreme"
+    }
+  ],
+  "schema_version": "post-phase2-gate-baseline-v1",
+  "source": {
+    "audit_summary": {
+      "artifacts": [
+        "provider-audit.json",
+        "data-lineage.json",
+        "cache-audit.json",
+        "gate-analysis.json",
+        "audit-summary.json",
+        "phase2-provider-validation.json",
+        "phase2-cache-validation.json",
+        "phase2-source-timestamps.json",
+        "phase2-capability-matrix.json"
+      ],
+      "audit_db": ".tmp\\post-phase2-baseline\\gate-trace.db",
+      "audit_generated_at_brt": "2026-07-12T13:03:53-03:00",
+      "audit_generated_at_utc": "2026-07-12T16:03:53+00:00",
+      "config_keys": {
+        "alphavantage": "missing",
+        "coinbase": "missing",
+        "coingecko": "present",
+        "fmp": "present"
+      },
+      "errors": [],
+      "network_mode": "live",
+      "schema_drift": true,
+      "source_db": "data\\advisor.db",
+      "symbols_requested": [
+        "INTC",
+        "AMD",
+        "NVDA",
+        "HIMS",
+        "MU",
+        "MSFT",
+        "USAR",
+        "CRDO",
+        "DELL",
+        "MRVL",
+        "HOOD",
+        "SOL",
+        "HYPE",
+        "BTC",
+        "ETH",
+        "AVAX",
+        "BNB",
+        "LINK",
+        "XRP"
+      ]
+    },
+    "close_artifact_dir": ".tmp\\post-phase2-baseline\\close\\financial-advisor-close-29199352253",
+    "close_run_id": "29199352253",
+    "main_artifact_dir": ".tmp\\post-phase2-baseline\\main\\financial-advisor-main-29199329100",
+    "main_run_id": "29199329100",
+    "provider_audit_errors": []
+  }
+}
