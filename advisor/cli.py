@@ -228,6 +228,7 @@ def _scan(args: argparse.Namespace) -> int:
     deep_skipped = _deep_analysis_skipped(coverage_universe, decisions)
     provider_budget["deep_analysis_limited_by_budget"] = bool(deep_skipped)
     provider_budget["deep_analysis_skipped"] = deep_skipped
+    snapshots_by_symbol = {snapshot.symbol: snapshot for snapshot in snapshots}
     markdown = render_markdown_report(
         decisions,
         stock_regime=stock_regime,
@@ -238,6 +239,7 @@ def _scan(args: argparse.Namespace) -> int:
         provider_budget=provider_budget,
         coverage_universe=coverage_universe,
         deep_analysis_candidates=deep_analysis_candidates,
+        snapshots_by_symbol=snapshots_by_symbol,
     )
     analyst_markdown = render_analyst_review_input(
         decisions,
@@ -245,6 +247,7 @@ def _scan(args: argparse.Namespace) -> int:
         data_mode=data_mode,
         stock_regime=stock_regime,
         crypto_regime=crypto_regime,
+        snapshots_by_symbol=snapshots_by_symbol,
     )
     html = render_html_report(markdown)
     cache = SQLiteCache(db_path)

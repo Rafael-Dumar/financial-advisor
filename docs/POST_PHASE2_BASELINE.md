@@ -3,13 +3,13 @@
 ## Resumo executivo
 
 - Código e artifacts: `dc0a2546e91127e9105983ea17579a06180dd103`; main run `29199329100`, close run `29199352253` (Financial Advisor Reports).
-- O main foi gerado em 2026-07-12 BRT, fora da sessão regular; `report_grade=diagnostic_not_decision_grade` e a decisão geral permaneceu `no_trade_day`.
+- A baseline foi executada no domingo, 2026-07-12: main às 13:01 BRT e close às 13:02 BRT. Portanto, `report_grade=diagnostic_not_decision_grade` e `no_trade_day` eram esperados e não são evidência contra os gates; o close não representa um fechamento real.
 - O audit live isolado confirmou `eod_candle`, quote/candle separados, cache fetch time/age e provider capabilities no lineage. Os contratos de dados aparecem no audit, não integralmente no texto do report.
 - Integração report: `quote_status` visível no Markdown = `False`; `macro_status=not_collected` legado visível = `True`. Ambos são integration gaps registrados, sem correção nesta baseline.
 - Quotes/FMP: os artifacts Phase 2 distinguem `unsupported_by_plan` de rate limit/schema; o report textual ainda mostra preços `n/a` na tabela de coverage, portanto não serve como prova única de quote atual.
 - Eventos: guidance e macro são `not_implemented` no audit; Alpha Vantage estava sem chave, portanto news é `not_configured`/não verificada enquanto SEC permanece separado no lineage.
 - Cripto: HYPE preserva funding/OI quando recebidos; liquidations são `not_implemented`; CoinGecko fallback é daily/eod_candle e premium não é inventado com tempos incompatíveis.
-- `no_trade_day` permaneceu = `True` por combinação de caps de dados, sessão/regime, riscos reais e limitações de backtest; esta baseline não altera nenhuma decisão.
+- Esta baseline preserva seu valor diagnóstico para cache, timestamps, provenance, capabilities e gate tracing; não avalia a decisão operacional nem altera qualquer decisão.
 
 ## Antes vs depois
 

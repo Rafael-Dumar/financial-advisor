@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from html import escape
 from typing import Any
 
-from advisor.models import AssetDecision
+from advisor.models import AssetDecision, AssetSnapshot
 from advisor.risk import evaluate_leverage_policy
 
 
@@ -28,6 +28,7 @@ def render_markdown_report(
     provider_budget: dict[str, Any] | None = None,
     coverage_universe: list[dict[str, Any]] | None = None,
     deep_analysis_candidates: list[str] | None = None,
+    snapshots_by_symbol: dict[str, AssetSnapshot] | None = None,
 ) -> str:
     generated_at = generated_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
     non_live_mode = _is_non_live_mode(data_mode)
@@ -105,7 +106,7 @@ def render_markdown_report(
     lines.extend(_short_watchlist_section(ranked_decisions))
     lines.extend(_ranking_section(ranked_decisions))
     for decision in ranked_decisions:
-        lines.extend(_asset_section(decision))
+        lines.extend(_asset_section(decision, snapshots_by_symbol=(snapshots_by_symbol or {})))
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -136,6 +137,7 @@ def render_analyst_review_input(
     data_mode: str,
     stock_regime: str,
     crypto_regime: str,
+    snapshots_by_symbol: dict[str, AssetSnapshot] | None = None,
     generated_at: str | None = None,
 ) -> str:
     generated_at = generated_at or datetime.now(timezone(timedelta(hours=-3))).isoformat(timespec="seconds")
@@ -208,7 +210,7 @@ def render_analyst_review_input(
         lines.append("No equity candidates for qualitative review")
     else:
         for decision in equity_candidates:
-            lines.extend(_analyst_candidate_lines(decision))
+            lines.extend(_analyst_candidate_lines(decision, (snapshots_by_symbol or {}).get(decision.symbol)))
     if equity_research:
         lines.extend(
             [
@@ -219,7 +221,7 @@ def render_analyst_review_input(
             ]
         )
         for decision in equity_research:
-            lines.extend(_analyst_candidate_lines(decision))
+            lines.extend(_analyst_candidate_lines(decision, (snapshots_by_symbol or {}).get(decision.symbol)))
     lines.extend(
         [
             "",
@@ -232,7 +234,7 @@ def render_analyst_review_input(
     else:
         lines.append("Crypto is separate from equity review; technical_unvalidated is not approval to buy.")
         for decision in crypto_candidates:
-            lines.extend(_analyst_candidate_lines(decision))
+            lines.extend(_analyst_candidate_lines(decision, (snapshots_by_symbol or {}).get(decision.symbol)))
     lines.extend(
         [
             "",
@@ -712,8 +714,8 @@ def _stop_lines(decisions: list[AssetDecision]) -> list[str]:
     ]
 
 
-def _analyst_candidate_lines(decision: AssetDecision) -> list[str]:
-    return [
+def _analyst_candidate_lines(decision: AssetDecision, snapshot: AssetSnapshot | None = None) -> list[str]:
+    lines = [
         f"- `{decision.symbol}`",
         f"  - bot_decision: `{decision.decision}`",
         f"  - reason: {_display_thesis(decision)}",
@@ -721,6 +723,55 @@ def _analyst_candidate_lines(decision: AssetDecision) -> list[str]:
         f"  - valuation_summary: {'; '.join(decision.metrics_summary) if decision.metrics_summary else 'not_verified'}",
         f"  - earnings_guidance_status: `{_verification_status(decision.event_check_status)}`",
         f"  - news_catalyst_status: `{_verification_status(decision.news_status)}`",
+    ]
+    return [*lines, *[f"  {line}" for line in _snapshot_provenance_lines(snapshot)]]
+
+
+def _snapshot_or_legacy_status(snapshot: AssetSnapshot | None, field: str, legacy: str) -> str:
+    if snapshot is None:
+        return legacy
+    value = getattr(snapshot, field, None)
+    return str(value) if value else legacy
+
+
+def _quote_display_status(snapshot: AssetSnapshot) -> str:
+    if snapshot.quote_status != "unavailable":
+        return snapshot.quote_status
+    for capability in snapshot.provider_capabilities:
+        if capability.capability in {"quote", "quotes"} and capability.last_status in {
+            "not_implemented",
+            "not_configured",
+            "unsupported_by_plan",
+            "temporarily_unavailable",
+        }:
+            return capability.last_status
+    return snapshot.quote_status
+
+
+def _snapshot_provenance_lines(snapshot: AssetSnapshot | None) -> list[str]:
+    if snapshot is None or snapshot.asset_type != "stock":
+        return []
+    metadata = snapshot.data_fetch_metadata
+    sector = snapshot.benchmark_provenance.get("sector") if isinstance(snapshot.benchmark_provenance, dict) else None
+    sector_status = sector.get("status") if isinstance(sector, dict) else "not_implemented"
+    quote_data_kind = "live_quote" if snapshot.quote_source else "not_available"
+    candle_data_kind = metadata.market_data_kind if metadata and metadata.market_data_kind else "eod_candle"
+    candle_source_timestamp = metadata.source_timestamp if metadata else None
+    latest_candle_date = snapshot.candles[-1].date if snapshot.candles else None
+    return [
+        f"- quote_status: `{_quote_display_status(snapshot)}`",
+        f"- quote_provider: `{snapshot.quote_source or 'unknown'}`",
+        f"- quote_timestamp: `{snapshot.quote_timestamp or 'unknown'}`",
+        f"- quote_age_seconds: `{snapshot.quote_age_seconds if snapshot.quote_age_seconds is not None else 'unknown'}`",
+        f"- quote_data_kind: `{quote_data_kind}`",
+        f"- latest_candle_date: `{latest_candle_date or 'unknown'}`",
+        f"- candle_data_kind: `{candle_data_kind}`",
+        f"- candle_source_timestamp: `{candle_source_timestamp or 'unknown'}`",
+        f"- guidance_status: `{snapshot.guidance_status}`",
+        f"- macro_status: `{snapshot.macro_status}`",
+        f"- news_status: `{snapshot.news_status}`",
+        f"- sec_filings_status: `{snapshot.sec_filings_status}`",
+        f"- sector_benchmark_status: `{sector_status}`",
     ]
 
 
@@ -1000,7 +1051,12 @@ def _ranking_win_rate(decision: AssetDecision) -> str:
     return f"win rate +2R {round(stats.win_rate_2r * 100)}% ({stats.sample_size} setups)"
 
 
-def _asset_section(decision: AssetDecision) -> list[str]:
+def _asset_section(
+    decision: AssetDecision,
+    *,
+    snapshots_by_symbol: dict[str, AssetSnapshot],
+) -> list[str]:
+    snapshot = snapshots_by_symbol.get(decision.symbol)
     plan = decision.risk_plan
     stats = decision.backtest_stats
     has_confidence_gap = _has_confidence_limiting_limitation(decision.limitations)
@@ -1063,7 +1119,7 @@ def _asset_section(decision: AssetDecision) -> list[str]:
         f"- News/catalyst summary: {decision.news_summary or 'not_collected'}",
         f"- news_status: `{_verification_status(decision.news_status)}`",
         f"- macro_regime: `{decision.macro_regime}`",
-        f"- macro_status: `{decision.macro_status}`",
+        f"- macro_status: `{_snapshot_or_legacy_status(snapshot, 'macro_status', decision.macro_status)}`",
         f"- thesis_status: `{decision.thesis_status}`",
         f"- Data source: {decision.data_source}",
         f"- provider: `{decision.provider}`",
@@ -1077,6 +1133,7 @@ def _asset_section(decision: AssetDecision) -> list[str]:
         f"- relative_strength_vs_qqq: {_format_optional_metric(decision.relative_strength_vs_qqq)}",
         f"- relative_strength_vs_sector: {_format_optional_metric(decision.relative_strength_vs_sector)}",
         f"- sector_benchmark: {decision.sector_benchmark or 'not_collected'}",
+        *_snapshot_provenance_lines(snapshot),
         f"- Entrada ideal: {decision.ideal_entry:.2f}",
         f"- Entrada alternativa: {_format_optional(decision.alternative_entry)}",
         f"- Stop/invalidation: {plan.stop:.2f}",
