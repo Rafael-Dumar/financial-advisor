@@ -1,0 +1,46 @@
+{
+  "audit_version": 1,
+  "phase": "2.5",
+  "audit_date_brt": "2026-07-14",
+  "source_main_run_id": 29346808941,
+  "source_close_run_id": 29368738017,
+  "source_head_sha": "8497c24daca83175ee9911bd0a5a524f1b7b73ec",
+  "before": {
+    "main_report_grade": "diagnostic_not_decision_grade",
+    "main_market_sessions": ["regular", "unknown"],
+    "primary_regular_assets": 15,
+    "discovery_unknown_assets": ["AVAX", "BNB", "LINK", "XRP"],
+    "block_mechanism": "substring_search_in_main_summary",
+    "blocking_tokens": ["diagnostic_not_decision_grade", "regular,unknown", "blocked_or_diagnostic"],
+    "asset_merge": "last_block_wins_across_main_and_close",
+    "tradeable_representable": false,
+    "hardcoded_zero_tradeable_message": true
+  },
+  "after": {
+    "primary_report_grade_for_equivalent_origin_annotated_input": "decision_grade",
+    "overall_report_grade_for_equivalent_origin_annotated_input": "diagnostic_not_decision_grade",
+    "primary_market_session": "regular",
+    "discovery_market_sessions": ["unknown"],
+    "discovery_coverage_grade": "degraded",
+    "discovery_impacts_primary_report": false,
+    "block_mechanism": "MainReviewContext.blocking_reasons_and_artifact_valid",
+    "substring_search_used": false,
+    "main_close_lists_separate": true,
+    "tradeable_representable": true,
+    "zero_tradeable_message": "calculated"
+  },
+  "unchanged": [
+    "score_asset",
+    "advisor.scoring.classify_asset",
+    "thresholds",
+    "gates",
+    "risk_engine",
+    "strategy",
+    "backtest",
+    "sizing",
+    "providers",
+    "cache",
+    "telegram"
+  ],
+  "interpretation": "The 2026-07-14 main was degraded by discovery coverage under the old aggregate grade rule. With explicit origins, its primary universe is decision-grade while the package overall remains diagnostic because discovery is degraded. This is a composition correction, not a scoring or gate change."
+}

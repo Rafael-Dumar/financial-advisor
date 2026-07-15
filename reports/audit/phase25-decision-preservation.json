@@ -1,0 +1,56 @@
+{
+  "audit_version": 1,
+  "phase": "2.5",
+  "source_main_run_id": 29346808941,
+  "source_head_sha": "8497c24daca83175ee9911bd0a5a524f1b7b73ec",
+  "original_main_decisions": {
+    "technical_unvalidated": ["AMD", "DELL", "ETH", "SOL", "BTC"],
+    "wait": ["NVDA", "CRDO", "MU", "HOOD"],
+    "avoid": ["HIMS", "HYPE", "MSFT", "INTC", "MRVL", "USAR"],
+    "blocked_discovery": ["AVAX", "BNB", "LINK", "XRP"]
+  },
+  "preservation_contract": {
+    "source_decision_authority": "raw_main_asset_decision",
+    "main_and_close_never_last_wins": true,
+    "close_role": "comparison_only",
+    "legacy_labels_can_replace_source_decision": false,
+    "not_implemented_is_generic_blocker": false,
+    "rescore_in_final_review": false
+  },
+  "legacy_labels": {
+    "watch_pending_checks": "presentation_only",
+    "research_only": "presentation_only",
+    "crypto_watch_context": "presentation_only",
+    "crypto_research_only": "presentation_only",
+    "rejected": "presentation_only",
+    "blocked": "presentation_only"
+  },
+  "tradeable_contract": {
+    "required_source_decision": "tradeable",
+    "requires_valid_main_context": true,
+    "requires_non_stale_asset": true,
+    "requires_no_asset_blockers": true,
+    "review_status": "tradeable_confirmed_from_main",
+    "can_reach_final_decision_tradeable": true,
+    "zero_tradeable_text_is_conditional": true
+  },
+  "tests": {
+    "module": "tests.test_phase25_final_review",
+    "decision_preservation": "passed",
+    "main_close_separation": "passed",
+    "substring_non_contamination": "passed",
+    "tradeable_path": "passed",
+    "no_scoring_or_telegram_calls": "passed"
+  },
+  "offline_2026_07_14_replay": {
+    "main_assets": 19,
+    "close_assets": 15,
+    "main_hype_decision": "avoid",
+    "close_hype_decision": "wait",
+    "main_hype_preserved": true,
+    "decision_change_reported": true,
+    "final_decision": "no_trade",
+    "reason": ["main_artifact_predates_origin_split", "main_primary_not_decision_grade"],
+    "public_equity_executed": false
+  }
+}

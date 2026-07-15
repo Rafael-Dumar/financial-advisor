@@ -1,0 +1,38 @@
+{
+  "audit_version": 1,
+  "phase": "2.5",
+  "module": "advisor.artifact_selection",
+  "script": "scripts/fetch-latest-github-reports.ps1",
+  "test_module": "tests.test_phase25_artifact_selection",
+  "cases": [
+    {"case": "exact_same_day_pair", "expected": "selected", "result": "passed"},
+    {"case": "old_pair_without_opt_in", "expected": "rejected", "result": "passed"},
+    {"case": "old_pair_with_stale_diagnostic_opt_in", "expected": "selected_non_operational", "result": "passed"},
+    {"case": "head_sha_mismatch", "expected": "rejected", "result": "passed"},
+    {"case": "manual_event_without_opt_in", "expected": "rejected", "result": "passed"},
+    {"case": "manual_event_with_opt_in", "expected": "selected", "result": "passed"},
+    {"case": "content_brt_date_mismatch", "expected": "rejected", "result": "passed"},
+    {"case": "expired_or_wrong_artifact_content", "expected": "rejected", "result": "passed"},
+    {"case": "wrong_branch", "expected": "rejected", "result": "passed"},
+    {"case": "failed_run", "expected": "rejected", "result": "passed"},
+    {"case": "generated_at_main_after_close", "expected": "rejected", "result": "passed"}
+  ],
+  "selection_contract": {
+    "same_brt_date": true,
+    "same_head_sha": true,
+    "expected_head_sha_required": true,
+    "scheduled_by_default": true,
+    "exact_artifact_name": true,
+    "unexpired": true,
+    "report_type_matches": true,
+    "generated_at_ordered": true,
+    "silent_fallback": false
+  },
+  "stale_diagnostic_contract": {
+    "explicit_opt_in_required": true,
+    "artifact_valid": false,
+    "operational_decision_allowed": false,
+    "source_date_persisted": true,
+    "artifact_age_seconds_persisted": true
+  }
+}
