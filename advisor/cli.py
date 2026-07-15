@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import re
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -196,6 +197,8 @@ def _scan(args: argparse.Namespace) -> int:
         stats = _stats_for_snapshot(payload, snapshot)
         decisions.append(classify_asset(scored, stats))
 
+    decisions = _assign_universe_origins(decisions, config)
+
     candidate_symbols = {
         decision.symbol
         for decision in decisions
@@ -240,6 +243,7 @@ def _scan(args: argparse.Namespace) -> int:
         coverage_universe=coverage_universe,
         deep_analysis_candidates=deep_analysis_candidates,
         snapshots_by_symbol=snapshots_by_symbol,
+        enforce_regular_window=True,
     )
     analyst_markdown = render_analyst_review_input(
         decisions,
@@ -248,6 +252,7 @@ def _scan(args: argparse.Namespace) -> int:
         stock_regime=stock_regime,
         crypto_regime=crypto_regime,
         snapshots_by_symbol=snapshots_by_symbol,
+        enforce_regular_window=True,
     )
     html = render_html_report(markdown)
     cache = SQLiteCache(db_path)
@@ -552,9 +557,30 @@ def _apply_close_universe_to_config(config: AdvisorConfig, symbols: list[str]) -
 
 def _coverage_universe(config: AdvisorConfig) -> list[dict[str, str]]:
     return [
-        *({"symbol": symbol, "asset_type": "stock"} for symbol in dict.fromkeys(config.stock_watchlist)),
-        *({"symbol": symbol, "asset_type": "crypto"} for symbol in dict.fromkeys(config.crypto_watchlist)),
+        *(
+            {"symbol": symbol, "asset_type": "stock", "universe_origin": "primary_watchlist"}
+            for symbol in dict.fromkeys(config.stock_watchlist)
+        ),
+        *(
+            {"symbol": symbol, "asset_type": "crypto", "universe_origin": "primary_watchlist"}
+            for symbol in dict.fromkeys(config.crypto_watchlist)
+        ),
     ]
+
+
+def _assign_universe_origins(decisions: list[AssetDecision], config: AdvisorConfig) -> list[AssetDecision]:
+    primary = set(config.stock_watchlist) | set(config.crypto_watchlist)
+    discovery = set(config.discovery_stock_candidates) | set(config.discovery_crypto_candidates)
+    assigned: list[AssetDecision] = []
+    for decision in decisions:
+        if decision.symbol in primary:
+            origin = "primary_watchlist"
+        elif decision.symbol in discovery:
+            origin = "discovery"
+        else:
+            origin = "unknown"
+        assigned.append(replace(decision, universe_origin=origin))
+    return assigned
 
 
 def _deep_analysis_skipped(

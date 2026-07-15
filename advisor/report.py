@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time, timedelta, timezone
+from dataclasses import dataclass
 from html import escape
 from typing import Any
 
@@ -13,6 +15,38 @@ CONSERVATIVE_TECHNICAL_THESIS = (
 )
 BRT = timezone(timedelta(hours=-3))
 CLOSE_WINDOW_AFTER_REGULAR_CLOSE = timedelta(hours=2, minutes=30)
+ALLOWED_MARKET_SESSIONS = {"pre_market", "regular", "after_hours", "closed", "unknown"}
+MARKET_SESSION_PRIORITY = {"regular": 0, "pre_market": 1, "after_hours": 2, "closed": 3, "unknown": 4}
+
+
+@dataclass(frozen=True)
+class MarketSessionDiagnostic:
+    primary: str
+    sources: list[str]
+    conflict: bool
+
+
+@dataclass(frozen=True)
+class ReportGradeInputs:
+    report_type: str
+    data_mode: str
+    generated_at: str
+    decisions: list[AssetDecision]
+    required_benchmark_sessions: tuple[str, ...] = ()
+    enforce_regular_window: bool = False
+
+
+@dataclass(frozen=True)
+class ReportGradeResult:
+    primary_report_grade: str
+    overall_report_grade: str
+    primary_market_session: MarketSessionDiagnostic
+    discovery_market_sessions: MarketSessionDiagnostic
+    benchmark_market_sessions: MarketSessionDiagnostic
+    discovery_coverage_grade: str
+    stale_asset_count_primary: int
+    overall_data_warnings: list[str]
+    blocking_reasons: list[str]
 
 
 def render_markdown_report(
@@ -29,36 +63,79 @@ def render_markdown_report(
     coverage_universe: list[dict[str, Any]] | None = None,
     deep_analysis_candidates: list[str] | None = None,
     snapshots_by_symbol: dict[str, AssetSnapshot] | None = None,
+    required_benchmark_sessions: tuple[str, ...] = (),
+    enforce_regular_window: bool = False,
 ) -> str:
     generated_at = generated_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    generated_brt = _parse_generated_at_to_brt(generated_at)
     non_live_mode = _is_non_live_mode(data_mode)
-    blocked_count = sum(1 for decision in decisions if decision.decision == "blocked")
+    primary_decisions = [
+        decision for decision in decisions if decision.universe_origin not in {"discovery", "benchmark"}
+    ]
+    blocked_count = sum(1 for decision in primary_decisions if decision.decision == "blocked")
     market_sessions = sorted({decision.market_session for decision in decisions if decision.market_session})
     stale_count = sum(1 for decision in decisions if decision.is_stale)
+    fresh_price_count = sum(1 for decision in decisions if decision.last_price_timestamp and not decision.is_stale)
+    missing_price_count = sum(1 for decision in decisions if not decision.last_price_timestamp)
     report_type = report_type if report_type in {"main", "close"} else "main"
-    report_grade = _report_grade(
-        report_type=report_type,
-        data_mode=data_mode,
-        market_sessions=market_sessions,
-        generated_at=generated_at,
-        has_stale_assets=stale_count > 0,
+    grade_result = evaluate_report_grades(
+        ReportGradeInputs(
+            report_type=report_type,
+            data_mode=data_mode,
+            generated_at=generated_at,
+            decisions=decisions,
+            required_benchmark_sessions=required_benchmark_sessions,
+            enforce_regular_window=enforce_regular_window,
+        )
+    )
+    session_info = grade_result.primary_market_session
+    report_grade = grade_result.primary_report_grade
+    overall_session_info = normalize_market_session(
+        [decision.market_session for decision in decisions if decision.market_session]
+    )
+    session_conflict_warning = bool(
+        overall_session_info.conflict
+        and not session_info.conflict
+        and report_grade in {"decision_grade", "close_decision_grade"}
     )
     diagnostic_main = report_grade == "diagnostic_not_decision_grade"
     actionable_report = report_grade == "decision_grade" and not non_live_mode
-    general_decision = "no_trade_day" if non_live_mode or diagnostic_main else _general_decision(decisions)
+    general_decision = "no_trade_day" if non_live_mode or diagnostic_main else _general_decision(primary_decisions)
     lines = [
         "# Investment and Swing Trade Advisor",
         "",
         "Uso pessoal e educacional. O relatorio separa qualidade do ativo de qualidade da entrada atual.",
         "",
         f"- Generated at: `{generated_at}`",
+        f"- generated_at_utc: `{_format_datetime_diagnostic(generated_brt.astimezone(timezone.utc) if generated_brt else None)}`",
+        f"- generated_at_brt: `{_format_datetime_diagnostic(generated_brt)}`",
+        f"- expected_market_window_brt: `{_expected_regular_market_window(generated_brt)}`",
         f"- report_type: `{report_type}`",
+        "- timezone_used: `America/Sao_Paulo`",
         f"- Data freshness: `{data_freshness}`",
         f"- Data mode: `{data_mode}`",
         *([f"- AVISO: **Nao usar para decisao real**"] if non_live_mode else []),
         f"- report_grade: `{report_grade}`",
+        f"- primary_report_grade: `{grade_result.primary_report_grade}`",
+        f"- overall_report_grade: `{grade_result.overall_report_grade}`",
         *(_report_grade_warnings(report_grade)),
-        f"- market_session: `{','.join(market_sessions) if market_sessions else 'unknown'}`",
+        f"- market_session: `{session_info.primary}`",
+        f"- market_session_primary: `{session_info.primary}`",
+        f"- primary_market_session: `{session_info.primary}`",
+        f"- market_session_sources: `{_format_market_session_sources(session_info.sources)}`",
+        f"- market_session_conflict: {str(session_info.conflict).lower()}",
+        f"- discovery_market_sessions: `{_format_market_session_sources(grade_result.discovery_market_sessions.sources)}`",
+        f"- discovery_coverage_grade: `{grade_result.discovery_coverage_grade}`",
+        f"- stale_asset_count_primary: {grade_result.stale_asset_count_primary}",
+        f"- overall_data_warnings: `{_format_compact_list(grade_result.overall_data_warnings)}`",
+        f"- blocking_reasons: `{_format_compact_list(grade_result.blocking_reasons)}`",
+        f"- session_conflict_warning: {str(session_conflict_warning).lower()}",
+        f"- fresh_price_count: {fresh_price_count}",
+        f"- stale_price_count: {stale_count}",
+        f"- missing_price_count: {missing_price_count}",
+        f"- provider_rate_limit_status: `{_provider_budget_value(provider_budget, 'provider_rate_limit_status')}`",
+        f"- fmp_status: `{_provider_budget_value(provider_budget, 'fmp_status')}`",
+        f"- coingecko_status: `{_provider_budget_value(provider_budget, 'coingecko_status')}`",
         f"- stale_assets: {stale_count}",
         f"- Stock regime: `{stock_regime}`",
         f"- Crypto regime: `{crypto_regime}`",
@@ -69,16 +146,32 @@ def render_markdown_report(
         f"- Alertas de carteira: {_format_list(portfolio_alerts or [])}",
         "",
     ]
+    if report_type == "main" and report_grade != "decision_grade":
+        lines.extend(
+            _main_decision_grade_diagnostic_section(
+                decisions,
+                report_grade=report_grade,
+                session_info=session_info,
+                generated_at=generated_at,
+                data_mode=data_mode,
+                data_freshness=data_freshness,
+                provider_budget=provider_budget,
+                has_stale_assets=grade_result.stale_asset_count_primary > 0,
+                session_conflict_warning=session_conflict_warning,
+            )
+        )
     lines.extend(_provider_budget_section(provider_budget))
     ranked_decisions = _rank_decisions(decisions)
+    primary_ranked_decisions = _rank_decisions(primary_decisions)
     if coverage_universe:
         lines.extend(_market_session_status_section(stock_regime, crypto_regime, market_sessions))
         lines.extend(_coverage_universe_section(coverage_universe, ranked_decisions))
+    lines.extend(_discovery_coverage_section(ranked_decisions, grade_result.discovery_coverage_grade))
     lines.extend(_deep_analysis_candidates_section(deep_analysis_candidates or [decision.symbol for decision in ranked_decisions[:5]]))
     if report_type == "close":
         lines.extend(
             _close_summary_sections(
-                ranked_decisions,
+                primary_ranked_decisions,
                 general_decision,
                 portfolio_alerts or [],
                 report_grade=report_grade,
@@ -87,7 +180,7 @@ def render_markdown_report(
     else:
         lines.extend(
             _main_summary_sections(
-                ranked_decisions,
+                primary_ranked_decisions,
                 general_decision,
                 stock_regime=stock_regime,
                 crypto_regime=crypto_regime,
@@ -95,16 +188,16 @@ def render_markdown_report(
                 actionable_report=actionable_report,
             )
         )
-    lines.extend(_tradeable_today_section(ranked_decisions, actionable=actionable_report))
-    lines.extend(_watchlist_only_section(ranked_decisions, actionable=actionable_report))
-    lines.extend(_technical_unvalidated_section(ranked_decisions))
-    lines.extend(_research_queue_section(ranked_decisions))
-    lines.extend(_wait_section(ranked_decisions))
-    lines.extend(_rejected_section(ranked_decisions))
-    lines.extend(_avoid_section(ranked_decisions))
-    lines.extend(_blocked_section(ranked_decisions))
-    lines.extend(_short_watchlist_section(ranked_decisions))
-    lines.extend(_ranking_section(ranked_decisions))
+    lines.extend(_tradeable_today_section(primary_ranked_decisions, actionable=actionable_report))
+    lines.extend(_watchlist_only_section(primary_ranked_decisions, actionable=actionable_report))
+    lines.extend(_technical_unvalidated_section(primary_ranked_decisions))
+    lines.extend(_research_queue_section(primary_ranked_decisions))
+    lines.extend(_wait_section(primary_ranked_decisions))
+    lines.extend(_rejected_section(primary_ranked_decisions))
+    lines.extend(_avoid_section(primary_ranked_decisions))
+    lines.extend(_blocked_section(primary_ranked_decisions))
+    lines.extend(_short_watchlist_section(primary_ranked_decisions))
+    lines.extend(_ranking_section(primary_ranked_decisions))
     for decision in ranked_decisions:
         lines.extend(_asset_section(decision, snapshots_by_symbol=(snapshots_by_symbol or {})))
     return "\n".join(lines).rstrip() + "\n"
@@ -137,31 +230,49 @@ def render_analyst_review_input(
     data_mode: str,
     stock_regime: str,
     crypto_regime: str,
-    snapshots_by_symbol: dict[str, AssetSnapshot] | None = None,
     generated_at: str | None = None,
+    snapshots_by_symbol: dict[str, AssetSnapshot] | None = None,
+    required_benchmark_sessions: tuple[str, ...] = (),
+    enforce_regular_window: bool = False,
 ) -> str:
     generated_at = generated_at or datetime.now(timezone(timedelta(hours=-3))).isoformat(timespec="seconds")
+    generated_brt = _parse_generated_at_to_brt(generated_at)
     ranked = _rank_decisions(decisions)
+    primary_ranked = [
+        decision for decision in ranked if decision.universe_origin not in {"discovery", "benchmark"}
+    ]
     market_sessions = sorted({decision.market_session for decision in decisions if decision.market_session})
-    report_grade = _report_grade(
-        report_type=report_type,
-        data_mode=data_mode,
-        market_sessions=market_sessions,
-        generated_at=generated_at,
-        has_stale_assets=any(decision.is_stale for decision in decisions),
+    stale_count = sum(1 for decision in decisions if decision.is_stale)
+    fresh_price_count = sum(1 for decision in decisions if decision.last_price_timestamp and not decision.is_stale)
+    missing_price_count = sum(1 for decision in decisions if not decision.last_price_timestamp)
+    grade_result = evaluate_report_grades(
+        ReportGradeInputs(
+            report_type=report_type,
+            data_mode=data_mode,
+            generated_at=generated_at,
+            decisions=decisions,
+            required_benchmark_sessions=required_benchmark_sessions,
+            enforce_regular_window=enforce_regular_window,
+        )
     )
+    report_grade = grade_result.primary_report_grade
+    session_info = grade_result.primary_market_session
     diagnostic_main = report_grade == "diagnostic_not_decision_grade"
-    general_decision = "no_trade_day" if _is_non_live_mode(data_mode) or diagnostic_main else _general_decision(decisions)
+    general_decision = (
+        "no_trade_day"
+        if _is_non_live_mode(data_mode) or diagnostic_main
+        else _general_decision(primary_ranked)
+    )
     equity_candidates = [
         decision
-        for decision in ranked
+        for decision in primary_ranked
         if report_grade == "decision_grade"
         and decision.asset_type == "stock"
         and _final_bucket(decision) in {"tradeable", "watchlist"}
     ][:3]
     equity_research = [
         decision
-        for decision in ranked
+        for decision in primary_ranked
         if decision.asset_type == "stock"
         and decision.investment_quality_score >= 80
         and _final_bucket(decision) not in {"tradeable", "watchlist", "rejected", "blocked"}
@@ -169,7 +280,7 @@ def render_analyst_review_input(
     if diagnostic_main:
         equity_research = [
             decision
-            for decision in ranked
+            for decision in primary_ranked
             if decision.asset_type == "stock"
             and decision.investment_quality_score >= 80
             and _final_bucket(decision) not in {"rejected", "blocked"}
@@ -177,14 +288,14 @@ def render_analyst_review_input(
     if report_grade == "close_decision_grade":
         equity_research = [
             decision
-            for decision in ranked
+            for decision in primary_ranked
             if decision.asset_type == "stock"
             and decision.investment_quality_score >= 80
             and _final_bucket(decision) not in {"rejected", "blocked"}
         ][:3]
     crypto_candidates = [
         decision
-        for decision in ranked
+        for decision in primary_ranked
         if decision.asset_type == "crypto" and decision.decision in {"tradeable", "watch_buy", "technical_unvalidated"}
     ][:3]
     lines = [
@@ -192,20 +303,62 @@ def render_analyst_review_input(
         "",
         f"- BRT date: `{generated_at[:10]}`",
         f"- generated_at: `{generated_at}`",
+        f"- generated_at_utc: `{_format_datetime_diagnostic(generated_brt.astimezone(timezone.utc) if generated_brt else None)}`",
+        f"- generated_at_brt: `{_format_datetime_diagnostic(generated_brt)}`",
+        f"- expected_market_window_brt: `{_expected_regular_market_window(generated_brt)}`",
         f"- report_type: `{report_type}`",
+        "- timezone_used: `America/Sao_Paulo`",
         f"- data_mode: `{data_mode}`",
         f"- report_grade: `{report_grade}`",
+        f"- primary_report_grade: `{grade_result.primary_report_grade}`",
+        f"- overall_report_grade: `{grade_result.overall_report_grade}`",
         *(_report_grade_warnings(report_grade)),
-        f"- market_session: `{','.join(market_sessions) if market_sessions else 'unknown'}`",
+        f"- market_session: `{session_info.primary}`",
+        f"- market_session_primary: `{session_info.primary}`",
+        f"- primary_market_session: `{session_info.primary}`",
+        f"- market_session_sources: `{_format_market_session_sources(session_info.sources)}`",
+        f"- market_session_conflict: {str(session_info.conflict).lower()}",
+        f"- discovery_market_sessions: `{_format_market_session_sources(grade_result.discovery_market_sessions.sources)}`",
+        f"- discovery_coverage_grade: `{grade_result.discovery_coverage_grade}`",
+        f"- stale_asset_count_primary: {grade_result.stale_asset_count_primary}",
+        f"- overall_data_warnings: `{_format_compact_list(grade_result.overall_data_warnings)}`",
+        f"- blocking_reasons: `{_format_compact_list(grade_result.blocking_reasons)}`",
+        "- session_conflict_warning: false",
+        f"- data_freshness: `controlled_by_cache_freshness`",
+        f"- fresh_price_count: {fresh_price_count}",
+        f"- stale_price_count: {stale_count}",
+        f"- missing_price_count: {missing_price_count}",
+        "- provider_rate_limit_status: `not_present_in_input`",
+        "- fmp_status: `not_present_in_input`",
+        "- coingecko_status: `not_present_in_input`",
         f"- bot_general_decision: `{general_decision}`",
         f"- stock_regime: `{stock_regime}`",
         f"- crypto_regime: `{crypto_regime}`",
         "",
-        "## Top equity candidates for qualitative review",
-        "",
-        "technical_unvalidated is not approval to buy. News can explain risk context but cannot approve a trade by itself.",
-        "",
     ]
+    lines.extend(_analyst_decision_inventory_section(ranked))
+    if report_type == "main" and report_grade != "decision_grade":
+        lines.extend(
+            _main_decision_grade_diagnostic_section(
+                decisions,
+                report_grade=report_grade,
+                session_info=session_info,
+                generated_at=generated_at,
+                data_mode=data_mode,
+                data_freshness="controlled_by_cache_freshness",
+                provider_budget=None,
+                has_stale_assets=grade_result.stale_asset_count_primary > 0,
+                session_conflict_warning=False,
+            )
+        )
+    lines.extend(
+        [
+            "## Top equity candidates for qualitative review",
+            "",
+            "technical_unvalidated is not approval to buy. News can explain risk context but cannot approve a trade by itself.",
+            "",
+        ]
+    )
     if not equity_candidates:
         lines.append("No equity candidates for qualitative review")
     else:
@@ -235,6 +388,7 @@ def render_analyst_review_input(
         lines.append("Crypto is separate from equity review; technical_unvalidated is not approval to buy.")
         for decision in crypto_candidates:
             lines.extend(_analyst_candidate_lines(decision, (snapshots_by_symbol or {}).get(decision.symbol)))
+    lines.extend(_discovery_coverage_section(ranked, grade_result.discovery_coverage_grade))
     lines.extend(
         [
             "",
@@ -272,6 +426,7 @@ def _provider_budget_section(provider_budget: dict[str, Any] | None) -> list[str
         f"- skipped_due_to_api_budget: `{str(bool(provider_budget.get('skipped_due_to_api_budget', False))).lower()}`",
         f"- provider_rate_limit_status: `{provider_budget.get('provider_rate_limit_status', 'unknown')}`",
         f"- fmp_status: `{provider_budget.get('fmp_status', 'unknown')}`",
+        f"- coingecko_status: `{provider_budget.get('coingecko_status', 'unknown')}`",
         f"- retry_after: `{provider_budget.get('retry_after', 'unknown')}`",
         f"- cache_reused_from_main: `{str(bool(provider_budget.get('cache_reused_from_main', False))).lower()}`",
         f"- close_universe_source: `{provider_budget.get('close_universe_source', 'manual')}`",
@@ -296,14 +451,296 @@ def _provider_budget_section(provider_budget: dict[str, Any] | None) -> list[str
 
 
 def _market_session_status_section(stock_regime: str, crypto_regime: str, market_sessions: list[str]) -> list[str]:
+    session_info = normalize_market_session(market_sessions)
     return [
         "## Market/session status",
         "",
-        f"- market_session: `{','.join(market_sessions) if market_sessions else 'unknown'}`",
+        f"- market_session: `{session_info.primary}`",
+        f"- market_session_primary: `{session_info.primary}`",
+        f"- market_session_sources: `{_format_market_session_sources(session_info.sources)}`",
+        f"- market_session_conflict: {str(session_info.conflict).lower()}",
         f"- stock_regime: `{stock_regime}`",
         f"- crypto_regime: `{crypto_regime}`",
         "",
     ]
+
+
+def normalize_market_session(values: str | list[str] | tuple[str, ...] | set[str]) -> MarketSessionDiagnostic:
+    raw_values = [values] if isinstance(values, str) else list(values)
+    sources: list[str] = []
+    for raw in raw_values:
+        for piece in re.split(r"[,/]", str(raw or "")):
+            normalized = piece.strip().lower()
+            if not normalized:
+                continue
+            if normalized not in ALLOWED_MARKET_SESSIONS:
+                normalized = "unknown"
+            if normalized not in sources:
+                sources.append(normalized)
+    if not sources:
+        sources = ["unknown"]
+    sources = sorted(sources, key=lambda session: MARKET_SESSION_PRIORITY[session])
+    primary = sorted(sources, key=lambda session: MARKET_SESSION_PRIORITY[session])[0]
+    return MarketSessionDiagnostic(primary=primary, sources=sources, conflict=len(set(sources)) > 1)
+
+
+def evaluate_report_grades(inputs: ReportGradeInputs) -> ReportGradeResult:
+    primary_decisions = [
+        decision
+        for decision in inputs.decisions
+        if decision.universe_origin not in {"discovery", "benchmark"}
+    ]
+    discovery_decisions = [decision for decision in inputs.decisions if decision.universe_origin == "discovery"]
+    benchmark_sessions = [
+        decision.market_session
+        for decision in inputs.decisions
+        if decision.universe_origin == "benchmark" and decision.market_session
+    ]
+    benchmark_sessions.extend(inputs.required_benchmark_sessions)
+
+    primary_session = normalize_market_session(
+        [decision.market_session for decision in primary_decisions if decision.market_session]
+    )
+    discovery_session = normalize_market_session(
+        [decision.market_session for decision in discovery_decisions if decision.market_session]
+    )
+    benchmark_session = normalize_market_session(benchmark_sessions)
+    overall_session = normalize_market_session(
+        [decision.market_session for decision in inputs.decisions if decision.market_session]
+    )
+    primary_stale_count = sum(1 for decision in primary_decisions if decision.is_stale)
+    overall_stale_count = sum(1 for decision in inputs.decisions if decision.is_stale)
+
+    blocking_reasons: list[str] = []
+    report_type = inputs.report_type if inputs.report_type in {"main", "close"} else "main"
+    if _is_non_live_mode(inputs.data_mode):
+        primary_grade = "not_decision_grade"
+        blocking_reasons.append("main_primary_not_decision_grade")
+    elif primary_stale_count:
+        primary_grade = "close_diagnostic" if report_type == "close" else "diagnostic_not_decision_grade"
+        blocking_reasons.append("stale_primary_data")
+    elif report_type == "main":
+        if primary_session.conflict or primary_session.primary != "regular":
+            blocking_reasons.append("invalid_market_session")
+        if benchmark_sessions and (benchmark_session.conflict or benchmark_session.primary != "regular"):
+            blocking_reasons.append("required_benchmark_invalid")
+        generated_brt = _parse_generated_at_to_brt(inputs.generated_at)
+        if inputs.enforce_regular_window and (
+            generated_brt is None or not _is_regular_market_window_brt(generated_brt)
+        ):
+            blocking_reasons.append("outside_regular_market_window")
+        primary_grade = "diagnostic_not_decision_grade" if blocking_reasons else "decision_grade"
+    else:
+        valid_close_session = not primary_session.conflict and primary_session.primary in {"closed", "after_hours"}
+        primary_grade = (
+            "close_decision_grade"
+            if valid_close_session and _is_valid_close_window(inputs.generated_at)
+            else "close_diagnostic"
+        )
+        if primary_grade != "close_decision_grade":
+            blocking_reasons.append("invalid_market_session")
+
+    if _is_non_live_mode(inputs.data_mode):
+        overall_grade = "not_decision_grade"
+    elif overall_stale_count:
+        overall_grade = "close_diagnostic" if report_type == "close" else "diagnostic_not_decision_grade"
+    elif report_type == "main":
+        overall_grade = (
+            "diagnostic_not_decision_grade"
+            if overall_session.conflict or overall_session.primary != "regular"
+            else "decision_grade"
+        )
+    else:
+        overall_grade = (
+            "close_decision_grade"
+            if not overall_session.conflict
+            and overall_session.primary in {"closed", "after_hours"}
+            and _is_valid_close_window(inputs.generated_at)
+            else "close_diagnostic"
+        )
+
+    if not discovery_decisions:
+        discovery_grade = "not_applicable"
+    elif any(
+        decision.is_stale
+        or decision.decision == "blocked"
+        or decision.market_session != primary_session.primary
+        for decision in discovery_decisions
+    ):
+        discovery_grade = "degraded"
+    else:
+        discovery_grade = "complete"
+
+    warnings: list[str] = []
+    if discovery_grade == "degraded":
+        warnings.append("discovery_coverage_degraded")
+    if overall_grade != primary_grade:
+        warnings.append("overall_grade_differs_from_primary")
+
+    return ReportGradeResult(
+        primary_report_grade=primary_grade,
+        overall_report_grade=overall_grade,
+        primary_market_session=primary_session,
+        discovery_market_sessions=discovery_session,
+        benchmark_market_sessions=benchmark_session,
+        discovery_coverage_grade=discovery_grade,
+        stale_asset_count_primary=primary_stale_count,
+        overall_data_warnings=warnings,
+        blocking_reasons=blocking_reasons,
+    )
+
+
+def _format_market_session_sources(sources: list[str]) -> str:
+    return f"[{', '.join(sources)}]"
+
+
+def _session_conflict_warning(
+    session_info: MarketSessionDiagnostic,
+    *,
+    generated_brt: datetime | None,
+    report_type: str,
+    data_mode: str,
+    provider_budget: dict[str, Any] | None,
+    fresh_price_count: int,
+    stale_price_count: int,
+    missing_price_count: int,
+) -> bool:
+    return (
+        report_type == "main"
+        and data_mode == "live"
+        and session_info.primary == "regular"
+        and set(session_info.sources) == {"regular", "unknown"}
+        and generated_brt is not None
+        and _is_regular_market_window_brt(generated_brt)
+        and _provider_budget_value(provider_budget, "provider_rate_limit_status") == "ok"
+        and _provider_budget_value(provider_budget, "fmp_status") == "ok"
+        and fresh_price_count > 0
+        and stale_price_count == 0
+        and missing_price_count == 0
+    )
+
+
+def _main_decision_grade_diagnostic_section(
+    decisions: list[AssetDecision],
+    *,
+    report_grade: str,
+    session_info: MarketSessionDiagnostic,
+    generated_at: str,
+    data_mode: str,
+    data_freshness: str,
+    provider_budget: dict[str, Any] | None,
+    has_stale_assets: bool,
+    session_conflict_warning: bool,
+) -> list[str]:
+    fresh_price_count = sum(1 for decision in decisions if decision.last_price_timestamp and not decision.is_stale)
+    stale_price_count = sum(1 for decision in decisions if decision.is_stale)
+    missing_price_count = sum(1 for decision in decisions if not decision.last_price_timestamp)
+    generated_brt = _parse_generated_at_to_brt(generated_at)
+    generated_utc = generated_brt.astimezone(timezone.utc) if generated_brt else None
+    reason_codes = _main_decision_grade_reason_codes(
+        report_grade=report_grade,
+        data_mode=data_mode,
+        session_info=session_info,
+        has_stale_assets=has_stale_assets,
+        session_conflict_warning=session_conflict_warning,
+    )
+    return [
+        "## Por que o main nao foi decision-grade",
+        "",
+        f"- report_grade: `{report_grade}`",
+        f"- market_session: `{session_info.primary}`",
+        f"- market_session_primary: `{session_info.primary}`",
+        f"- market_session_sources: `{_format_market_session_sources(session_info.sources)}`",
+        f"- market_session_conflict: {str(session_info.conflict).lower()}",
+        f"- session_conflict_warning: {str(session_conflict_warning).lower()}",
+        f"- generated_at BRT: `{_format_datetime_diagnostic(generated_brt)}`",
+        f"- generated_at UTC: `{_format_datetime_diagnostic(generated_utc)}`",
+        f"- expected market window: `{_expected_regular_market_window(generated_brt)}`",
+        f"- data_mode: `{data_mode}`",
+        f"- data_freshness: `{data_freshness}`",
+        f"- fresh_price_count: {fresh_price_count}",
+        f"- stale_price_count: {stale_price_count}",
+        f"- missing_price_count: {missing_price_count}",
+        f"- provider_rate_limit_status: `{_provider_budget_value(provider_budget, 'provider_rate_limit_status')}`",
+        f"- fmp_status: `{_provider_budget_value(provider_budget, 'fmp_status')}`",
+        f"- coingecko_status: `{_provider_budget_value(provider_budget, 'coingecko_status')}`",
+        f"- reason_codes: `{_format_compact_list(reason_codes)}`",
+        f"- possible_session_detection_bug: {str(_possible_session_detection_bug(generated_brt, session_info, data_mode=data_mode, report_type='main', fresh_price_count=fresh_price_count, reason_codes=reason_codes)).lower()}",
+        "",
+    ]
+
+
+def _main_decision_grade_reason_codes(
+    *,
+    report_grade: str,
+    data_mode: str,
+    session_info: MarketSessionDiagnostic,
+    has_stale_assets: bool,
+    session_conflict_warning: bool,
+) -> list[str]:
+    if report_grade == "decision_grade":
+        return []
+    reasons: list[str] = []
+    if _is_non_live_mode(data_mode):
+        reasons.append("data_mode_not_live")
+    if has_stale_assets:
+        reasons.append("stale_price_data")
+    if session_info.conflict and not session_conflict_warning:
+        reasons.append("market_session_conflict")
+    elif session_info.primary != "regular":
+        reasons.append("market_session_not_regular")
+    return reasons or ["unknown_decision_grade_failure"]
+
+
+def _provider_budget_value(provider_budget: dict[str, Any] | None, key: str) -> str:
+    if not provider_budget:
+        return "not_present_in_input"
+    return str(provider_budget.get(key, "not_present_in_input"))
+
+
+def _format_datetime_diagnostic(value: datetime | None) -> str:
+    if value is None:
+        return "unknown"
+    return value.isoformat(timespec="seconds")
+
+
+def _expected_regular_market_window(generated_brt: datetime | None) -> str:
+    if generated_brt is None:
+        return "unknown"
+    market_date = generated_brt.date()
+    open_brt = datetime.combine(market_date, _regular_open_time_brt(market_date), tzinfo=BRT)
+    close_brt = datetime.combine(market_date, _regular_close_time_brt(market_date), tzinfo=BRT)
+    return f"{open_brt.isoformat(timespec='seconds')} to {close_brt.isoformat(timespec='seconds')}"
+
+
+def _possible_session_detection_bug(
+    generated_brt: datetime | None,
+    session_info: MarketSessionDiagnostic | list[str],
+    *,
+    data_mode: str = "unknown",
+    report_type: str = "main",
+    fresh_price_count: int = 0,
+    reason_codes: list[str] | None = None,
+) -> bool:
+    if not isinstance(session_info, MarketSessionDiagnostic):
+        session_info = normalize_market_session(session_info)
+    reason_codes = reason_codes or []
+    if "market_session_not_regular" in reason_codes and "regular" in session_info.sources:
+        return True
+    if session_info.conflict:
+        return True
+    if generated_brt is not None and _is_regular_market_window_brt(generated_brt) and session_info.primary in {"unknown", "closed"}:
+        return True
+    return report_type == "main" and data_mode == "live" and fresh_price_count > 0 and session_info.primary == "unknown"
+
+
+def _is_regular_market_window_brt(generated_brt: datetime) -> bool:
+    market_date = generated_brt.date()
+    if not _is_us_market_trading_day(market_date):
+        return False
+    open_brt = datetime.combine(market_date, _regular_open_time_brt(market_date), tzinfo=BRT)
+    close_brt = datetime.combine(market_date, _regular_close_time_brt(market_date), tzinfo=BRT)
+    return open_brt <= generated_brt <= close_brt
 
 
 def _coverage_universe_section(
@@ -314,8 +751,8 @@ def _coverage_universe_section(
     lines = [
         "## Coverage universe",
         "",
-        "| Ticker | Type | Last price | Daily change | Trend | Bucket | Data status | Reason |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Ticker | Type | Last price | Daily change | Trend | Bucket | Data status | Reason | Origin |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for item in coverage_universe:
         symbol = str(item.get("symbol", "")).upper()
@@ -323,13 +760,37 @@ def _coverage_universe_section(
         decision = decision_by_symbol.get(symbol)
         if decision is None:
             lines.append(
-                f"| {symbol} | {asset_type} | n/a | n/a | not_verified | not_deep_analyzed | not_verified | not_selected_for_deep_analysis |"
+                f"| {symbol} | {asset_type} | n/a | n/a | not_verified | not_deep_analyzed | not_verified | not_selected_for_deep_analysis | {item.get('universe_origin', 'primary_watchlist')} |"
             )
             continue
         lines.append(
             f"| {symbol} | {asset_type} | {_coverage_last_price(decision)} | {_coverage_daily_change(decision)} | "
             f"{_coverage_trend(decision)} | {_final_bucket(decision)} | {_coverage_data_status(decision)} | "
-            f"{_coverage_reason(decision)} |"
+            f"{_coverage_reason(decision)} | {decision.universe_origin} |"
+        )
+    lines.append("")
+    return lines
+
+
+def _discovery_coverage_section(decisions: list[AssetDecision], grade: str) -> list[str]:
+    discovery = [decision for decision in decisions if decision.universe_origin == "discovery"]
+    if not discovery:
+        return []
+    lines = [
+        "",
+        "## Discovery coverage",
+        "",
+        f"- discovery_coverage_grade: `{grade}`",
+        "- impact_on_primary_report=false",
+        "",
+        "| Ticker | Origin | Collection status | Provider | Reason | Impact on primary report |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for decision in discovery:
+        collection_status = "degraded" if decision.decision == "blocked" or decision.market_session == "unknown" else "collected"
+        reason = _format_compact_list(decision.reason_codes or decision.limitations or decision.alerts)
+        lines.append(
+            f"| {decision.symbol} | discovery | {collection_status} | {decision.provider} | {reason} | false |"
         )
     lines.append("")
     return lines
@@ -717,6 +1178,7 @@ def _stop_lines(decisions: list[AssetDecision]) -> list[str]:
 def _analyst_candidate_lines(decision: AssetDecision, snapshot: AssetSnapshot | None = None) -> list[str]:
     lines = [
         f"- `{decision.symbol}`",
+        f"  - universe_origin: `{decision.universe_origin}`",
         f"  - bot_decision: `{decision.decision}`",
         f"  - reason: {_display_thesis(decision)}",
         f"  - risks: {_format_list(sorted(set([*decision.alerts, *decision.limitations])))}",
@@ -725,6 +1187,26 @@ def _analyst_candidate_lines(decision: AssetDecision, snapshot: AssetSnapshot | 
         f"  - news_catalyst_status: `{_verification_status(decision.news_status)}`",
     ]
     return [*lines, *[f"  {line}" for line in _snapshot_provenance_lines(snapshot)]]
+
+
+def _analyst_decision_inventory_section(decisions: list[AssetDecision]) -> list[str]:
+    lines = ["## Source decision inventory", ""]
+    for decision in decisions:
+        lines.extend(
+            [
+                f"### {decision.symbol}",
+                f"- source_decision: `{decision.decision}`",
+                f"- source_bucket: `{decision.bucket}`",
+                f"- source_report: `main`",
+                f"- universe_origin: `{decision.universe_origin}`",
+                f"- market_session: `{decision.market_session}`",
+                f"- is_stale: `{str(decision.is_stale).lower()}`",
+                f"- provider: `{decision.provider}`",
+                f"- blockers: `{_format_compact_list(decision.reason_codes or decision.limitations or decision.alerts)}`",
+                "",
+            ]
+        )
+    return lines
 
 
 def _snapshot_or_legacy_status(snapshot: AssetSnapshot | None, field: str, legacy: str) -> str:
@@ -779,21 +1261,21 @@ def _report_grade(
     *,
     report_type: str,
     data_mode: str,
-    market_sessions: list[str],
+    session_info: MarketSessionDiagnostic,
+    session_conflict_warning: bool,
     generated_at: str,
     has_stale_assets: bool,
 ) -> str:
     if _is_non_live_mode(data_mode):
         return "not_decision_grade"
-    normalized = {session.lower() for session in market_sessions if session}
     if has_stale_assets:
         return "close_diagnostic" if report_type == "close" else "diagnostic_not_decision_grade"
     if report_type == "main":
-        if normalized != {"regular"}:
+        if (session_info.conflict and not session_conflict_warning) or session_info.primary != "regular":
             return "diagnostic_not_decision_grade"
         return "decision_grade"
     if report_type == "close":
-        if not normalized or not normalized <= {"closed", "after_hours"}:
+        if session_info.conflict or session_info.primary not in {"closed", "after_hours"}:
             return "close_diagnostic"
         if _is_valid_close_window(generated_at):
             return "close_decision_grade"
@@ -827,6 +1309,10 @@ def _is_valid_close_window(generated_at: str) -> bool:
 
 def _regular_close_time_brt(day: date) -> time:
     return time(17, 0) if _is_us_dst(day) else time(18, 0)
+
+
+def _regular_open_time_brt(day: date) -> time:
+    return time(10, 30) if _is_us_dst(day) else time(11, 30)
 
 
 def _is_us_dst(day: date) -> bool:
@@ -1092,6 +1578,7 @@ def _asset_section(
         "",
         f"- Ativo: `{decision.symbol}`",
         f"- Tipo: `{decision.asset_type}`",
+        f"- universe_origin: `{decision.universe_origin}`",
         f"- decision_label: `{decision.decision}`",
         f"- Decisao: `{decision.decision}`",
         f"- reason_codes: {_format_list(decision.reason_codes or sorted(set([*decision.alerts, *decision.limitations])))}",

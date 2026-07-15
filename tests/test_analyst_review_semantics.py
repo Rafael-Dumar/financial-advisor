@@ -9,6 +9,7 @@ NIGHTLY_INPUT = """# Nightly qualitative review input
 
 ## Main summary
 
+- generated_at: `2026-06-22T12:00:00-03:00`
 - report_type: `main`
 - Data mode: `live`
 - report_grade: `diagnostic_not_decision_grade`
@@ -170,11 +171,21 @@ FULL_UNIVERSE_INPUT = """# Nightly qualitative review input
 
 ## Main summary
 
+- generated_at: `2026-06-22T12:00:00-03:00`
 - report_type: `main`
 - Data mode: `live`
 - report_grade: `diagnostic_not_decision_grade`
 - market_session: `regular,unknown`
 - WARNING: blocked_or_diagnostic
+- data_freshness: `controlled_by_cache_freshness`
+- fresh_price_count: 4
+- stale_price_count: 0
+- missing_price_count: 11
+- provider_rate_limit_status: `ok`
+- fmp_status: `ok`
+- coingecko_status: `ok`
+- reason_codes: `market_session_not_regular`
+- possible_session_detection_bug: true
 
 ## INTC
 - Ativo: `INTC`
@@ -311,7 +322,7 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
         review = generate_analyst_final_review(NIGHTLY_INPUT)
 
         self.assertIn("Public Equity Investing executed: false", review)
-        self.assertIn("Public Equity Investing note: not executed automatically in this environment", review)
+        self.assertIn("Esta e uma revisao baseada em regras locais", review)
         self.assertIn("* no_trade", review)
         self.assertIn("AMD", review)
         self.assertIn("watch_pending_checks", review)
@@ -352,17 +363,20 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
 
         telegram = review.split("## Telegram summary", 1)[1]
         self.assertIn("Decisao operacional: no_trade", telegram)
-        self.assertIn("Nenhum ativo aprovado para entrada", telegram)
-        self.assertIn("AMD em watch_pending_checks", telegram)
-        self.assertIn("HYPE em crypto_research_only", telegram)
-        self.assertIn("main nao decision-grade", telegram)
+        self.assertIn("Report data grade:", telegram)
+        self.assertIn("Trade readiness: no_trade", telegram)
+        self.assertIn("Top equities: AMD", telegram)
+        self.assertIn("Top crypto: HYPE", telegram)
+        self.assertIn("Melhor equity: AMD - watch_pending_checks", telegram)
+        self.assertIn("Melhor crypto: HYPE - crypto_research_only", telegram)
+        self.assertIn("Bloqueio para trade:", telegram)
 
     def test_duplicate_main_close_assets_are_listed_once(self) -> None:
         review = generate_analyst_final_review(NIGHTLY_INPUT + "\n\n" + NIGHTLY_INPUT)
 
         telegram = review.split("## Telegram summary", 1)[1]
-        self.assertEqual(telegram.count("AMD em watch_pending_checks"), 1)
-        self.assertEqual(telegram.count("HYPE em crypto_research_only"), 1)
+        self.assertEqual(telegram.count("AMD"), 2)
+        self.assertEqual(telegram.count("HYPE"), 2)
 
     def test_watch_and_research_labels_never_become_tradeable(self) -> None:
         review = generate_analyst_final_review(NIGHTLY_INPUT)
@@ -379,9 +393,10 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
             self.assertIn("basic_data_status: live", review)
             self.assertIn("flow_data_status: not_verified", review)
             self.assertIn("binance_status: restricted", review)
-        self.assertIn("BTC: crypto_watch_context", review)
-        self.assertIn("ETH: crypto_watch_context", review)
-        self.assertIn("SOL: crypto_watch_context", review)
+        self.assertIn("ticker: BTC", review)
+        self.assertIn("label: crypto_watch_context", review)
+        self.assertIn("ticker: ETH", review)
+        self.assertIn("ticker: SOL", review)
         self.assertNotIn("BTC: blocked", review)
         self.assertNotIn("ETH: blocked", review)
         self.assertNotIn("SOL: blocked", review)
@@ -418,7 +433,7 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
         review = generate_analyst_final_review(CRYPTO_BASIC_WITH_BINANCE_RESTRICTED)
 
         telegram = review.split("## Telegram summary", 1)[1]
-        self.assertIn("Cripto: BTC/ETH/SOL apenas contexto/research", telegram)
+        self.assertIn("Melhor crypto: BTC/ETH/SOL - crypto_watch_context", telegram)
         self.assertIn("flow/derivatives nao verificados", telegram)
 
     def test_crypto_basic_status_can_be_cache_or_fallback(self) -> None:
@@ -459,29 +474,263 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
         review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
         telegram = review.split("## Telegram summary", 1)[1]
 
-        for ticker in ("INTC", "AMD", "NVDA", "HIMS", "MU", "MSFT", "USAR", "CRDO", "DELL", "MRVL", "HOOD", "BTC", "ETH", "SOL", "HYPE"):
-            self.assertIn(ticker, telegram)
-        self.assertIn("Acoes:", telegram)
-        self.assertIn("Cripto:", telegram)
-        self.assertIn("no_trade", telegram)
+        self.assertIn("Decisao operacional: no_trade", telegram)
+        self.assertIn("Report data grade:", telegram)
+        self.assertIn("Trade readiness: no_trade", telegram)
+        self.assertIn("Top equities: AMD", telegram)
+        self.assertIn("Top crypto: HYPE, BTC, ETH, SOL", telegram)
+        self.assertIn("Melhor equity: AMD - watch_pending_checks", telegram)
+        self.assertIn("Melhor crypto: HYPE - crypto_research_only", telegram)
+        self.assertIn("Bloqueio para trade: news/earnings/flow/crypto_flow_pending", telegram)
+        self.assertNotIn("NVDA", telegram)
+        self.assertNotIn("HIMS", telegram)
+        self.assertNotIn("MU", telegram)
+        self.assertNotIn("MSFT", telegram)
+        self.assertNotIn("USAR", telegram)
+        self.assertNotIn("CRDO", telegram)
+        self.assertNotIn("DELL", telegram)
+        self.assertNotIn("MRVL", telegram)
+        self.assertNotIn("HOOD", telegram)
 
     def test_telegram_summary_explains_ranking_instead_of_only_listing_labels(self) -> None:
         review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
         telegram = review.split("## Telegram summary", 1)[1]
 
-        self.assertIn("Por que nao operar:", telegram)
-        self.assertIn("Melhores sinais:", telegram)
-        self.assertIn("Evitar/rejeitados:", telegram)
-        self.assertIn("Checklist de liberacao:", telegram)
+        self.assertIn("Report data grade:", telegram)
+        self.assertIn("Market brief:", telegram)
+        self.assertIn("Top equities:", telegram)
+        self.assertIn("Top crypto:", telegram)
+        self.assertIn("Proximo passo: aguardar proximo main decision-grade", telegram)
+        self.assertNotIn("Status completo:", telegram)
 
     def test_final_review_starts_with_objective_reading(self) -> None:
         review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
 
         self.assertIn("## Leitura objetiva", review)
         objective = review.split("## Leitura objetiva", 1)[1].split("## Resumo do dia", 1)[0]
-        self.assertIn("Melhores sinais:", objective)
+        self.assertIn("Ranking inicial:", objective)
         self.assertIn("Evitar/rejeitados:", objective)
         self.assertIn("Proximo passo pratico:", objective)
+
+    def test_news_earnings_flow_not_verified_does_not_block_report_data_grade(self) -> None:
+        clean_main = FULL_UNIVERSE_INPUT.replace(
+            "- report_grade: `diagnostic_not_decision_grade`",
+            "- report_grade: `decision_grade`",
+        ).replace(
+            "- market_session: `regular,unknown`",
+            "- market_session: `regular`",
+        ).replace(
+            "- WARNING: blocked_or_diagnostic\n",
+            "",
+        ).replace(
+            "- missing_price_count: 11",
+            "- missing_price_count: 0",
+        ).replace(
+            "- reason_codes: `market_session_not_regular`",
+            "- reason_codes: `news_not_collected_confidence_limited,earnings_data_missing,crypto_flow_missing`",
+        )
+
+        review = generate_analyst_final_review(clean_main)
+
+        self.assertIn("- report_data_grade: `decision_grade`", review)
+        self.assertIn("- trade_readiness: `no_trade`", review)
+        self.assertIn("Bloqueio para trade: news/earnings/flow/crypto_flow_pending", review)
+
+    def test_live_coverage_with_session_conflict_is_partial_not_blocked_data(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+
+        self.assertIn("- report_data_grade: `partial_data`", review)
+        self.assertIn("- trade_readiness: `no_trade`", review)
+
+    def test_input_without_coverage_emits_nightly_input_incomplete(self) -> None:
+        review = generate_analyst_final_review(NIGHTLY_INPUT)
+        incomplete = _section(review, "## Nightly input completeness")
+
+        self.assertIn("- nightly_input_incomplete: true", incomplete)
+        self.assertIn("- main_found: true", incomplete)
+        self.assertIn("- close_found: true", incomplete)
+        self.assertIn("- equities_count: 2", incomplete)
+        self.assertIn("- crypto_count: 2", incomplete)
+        self.assertIn("- coverage_count: not_present_in_input", incomplete)
+        self.assertIn("coverage_universe_missing", incomplete)
+
+    def test_market_brief_missing_when_proxy_data_is_missing(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+        brief = _section(review, "## Market brief")
+
+        self.assertIn("- market_brief_status: missing", brief)
+        self.assertIn("- SPY/S&P proxy: missing", brief)
+        self.assertIn("- QQQ/Nasdaq proxy: missing", brief)
+        self.assertIn("- SMH/semi proxy: missing", brief)
+        self.assertIn("- BTC: price=61500.00", brief)
+        self.assertIn("- ETH: price=3400.00", brief)
+
+    def test_coverage_universe_includes_all_configured_tickers(self) -> None:
+        review = generate_analyst_final_review("## Main summary\n\n- Data mode: `live`\n")
+        coverage = _section(review, "## Coverage universe")
+
+        for ticker in ("INTC", "AMD", "NVDA", "HIMS", "MU", "MSFT", "USAR", "CRDO", "DELL", "MRVL", "HOOD", "SOL", "HYPE", "BTC", "ETH"):
+            self.assertIn(f"| {ticker} |", coverage)
+        self.assertIn("| AMD | stock | missing | missing | missing | missing | missing | not_present_in_input |", coverage)
+
+    def test_top_equities_and_crypto_are_separate(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+        equities_section = _section(review, "## Top equities to watch tomorrow")
+        crypto_section = _section(review, "## Top crypto to watch tomorrow")
+
+        self.assertIn("ticker: AMD", equities_section)
+        self.assertNotIn("ticker: HYPE", equities_section)
+        for ticker in ("HYPE", "BTC", "ETH", "SOL"):
+            self.assertIn(f"ticker: {ticker}", crypto_section)
+        self.assertLessEqual(equities_section.count("- ticker:"), 5)
+        self.assertLessEqual(crypto_section.count("- ticker:"), 4)
+
+    def test_report_never_says_bare_melhores_sinais_nenhum(self) -> None:
+        review = generate_analyst_final_review("## Main summary\n\n- Data mode: `live`\n")
+
+        self.assertNotIn("Melhores sinais: nenhum", review)
+        self.assertIn("Ranking inicial: indisponivel porque nightly_input_incomplete=true.", review)
+
+    def test_market_rising_with_coverage_assets_generates_watch_ranking(self) -> None:
+        risk_on = FULL_UNIVERSE_INPUT + "\n\n- stock_regime: `risk_on`\n- crypto_regime: `risk_on`\n"
+        review = generate_analyst_final_review(risk_on)
+        equities_section = _section(review, "## Top equities to watch tomorrow")
+
+        self.assertIn("ticker: AMD", equities_section)
+        self.assertNotIn("Nenhuma equity prioritaria", equities_section)
+
+    def test_report_with_main_diagnostic_still_generates_top_candidates_to_watch(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+        top_section = _section(review, "## Top candidates to watch tomorrow")
+
+        self.assertIn("ticker: AMD", top_section)
+        self.assertIn("label: watch_pending_checks", top_section)
+        self.assertIn("ticker: HYPE", top_section)
+        self.assertIn("label: crypto_research_only", top_section)
+        self.assertIn("Nenhum esta aprovado para entrada", review)
+
+    def test_top_crypto_to_watch_includes_eligible_crypto_and_limits_to_four(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+        crypto_section = _section(review, "## Top crypto to watch tomorrow")
+
+        for ticker in ("HYPE", "BTC", "ETH", "SOL"):
+            self.assertIn(f"ticker: {ticker}", crypto_section)
+        self.assertIn("label: crypto_research_only", crypto_section)
+        self.assertIn("label: crypto_watch_context", crypto_section)
+        self.assertLessEqual(crypto_section.count("- ticker:"), 4)
+
+    def test_crypto_watch_context_is_best_crypto_when_research_only_absent(self) -> None:
+        no_hype = FULL_UNIVERSE_INPUT.replace("## HYPE\n- Ativo: `HYPE`", "## HYPE\n- ignored: `HYPE`")
+        review = generate_analyst_final_review(no_hype)
+        telegram = review.split("## Telegram summary", 1)[1]
+
+        self.assertIn("Melhor crypto: BTC/ETH/SOL - crypto_watch_context", telegram)
+        self.assertNotIn("Melhor crypto: nenhum", telegram)
+
+    def test_best_crypto_is_none_only_without_eligible_crypto(self) -> None:
+        equities_only = FULL_UNIVERSE_INPUT.split("## BTC", 1)[0]
+        review = generate_analyst_final_review(equities_only)
+        telegram = review.split("## Telegram summary", 1)[1]
+
+        self.assertIn("Melhor crypto: nenhum", telegram)
+
+    def test_top_candidates_has_at_most_five_assets(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+        top_section = _section(review, "## Top candidates to watch tomorrow")
+
+        self.assertLessEqual(top_section.count("- ticker:"), 5)
+
+    def test_decision_grade_failure_shows_main_diagnostic_in_final_review(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+        diagnostic = _section(review, "## Por que o main nao foi decision-grade")
+
+        self.assertIn("- report_grade: `diagnostic_not_decision_grade`", diagnostic)
+        self.assertNotIn("regular,unknown", diagnostic)
+        self.assertIn("- market_session: `regular`", diagnostic)
+        self.assertIn("- market_session_primary: `regular`", diagnostic)
+        self.assertIn("- market_session_sources: `[regular, unknown]`", diagnostic)
+        self.assertIn("- market_session_conflict: true", diagnostic)
+        self.assertIn("- generated_at BRT: `2026-06-22T12:00:00-03:00`", diagnostic)
+        self.assertIn("- generated_at UTC: `2026-06-22T15:00:00+00:00`", diagnostic)
+        self.assertIn("- expected market window: `2026-06-22T10:30:00-03:00 to 2026-06-22T17:00:00-03:00`", diagnostic)
+        self.assertIn("- data_mode: `live`", diagnostic)
+        self.assertIn("- data_freshness: `controlled_by_cache_freshness`", diagnostic)
+        self.assertIn("- fresh_price_count: 4", diagnostic)
+        self.assertIn("- stale_price_count: 0", diagnostic)
+        self.assertIn("- missing_price_count: 11", diagnostic)
+        self.assertIn("- provider_rate_limit_status: `ok`", diagnostic)
+        self.assertIn("- fmp_status: `ok`", diagnostic)
+        self.assertIn("- coingecko_status: `ok`", diagnostic)
+        self.assertIn("- reason_codes: `market_session_conflict`", diagnostic)
+        self.assertNotIn("market_session_not_regular", diagnostic)
+        self.assertIn("- possible_session_detection_bug: true", diagnostic)
+        self.assertIn(
+            "Main foi bloqueado porque a sessao veio conflitante: sources=[regular, unknown].",
+            diagnostic,
+        )
+
+    def test_no_trade_does_not_prevent_watch_or_research_ranking(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+
+        self.assertIn("* no_trade", review)
+        self.assertIn("## Top candidates to watch tomorrow", review)
+        self.assertIn("prioridade: high", review)
+
+    def test_operational_safety_language_is_not_repeated_excessively(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+
+        self.assertLessEqual(review.lower().count("sem broker"), 2)
+        self.assertLessEqual(review.lower().count("sem ordem automatica"), 2)
+
+    def test_public_equity_not_executed_is_explicitly_local_rules_review(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT, public_equity_executed=False)
+
+        self.assertIn(
+            "Esta e uma revisao baseada em regras locais, nao uma analise externa/plugin.",
+            review,
+        )
+
+    def test_missing_main_diagnostic_fields_are_not_present_in_input(self) -> None:
+        review = generate_analyst_final_review(NIGHTLY_INPUT)
+        diagnostic = _section(review, "## Por que o main nao foi decision-grade")
+
+        self.assertIn("- data_freshness: `not_present_in_input`", diagnostic)
+        self.assertIn("- fresh_price_count: not_present_in_input", diagnostic)
+        self.assertIn("- provider_rate_limit_status: `not_present_in_input`", diagnostic)
+        self.assertIn("- fmp_status: `not_present_in_input`", diagnostic)
+        self.assertIn("- coingecko_status: `not_present_in_input`", diagnostic)
+
+    def test_telegram_summary_mentions_session_conflict_when_present(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+        telegram = review.split("## Telegram summary", 1)[1]
+
+        self.assertIn("Erro de dados, se houver: nightly_input_incomplete,possible_session_detection_bug,market_session_conflict", telegram)
+
+    def test_regular_session_with_not_regular_reason_marks_possible_session_bug(self) -> None:
+        markdown = """# Nightly qualitative review input
+
+## Main summary
+
+- generated_at: `2026-06-22T12:00:00-03:00`
+- report_type: `main`
+- Data mode: `live`
+- report_grade: `diagnostic_not_decision_grade`
+- market_session: `regular`
+- reason_codes: `market_session_not_regular`
+- WARNING: blocked_or_diagnostic
+"""
+
+        review = generate_analyst_final_review(markdown)
+        diagnostic = _section(review, "## Por que o main nao foi decision-grade")
+
+        self.assertIn("- market_session_primary: `regular`", diagnostic)
+        self.assertNotIn("reason_codes: `market_session_not_regular`", diagnostic)
+        self.assertIn("- possible_session_detection_bug: true", diagnostic)
+
+def _section(markdown: str, heading: str) -> str:
+    start = markdown.index(heading)
+    next_start = markdown.find("\n## ", start + len(heading))
+    return markdown[start : next_start if next_start != -1 else len(markdown)]
 
 
 if __name__ == "__main__":

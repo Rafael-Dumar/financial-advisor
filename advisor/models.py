@@ -223,3 +223,4 @@ class AssetDecision:
     gap_risk: str = "unknown"
     borrow_data_available: bool = False
     short_status: str = "not_evaluated"
+    universe_origin: str = "unknown"

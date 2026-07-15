@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from advisor.models import AssetDecision, BacktestStats, RiskPlan
@@ -147,6 +148,158 @@ class ReportBudgetAndAnalystInputTests(unittest.TestCase):
         self.assertIn("- skipped_provider_calls_due_to_rate_limit: 15", report)
         self.assertNotIn("Decisao geral: `operate`", report)
 
+    def test_main_decision_grade_failure_shows_complete_reason_diagnostic(self) -> None:
+        report = render_markdown_report(
+            [
+                _decision("AMD", market_session="closed"),
+                _decision("HYPE", asset_type="crypto", market_session="closed", decision="technical_unvalidated"),
+            ],
+            stock_regime="neutral",
+            crypto_regime="risk_off",
+            report_type="main",
+            data_mode="live",
+            generated_at="2026-06-22T12:00:00-03:00",
+            data_freshness="controlled_by_cache_freshness",
+            provider_budget={
+                "estimated_calls": {"fmp": 2, "coingecko": 1},
+                "used_calls": {"fmp": 2, "coingecko": 1},
+                "provider_rate_limit_status": "ok",
+                "fmp_status": "ok",
+                "coingecko_status": "ok",
+            },
+        )
+
+        diagnostic = _section(report, "## Por que o main nao foi decision-grade")
+
+        self.assertIn("- report_grade: `diagnostic_not_decision_grade`", diagnostic)
+        self.assertIn("- market_session: `closed`", diagnostic)
+        self.assertIn("- generated_at BRT: `2026-06-22T12:00:00-03:00`", diagnostic)
+        self.assertIn("- generated_at UTC: `2026-06-22T15:00:00+00:00`", diagnostic)
+        self.assertIn("- expected market window: `2026-06-22T10:30:00-03:00 to 2026-06-22T17:00:00-03:00`", diagnostic)
+        self.assertIn("- data_mode: `live`", diagnostic)
+        self.assertIn("- data_freshness: `controlled_by_cache_freshness`", diagnostic)
+        self.assertIn("- fresh_price_count: 0", diagnostic)
+        self.assertIn("- stale_price_count: 0", diagnostic)
+        self.assertIn("- missing_price_count: 2", diagnostic)
+        self.assertIn("- provider_rate_limit_status: `ok`", diagnostic)
+        self.assertIn("- fmp_status: `ok`", diagnostic)
+        self.assertIn("- coingecko_status: `ok`", diagnostic)
+        self.assertIn("- reason_codes: `market_session_not_regular`", diagnostic)
+        self.assertIn("- possible_session_detection_bug: true", diagnostic)
+
+    def test_main_regular_unknown_session_conflict_is_warning_not_blocking(self) -> None:
+        report = render_markdown_report(
+            [
+                replace(_decision("AMD", market_session="regular"), last_price_timestamp="2026-06-22T15:00:00+00:00"),
+                replace(
+                    replace(
+                        _decision(
+                            "HYPE",
+                            asset_type="crypto",
+                            market_session="unknown",
+                            decision="technical_unvalidated",
+                        ),
+                        universe_origin="discovery",
+                    ),
+                    last_price_timestamp="2026-06-22T15:00:00+00:00",
+                ),
+            ],
+            stock_regime="neutral",
+            crypto_regime="risk_off",
+            report_type="main",
+            data_mode="live",
+            generated_at="2026-06-22T12:00:00-03:00",
+            provider_budget={
+                "estimated_calls": {"fmp": 2, "coingecko": 1},
+                "used_calls": {"fmp": 2, "coingecko": 1},
+                "provider_rate_limit_status": "ok",
+                "fmp_status": "ok",
+                "coingecko_status": "ok",
+            },
+        )
+
+        self.assertNotIn("regular,unknown", report)
+        self.assertIn("- report_grade: `decision_grade`", report)
+        self.assertIn("- market_session: `regular`", report)
+        self.assertIn("- market_session_primary: `regular`", report)
+        self.assertIn("- market_session_sources: `[regular]`", report)
+        self.assertIn("- market_session_conflict: false", report)
+        self.assertIn("- discovery_market_sessions: `[unknown]`", report)
+        self.assertIn("- discovery_coverage_grade: `degraded`", report)
+        self.assertIn("- overall_report_grade: `diagnostic_not_decision_grade`", report)
+        self.assertIn("- session_conflict_warning: true", report)
+        self.assertNotIn("market_session_conflict`", report)
+        self.assertNotIn("market_session_not_regular", report)
+
+    def test_main_real_market_session_conflict_is_normalized_and_blocks(self) -> None:
+        report = render_markdown_report(
+            [
+                replace(_decision("AMD", market_session="regular"), last_price_timestamp="2026-06-22T15:00:00+00:00"),
+                replace(
+                    _decision("HYPE", asset_type="crypto", market_session="closed", decision="technical_unvalidated"),
+                    last_price_timestamp="2026-06-22T15:00:00+00:00",
+                ),
+            ],
+            stock_regime="neutral",
+            crypto_regime="risk_off",
+            report_type="main",
+            data_mode="live",
+            generated_at="2026-06-22T12:00:00-03:00",
+            provider_budget={
+                "estimated_calls": {"fmp": 2, "coingecko": 1},
+                "used_calls": {"fmp": 2, "coingecko": 1},
+                "provider_rate_limit_status": "ok",
+                "fmp_status": "ok",
+                "coingecko_status": "ok",
+            },
+        )
+
+        diagnostic = _section(report, "## Por que o main nao foi decision-grade")
+
+        self.assertNotIn("regular,closed", report)
+        self.assertIn("- market_session: `regular`", report)
+        self.assertIn("- market_session_primary: `regular`", report)
+        self.assertIn("- market_session_sources: `[regular, closed]`", report)
+        self.assertIn("- market_session_conflict: true", report)
+        self.assertIn("- session_conflict_warning: false", report)
+        self.assertIn("- reason_codes: `market_session_conflict`", diagnostic)
+        self.assertNotIn("market_session_not_regular", diagnostic)
+        self.assertIn("- possible_session_detection_bug: true", diagnostic)
+
+    def test_main_report_writes_explicit_generated_at_timezone_fields(self) -> None:
+        report = render_markdown_report(
+            [_decision("AMD", market_session="regular")],
+            stock_regime="neutral",
+            crypto_regime="risk_off",
+            report_type="main",
+            data_mode="live",
+            generated_at="2026-06-22T12:00:00-03:00",
+        )
+
+        self.assertIn("- generated_at_brt: `2026-06-22T12:00:00-03:00`", report)
+        self.assertIn("- generated_at_utc: `2026-06-22T15:00:00+00:00`", report)
+        self.assertIn("- expected_market_window_brt: `2026-06-22T10:30:00-03:00 to 2026-06-22T17:00:00-03:00`", report)
+        self.assertIn("- timezone_used: `America/Sao_Paulo`", report)
+
+    def test_primary_regular_without_conflict_is_decision_grade_not_session_diagnostic(self) -> None:
+        report = render_markdown_report(
+            [_decision("AMD", market_session="regular")],
+            stock_regime="neutral",
+            crypto_regime="risk_off",
+            report_type="main",
+            data_mode="live",
+            generated_at="2026-06-22T12:00:00-03:00",
+        )
+
+        self.assertIn("- report_grade: `decision_grade`", report)
+        self.assertIn("- market_session_primary: `regular`", report)
+        self.assertIn("- market_session_conflict: false", report)
+        self.assertIn("- fresh_price_count: 0", report)
+        self.assertIn("- stale_price_count: 0", report)
+        self.assertIn("- missing_price_count: 1", report)
+        self.assertIn("- provider_rate_limit_status: `not_present_in_input`", report)
+        self.assertNotIn("market_session_not_regular", report)
+
     def test_report_shows_full_coverage_universe_without_deep_analysis_for_all(self) -> None:
         coverage = [
             {"symbol": "INTC", "asset_type": "stock"},
@@ -226,10 +379,13 @@ class ReportBudgetAndAnalystInputTests(unittest.TestCase):
         self.assertIn("Top equity candidates for qualitative review", text)
         self.assertIn("technical_unvalidated is not approval to buy", text)
         self.assertIn("cannot approve a trade by itself", text)
-        self.assertIn("MSFT", text)
-        self.assertIn("NVDA", text)
-        self.assertIn("AMD", text)
-        self.assertNotIn("AVGO", text)
+        inventory = _section(text, "## Source decision inventory")
+        top_equities = _section(text, "## Top equity candidates for qualitative review")
+        self.assertIn("AVGO", inventory)
+        self.assertIn("MSFT", top_equities)
+        self.assertIn("NVDA", top_equities)
+        self.assertIn("AMD", top_equities)
+        self.assertNotIn("AVGO", top_equities)
 
     def test_analyst_review_input_does_not_send_full_coverage_and_separates_crypto(self) -> None:
         decisions = [
@@ -250,11 +406,14 @@ class ReportBudgetAndAnalystInputTests(unittest.TestCase):
             generated_at="2026-06-22T12:00:00-03:00",
         )
 
-        equity_section = text.split("## Crypto review needed", 1)[0]
+        equity_section = _section(text, "## Top equity candidates for qualitative review")
+        inventory = _section(text, "## Source decision inventory")
         self.assertIn("## Top equity candidates for qualitative review", text)
         self.assertIn("## Crypto review needed", text)
         self.assertIn("HYPE", text)
         self.assertIn("BTC", text)
+        self.assertIn("HYPE", inventory)
+        self.assertIn("BTC", inventory)
         self.assertNotIn("HYPE", equity_section)
         self.assertNotIn("BTC", equity_section)
         self.assertIn("INTC", equity_section)
