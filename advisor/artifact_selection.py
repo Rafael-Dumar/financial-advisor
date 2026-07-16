@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
@@ -9,6 +10,10 @@ from typing import Any
 
 
 BRT = timezone(timedelta(hours=-3))
+ISO_TIMESTAMP_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
+)
+LEGACY_RUNNER_TIMESTAMP_PATTERN = re.compile(r"^\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}$")
 
 
 class ArtifactSelectionError(ValueError):
@@ -55,7 +60,7 @@ def select_artifact_pair(
     allow_stale_diagnostic: bool = False,
     selected_at: str | None = None,
 ) -> ArtifactSelection:
-    selection_time = _timestamp(selected_at) if selected_at else datetime.now(timezone.utc)
+    selection_time = _timestamp(selected_at, field="selected_at") if selected_at else datetime.now(timezone.utc)
     parsed = [_candidate(value) for value in candidates]
     eligible = [
         candidate
@@ -150,19 +155,19 @@ def _metadata_is_valid(
         and candidate.head_branch == "main"
         and not candidate.artifact_expired
         and candidate.artifact_name == expected_name
-        and _brt_date(candidate.report_generated_at) == candidate.report_brt_date
+        and _brt_date(candidate.report_generated_at, field="report_generated_at") == candidate.report_brt_date
     )
 
 
 def _select_same_day_pair(candidates: list[ArtifactCandidate]) -> tuple[ArtifactCandidate, ArtifactCandidate] | None:
     main_candidates = sorted(
         (candidate for candidate in candidates if candidate.report_type == "main"),
-        key=lambda candidate: (_timestamp(candidate.created_at), candidate.run_id),
+        key=lambda candidate: (_timestamp(candidate.created_at, field="created_at"), candidate.run_id),
         reverse=True,
     )
     close_candidates = sorted(
         (candidate for candidate in candidates if candidate.report_type == "close"),
-        key=lambda candidate: (_timestamp(candidate.created_at), candidate.run_id),
+        key=lambda candidate: (_timestamp(candidate.created_at, field="created_at"), candidate.run_id),
         reverse=True,
     )
     for main in main_candidates:
@@ -170,26 +175,53 @@ def _select_same_day_pair(candidates: list[ArtifactCandidate]) -> tuple[Artifact
             if (
                 main.head_sha == close.head_sha
                 and main.report_brt_date == close.report_brt_date
-                and _timestamp(main.report_generated_at) <= _timestamp(close.report_generated_at)
+                and _timestamp(main.report_generated_at, field="report_generated_at")
+                <= _timestamp(close.report_generated_at, field="report_generated_at")
             ):
                 return main, close
     return None
 
 
 def _artifact_age_seconds(candidate: ArtifactCandidate, selected_at: datetime) -> int:
-    return max(0, int((selected_at - _timestamp(candidate.artifact_created_at)).total_seconds()))
+    return max(
+        0,
+        int(
+            (
+                selected_at
+                - _timestamp(candidate.artifact_created_at, field="artifact_created_at")
+            ).total_seconds()
+        ),
+    )
 
 
-def _brt_date(value: str) -> str:
-    return _timestamp(value).astimezone(BRT).date().isoformat()
+def _brt_date(value: str, *, field: str = "timestamp") -> str:
+    return _timestamp(value, field=field).astimezone(BRT).date().isoformat()
 
 
-def _timestamp(value: str) -> datetime:
-    normalized = value.replace("Z", "+00:00")
-    parsed = datetime.fromisoformat(normalized)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed
+def _timestamp(value: str, *, field: str = "timestamp") -> datetime:
+    parsed: datetime
+    if isinstance(value, str) and ISO_TIMESTAMP_PATTERN.fullmatch(value):
+        try:
+            normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError as error:
+            raise ArtifactSelectionError(
+                f"invalid_artifact_timestamp:field={field}:value_format=non_iso"
+            ) from error
+    elif isinstance(value, str) and LEGACY_RUNNER_TIMESTAMP_PATTERN.fullmatch(value):
+        try:
+            # Compatibility only: the legacy runner emitted this culture-specific
+            # timezone-free format. It is interpreted as UTC, never local time.
+            parsed = datetime.strptime(value, "%m/%d/%Y %H:%M:%S").replace(tzinfo=timezone.utc)
+        except ValueError as error:
+            raise ArtifactSelectionError(
+                f"invalid_artifact_timestamp:field={field}:value_format=non_iso"
+            ) from error
+    else:
+        raise ArtifactSelectionError(
+            f"invalid_artifact_timestamp:field={field}:value_format=non_iso"
+        )
+    return parsed.astimezone(timezone.utc)
 
 
 def main(argv: list[str] | None = None) -> int:

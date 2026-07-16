@@ -20,6 +20,44 @@ function Get-BrtDateString {
     }
 }
 
+function ConvertTo-Iso8601UtcString {
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [object]$Value
+    )
+
+    $invariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
+    if ($Value -is [DateTimeOffset]) {
+        $timestamp = [DateTimeOffset]$Value
+    }
+    elseif ($Value -is [DateTime]) {
+        $dateTime = [DateTime]$Value
+        if ($dateTime.Kind -eq [DateTimeKind]::Unspecified) {
+            $timestamp = [DateTimeOffset]::new($dateTime, [TimeSpan]::Zero)
+        }
+        else {
+            $timestamp = [DateTimeOffset]::new($dateTime)
+        }
+    }
+    elseif ($Value -is [string]) {
+        $text = ([string]$Value).Trim()
+        $isoPattern = '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$'
+        if (-not [regex]::IsMatch($text, $isoPattern)) {
+            throw 'invalid_iso8601_timestamp'
+        }
+        $timestamp = [DateTimeOffset]::MinValue
+        $style = [System.Globalization.DateTimeStyles]::RoundtripKind
+        if (-not [DateTimeOffset]::TryParse($text, $invariantCulture, $style, [ref]$timestamp)) {
+            throw 'invalid_iso8601_timestamp'
+        }
+    }
+    else {
+        throw 'unsupported_timestamp_type'
+    }
+
+    return $timestamp.ToUniversalTime().UtcDateTime.ToString('o', $invariantCulture)
+}
+
 function ConvertTo-BrtDateString {
     param([string]$IsoDate)
     try {
@@ -269,7 +307,7 @@ foreach ($run in $candidateRuns) {
         $reportBrtDate = ConvertTo-BrtDateString $generatedAt
         $candidateRecords.Add([pscustomobject]@{
             run_id = [int64]$view.databaseId
-            created_at = [string]$view.createdAt
+            created_at = ConvertTo-Iso8601UtcString $view.createdAt
             event = [string]$view.event
             conclusion = [string]$view.conclusion
             head_sha = [string]$view.headSha
@@ -277,10 +315,10 @@ foreach ($run in $candidateRuns) {
             url = [string]$view.url
             artifact_name = [string]$artifact.name
             artifact_expired = [bool]$artifact.expired
-            artifact_created_at = [string]$artifact.created_at
+            artifact_created_at = ConvertTo-Iso8601UtcString $artifact.created_at
             report_type = [string]$contentReportType
             report_brt_date = [string]$reportBrtDate
-            report_generated_at = [string]$generatedAt
+            report_generated_at = ConvertTo-Iso8601UtcString $generatedAt
             report_path = [string]$reportPath
         })
         $downloadDirsByRun["$runId-$reportType"] = $downloadDir
