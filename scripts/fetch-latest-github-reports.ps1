@@ -4,6 +4,10 @@ param(
     [string]$WorkflowName = 'Financial Advisor Reports',
     [int]$RunLimit = 20,
     [string]$ExpectedHeadSha = '',
+    [string]$WorkflowEvent = 'local',
+    [string]$RuntimeSha = '',
+    [switch]$DryRun,
+    [string]$ReplayReason = '',
     [switch]$AllowManual,
     [switch]$AllowStaleDiagnostic
 )
@@ -70,16 +74,49 @@ function ConvertTo-BrtDateString {
     }
 }
 
-function Invoke-GhJson {
-    param([string[]]$Arguments)
-    $output = & gh @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "gh_failed: gh $($Arguments -join ' ') exited with $LASTEXITCODE"
+function Invoke-GhCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Operation,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    $stderrPath = [System.IO.Path]::GetTempFileName()
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = @(& gh @Arguments 2> $stderrPath)
+        $exitCode = $LASTEXITCODE
     }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+        Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+    }
+    if ($exitCode -ne 0) {
+        throw "github_api_call_failed:operation=$Operation`:exit_code=$exitCode"
+    }
+    return $output
+}
+
+function Invoke-GhJson {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Operation,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    $output = Invoke-GhCommand -Operation $Operation -Arguments $Arguments
     if (-not $output) {
         return $null
     }
-    return ($output | Out-String | ConvertFrom-Json)
+    try {
+        return ($output | Out-String | ConvertFrom-Json)
+    }
+    catch {
+        throw "github_api_invalid_json:operation=$Operation"
+    }
 }
 
 function Find-ReportFile {
@@ -217,12 +254,14 @@ $ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 Set-Location -LiteralPath $ProjectRoot
 
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-    throw 'missing_github_cli: install GitHub CLI with winget install GitHub.cli, then run gh auth login.'
+    throw 'gh_cli_missing'
 }
 
-& gh auth status | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw 'github_cli_not_authenticated: run gh auth login before fetching artifacts.'
+if (-not $env:GH_TOKEN -and -not $env:GITHUB_TOKEN) {
+    throw 'github_token_missing: set GH_TOKEN or GITHUB_TOKEN; local users may authenticate securely with gh auth login first.'
+}
+if (-not $env:GH_TOKEN -and $env:GITHUB_TOKEN) {
+    $env:GH_TOKEN = $env:GITHUB_TOKEN
 }
 
 $BrtDate = Get-BrtDateString
@@ -235,10 +274,16 @@ if (-not $ExpectedHeadSha) {
         throw 'expected_head_sha_missing: pass -ExpectedHeadSha explicitly or run inside the repository checkout.'
     }
 }
+if (-not $RuntimeSha) {
+    $RuntimeSha = (& git rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $RuntimeSha) {
+        throw 'runtime_sha_missing'
+    }
+}
 New-Item -ItemType Directory -Force -Path $NightlyDir | Out-Null
 New-Item -ItemType Directory -Force -Path $ReportsDir | Out-Null
 
-$runs = Invoke-GhJson -Arguments @(
+$runs = Invoke-GhJson -Operation 'list_workflow_runs' -Arguments @(
     # gh run list
     'run', 'list',
     '--repo', $Repo,
@@ -265,7 +310,7 @@ foreach ($run in $candidateRuns) {
     if (-not $AllowManual -and $run.event -ne 'schedule') {
         continue
     }
-    $view = Invoke-GhJson -Arguments @(
+    $view = Invoke-GhJson -Operation 'view_workflow_run' -Arguments @(
         # gh run view
         'run', 'view', [string]$run.databaseId,
         '--repo', $Repo,
@@ -273,7 +318,7 @@ foreach ($run in $candidateRuns) {
     )
 
     $runId = [string]$view.databaseId
-    $artifactResponse = Invoke-GhJson -Arguments @('api', "repos/$Repo/actions/runs/$runId/artifacts")
+    $artifactResponse = Invoke-GhJson -Operation 'list_run_artifacts' -Arguments @('api', "repos/$Repo/actions/runs/$runId/artifacts")
     foreach ($artifact in @($artifactResponse.artifacts)) {
         $artifactPattern = '^financial-advisor-(main|close)-' + [regex]::Escape($runId) + '$'
         $artifactMatch = [regex]::Match([string]$artifact.name, $artifactPattern)
@@ -291,10 +336,13 @@ foreach ($run in $candidateRuns) {
             Remove-Item -LiteralPath $downloadDir -Recurse -Force
         }
         New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
-        & gh run download $runId --repo $Repo --name ([string]$artifact.name) --dir $downloadDir
-        if ($LASTEXITCODE -ne 0) {
-            continue
-        }
+        Invoke-GhCommand -Operation 'download_report_artifact' -Arguments @(
+            # gh run download
+            'run', 'download', $runId,
+            '--repo', $Repo,
+            '--name', [string]$artifact.name,
+            '--dir', $downloadDir
+        ) | Out-Null
         $reportPath = Find-ReportFile -ArtifactRoot $downloadDir -ReportType $reportType -BrtDate (ConvertTo-BrtDateString $view.createdAt)
         if (-not $reportPath) {
             continue
@@ -361,6 +409,16 @@ $lines.Add(('- brt_date: `{0}`' -f $BrtDate))
 $lines.Add(('- generated_at_local: `{0}`' -f (Get-Date -Format s)))
 $lines.Add(('- source_repo: `{0}`' -f $Repo))
 $lines.Add(('- workflow: `{0}`' -f $WorkflowName))
+$lines.Add(('- workflow_event: `{0}`' -f $WorkflowEvent))
+$lines.Add(('- runtime_sha: `{0}`' -f $RuntimeSha))
+$lines.Add(('- source_report_sha: `{0}`' -f $ExpectedHeadSha))
+$lines.Add(('- dry_run: `{0}`' -f ([bool]$DryRun).ToString().ToLowerInvariant()))
+if ($ReplayReason) {
+    $lines.Add(('- replay_reason: `{0}`' -f $ReplayReason))
+}
+if ($DryRun) {
+    $lines.Add('- telegram_sent: `false`')
+}
 $lines.Add(('- download_dir: `{0}`' -f $NightlyDir))
 $lines.Add(('- main_run_id: `{0}`' -f $mainRun.run_id))
 $lines.Add(('- close_run_id: `{0}`' -f $closeRun.run_id))

@@ -5,6 +5,22 @@ on:
     # BRT is UTC-3: 18:30 BRT on weekdays, after the close report.
     - cron: "30 21 * * 1-5"
   workflow_dispatch:
+    inputs:
+      source_head_sha:
+        description: Optional SHA of the scheduled main/close reports to review
+        required: false
+        type: string
+        default: ''
+      send_telegram:
+        description: Send the final review to Telegram
+        required: false
+        type: boolean
+        default: false
+      allow_stale_diagnostic:
+        description: Allow an older same-SHA pair for diagnostic use only
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   nightly-review:
@@ -14,6 +30,9 @@ jobs:
       actions: read
     env:
       GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_HOST: github.com
+      GH_REPO: ${{ github.repository }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
@@ -31,9 +50,59 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .
 
+      - name: Resolve nightly inputs
+        id: nightly-inputs
+        shell: pwsh
+        env:
+          WORKFLOW_EVENT: ${{ github.event_name }}
+          RUNTIME_SHA: ${{ github.sha }}
+          SOURCE_HEAD_SHA_INPUT: ${{ inputs.source_head_sha }}
+          SEND_TELEGRAM_INPUT: ${{ inputs.send_telegram }}
+          ALLOW_STALE_DIAGNOSTIC_INPUT: ${{ inputs.allow_stale_diagnostic }}
+        run: |
+          $sourceHeadSha = $env:RUNTIME_SHA
+          $sendTelegram = 'true'
+          $allowStaleDiagnostic = 'false'
+          $dryRun = 'false'
+          $replayReason = 'scheduled_nightly_review'
+          if ($env:WORKFLOW_EVENT -eq 'workflow_dispatch') {
+            if ($env:SOURCE_HEAD_SHA_INPUT) {
+              $sourceHeadSha = $env:SOURCE_HEAD_SHA_INPUT
+            }
+            $sendTelegram = $env:SEND_TELEGRAM_INPUT.ToLowerInvariant()
+            $allowStaleDiagnostic = $env:ALLOW_STALE_DIAGNOSTIC_INPUT.ToLowerInvariant()
+            $dryRun = 'true'
+            $replayReason = 'nightly_auth_hotfix_validation'
+          }
+          if ($sourceHeadSha -notmatch '^[0-9a-fA-F]{40}$') {
+            throw 'invalid_source_head_sha'
+          }
+          "source_head_sha=$sourceHeadSha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "send_telegram=$sendTelegram" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "allow_stale_diagnostic=$allowStaleDiagnostic" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "dry_run=$dryRun" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "replay_reason=$replayReason" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Validate GitHub API access
+        shell: pwsh
+        run: ./scripts/validate-github-api-access.ps1
+
       - name: Fetch latest report artifacts
         shell: pwsh
-        run: ./scripts/fetch-latest-github-reports.ps1
+        run: |
+          $fetchArgs = @{
+            ExpectedHeadSha = '${{ steps.nightly-inputs.outputs.source_head_sha }}'
+            WorkflowEvent = '${{ github.event_name }}'
+            RuntimeSha = '${{ github.sha }}'
+            ReplayReason = '${{ steps.nightly-inputs.outputs.replay_reason }}'
+          }
+          if ('${{ steps.nightly-inputs.outputs.dry_run }}' -eq 'true') {
+            $fetchArgs.DryRun = $true
+          }
+          if ('${{ steps.nightly-inputs.outputs.allow_stale_diagnostic }}' -eq 'true') {
+            $fetchArgs.AllowStaleDiagnostic = $true
+          }
+          ./scripts/fetch-latest-github-reports.ps1 @fetchArgs
 
       - name: Generate analyst final review
         run: >
@@ -42,10 +111,39 @@ jobs:
           --output-path reports/analyst-final-review.md
 
       - name: Send analyst final Telegram
+        id: telegram
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.send_telegram) }}
         continue-on-error: true
         run: >
           python -m advisor.telegram_notify analyst-final
           --report-path reports/analyst-final-review.md
+
+      - name: Record nightly execution metadata
+        shell: pwsh
+        env:
+          TELEGRAM_STEP_OUTCOME: ${{ steps.telegram.outcome }}
+        run: |
+          $input = Get-Content -LiteralPath 'reports/nightly-review-input.md' -Raw -Encoding UTF8
+          function Read-NightlyField {
+            param([string]$Name)
+            $match = [regex]::Match($input, '(?m)^- ' + [regex]::Escape($Name) + ':\s*`?([^`\r\n]+)`?\s*$')
+            if (-not $match.Success) { throw "nightly_metadata_field_missing:$Name" }
+            return $match.Groups[1].Value.Trim()
+          }
+          $metadata = [ordered]@{
+            workflow_event = '${{ github.event_name }}'
+            runtime_sha = '${{ github.sha }}'
+            source_report_sha = '${{ steps.nightly-inputs.outputs.source_head_sha }}'
+            main_run_id = [int64](Read-NightlyField 'main_run_id')
+            close_run_id = [int64](Read-NightlyField 'close_run_id')
+            main_event = Read-NightlyField 'main_event'
+            close_event = Read-NightlyField 'close_event'
+            artifact_selection_status = Read-NightlyField 'artifact_selection_status'
+            dry_run = '${{ steps.nightly-inputs.outputs.dry_run }}' -eq 'true'
+            telegram_sent = $env:TELEGRAM_STEP_OUTCOME -eq 'success'
+            replay_reason = '${{ steps.nightly-inputs.outputs.replay_reason }}'
+          }
+          $metadata | ConvertTo-Json | Set-Content -LiteralPath 'reports/nightly-review-metadata.json' -Encoding UTF8
 
       - name: Upload analyst final review artifact
         uses: actions/upload-artifact@v4

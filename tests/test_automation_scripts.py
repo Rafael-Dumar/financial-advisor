@@ -38,7 +38,11 @@ class AutomationScriptsTests(unittest.TestCase):
         content = script_path.read_text(encoding="utf-8")
 
         self.assertIn("Get-Command gh", content)
-        self.assertIn("gh auth status", content)
+        self.assertNotIn("gh auth status", content)
+        self.assertIn("github_token_missing", content)
+        self.assertIn("github_api_call_failed:operation=", content)
+        self.assertIn("Operation 'list_workflow_runs'", content)
+        self.assertNotIn("$Arguments -join", content)
         self.assertIn("gh run list", content)
         self.assertIn("Financial Advisor Reports", content)
         self.assertIn("gh run view", content)
