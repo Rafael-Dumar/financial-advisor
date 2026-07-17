@@ -123,10 +123,17 @@ jobs:
         env:
           TELEGRAM_STEP_OUTCOME: ${{ steps.telegram.outcome }}
         run: |
-          $input = Get-Content -LiteralPath 'reports/nightly-review-input.md' -Raw -Encoding UTF8
+          $nightlyMarkdown = Get-Content -LiteralPath 'reports/nightly-review-input.md' -Raw -Encoding UTF8
           function Read-NightlyField {
-            param([string]$Name)
-            $match = [regex]::Match($input, '(?m)^- ' + [regex]::Escape($Name) + ':\s*`?([^`\r\n]+)`?\s*$')
+            param(
+              [Parameter(Mandatory)]
+              [string]$Content,
+
+              [Parameter(Mandatory)]
+              [string]$Name
+            )
+            $pattern = '(?m)^- ' + [regex]::Escape($Name) + ':\s*`?([^`\r\n]+)`?\s*$'
+            $match = [regex]::Match($Content, $pattern)
             if (-not $match.Success) { throw "nightly_metadata_field_missing:$Name" }
             return $match.Groups[1].Value.Trim()
           }
@@ -134,11 +141,11 @@ jobs:
             workflow_event = '${{ github.event_name }}'
             runtime_sha = '${{ github.sha }}'
             source_report_sha = '${{ steps.nightly-inputs.outputs.source_head_sha }}'
-            main_run_id = [int64](Read-NightlyField 'main_run_id')
-            close_run_id = [int64](Read-NightlyField 'close_run_id')
-            main_event = Read-NightlyField 'main_event'
-            close_event = Read-NightlyField 'close_event'
-            artifact_selection_status = Read-NightlyField 'artifact_selection_status'
+            main_run_id = [int64](Read-NightlyField -Content $nightlyMarkdown -Name 'main_run_id')
+            close_run_id = [int64](Read-NightlyField -Content $nightlyMarkdown -Name 'close_run_id')
+            main_event = Read-NightlyField -Content $nightlyMarkdown -Name 'main_event'
+            close_event = Read-NightlyField -Content $nightlyMarkdown -Name 'close_event'
+            artifact_selection_status = Read-NightlyField -Content $nightlyMarkdown -Name 'artifact_selection_status'
             dry_run = '${{ steps.nightly-inputs.outputs.dry_run }}' -eq 'true'
             telegram_sent = $env:TELEGRAM_STEP_OUTCOME -eq 'success'
             replay_reason = '${{ steps.nightly-inputs.outputs.replay_reason }}'

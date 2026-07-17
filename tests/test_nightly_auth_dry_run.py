@@ -15,6 +15,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FETCH_SCRIPT = PROJECT_ROOT / "scripts" / "fetch-latest-github-reports.ps1"
 VALIDATE_SCRIPT = PROJECT_ROOT / "scripts" / "validate-github-api-access.ps1"
+NIGHTLY_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "financial-advisor-nightly-review.yml"
 SOURCE_SHA = "bf7792c8d15fb7d4e864106b9a396588943a6578"
 TOKEN_MARKER = "token-must-never-appear-in-output"
 
@@ -173,6 +174,138 @@ class NightlyAuthDryRunTests(unittest.TestCase):
             encoding="utf-8",
         )
         return fake_dir, log_path
+
+    def _metadata_script(self) -> str:
+        workflow = NIGHTLY_WORKFLOW.read_text(encoding="utf-8")
+        step = workflow.split("      - name: Record nightly execution metadata\n", 1)[1]
+        step = step.split("\n      - name:", 1)[0]
+        run_block = step.split("        run: |\n", 1)[1]
+        script = textwrap.dedent(run_block)
+        replacements = {
+            "${{ github.event_name }}": "workflow_dispatch",
+            "${{ github.sha }}": "0123456789abcdef0123456789abcdef01234567",
+            "${{ steps.nightly-inputs.outputs.source_head_sha }}": SOURCE_SHA,
+            "${{ steps.nightly-inputs.outputs.dry_run }}": "true",
+            "${{ steps.nightly-inputs.outputs.replay_reason }}": "nightly_auth_hotfix_validation",
+        }
+        for expression, value in replacements.items():
+            script = script.replace(expression, value)
+        return script
+
+    def _run_metadata_script(self, nightly_fields: str) -> tuple[subprocess.CompletedProcess[str], dict[str, object] | None]:
+        (PROJECT_ROOT / ".tmp").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=PROJECT_ROOT / ".tmp") as temp_dir:
+            root = Path(temp_dir)
+            reports = root / "reports"
+            reports.mkdir()
+            (reports / "nightly-review-input.md").write_text(nightly_fields, encoding="utf-8")
+            script_path = root / "record-nightly-metadata.ps1"
+            script_path.write_text(self._metadata_script(), encoding="utf-8")
+            env = os.environ.copy()
+            env["TELEGRAM_STEP_OUTCOME"] = "skipped"
+            completed = subprocess.run(
+                [
+                    self.powershell,
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(script_path),
+                ],
+                cwd=root,
+                env=env,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            metadata_path = reports / "nightly-review-metadata.json"
+            metadata = None
+            if metadata_path.exists():
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8-sig"))
+            return completed, metadata
+
+    def test_powershell_automatic_input_shadows_outer_markdown(self) -> None:
+        script = textwrap.dedent(
+            """
+            $input = '- main_run_id: `29512805075`'
+            function Read-BrokenField {
+              $match = [regex]::Match($input, '(?m)^- main_run_id:')
+              if (-not $match.Success) { throw 'automatic_input_shadowed_outer_content' }
+            }
+            Read-BrokenField
+            """
+        )
+        completed = subprocess.run(
+            [self.powershell, "-NoProfile", "-Command", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("automatic_input_shadowed_outer_content", completed.stderr + completed.stdout)
+
+    def test_real_metadata_step_reads_fields_via_explicit_content_parameter(self) -> None:
+        completed, metadata = self._run_metadata_script(
+            textwrap.dedent(
+                """
+                # Nightly review input
+                - main_run_id: `29512805075`
+                - close_run_id: `29535264127`
+                - main_event: `schedule`
+                - close_event: `schedule`
+                - artifact_selection_status: `valid_current_day`
+                """
+            ).lstrip()
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
+        self.assertEqual(
+            metadata,
+            {
+                "workflow_event": "workflow_dispatch",
+                "runtime_sha": "0123456789abcdef0123456789abcdef01234567",
+                "source_report_sha": SOURCE_SHA,
+                "main_run_id": 29512805075,
+                "close_run_id": 29535264127,
+                "main_event": "schedule",
+                "close_event": "schedule",
+                "artifact_selection_status": "valid_current_day",
+                "dry_run": True,
+                "telegram_sent": False,
+                "replay_reason": "nightly_auth_hotfix_validation",
+            },
+        )
+
+    def test_real_metadata_step_reports_sanitized_missing_field(self) -> None:
+        completed, metadata = self._run_metadata_script(
+            textwrap.dedent(
+                """
+                - close_run_id: `29535264127`
+                - main_event: `schedule`
+                - close_event: `schedule`
+                - artifact_selection_status: `valid_current_day`
+                """
+            ).lstrip()
+        )
+        output = completed.stderr + completed.stdout
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIsNone(metadata)
+        self.assertIn("nightly_metadata_field_missing:main_run_id", output)
+        self.assertNotIn(SOURCE_SHA, output)
+
+    def test_dry_run_skips_telegram_and_upload_follows_metadata(self) -> None:
+        workflow = NIGHTLY_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.send_telegram) }}",
+            workflow,
+        )
+        self.assertLess(
+            workflow.index("- name: Record nightly execution metadata"),
+            workflow.index("- name: Upload analyst final review artifact"),
+        )
 
     def _environment(self, fake_dir: Path, log_path: Path, *, with_token: bool = True) -> dict[str, str]:
         env = os.environ.copy()
