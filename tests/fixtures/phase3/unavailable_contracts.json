@@ -1,0 +1,4 @@
+{
+  "win_rate_2r": {"value": null, "raw_value": null, "provenance": "unavailable"},
+  "counterfactual": {"counterfactual_decision": null, "status": "unavailable", "reason": "exact_classify_asset_inputs_not_recoverable"}
+}

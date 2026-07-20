@@ -1,0 +1,419 @@
+{
+  "baseline_status": "superseded_needs_revision",
+  "diagnostic_only": true,
+  "occurrences": [
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "AMD"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "data:earnings:missing",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "AMD"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "AMD"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "BTC"
+    },
+    {
+      "classification": "false_positive",
+      "evidence_key": "crypto:flow:binance_unavailable",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "BTC"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "BTC"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "CRDO"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "data:earnings:missing",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "CRDO"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "CRDO"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "DELL"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "data:earnings:missing",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "DELL"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "DELL"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "ETH"
+    },
+    {
+      "classification": "confirmed_duplicate_penalty",
+      "evidence_key": "crypto:flow:binance_unavailable",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "ETH"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "ETH"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "backtest:expected_value:negative",
+      "previous_rule_id": "negative_ev_with_high_data_severity",
+      "reason": "the previous trace recorded no decision change and win_rate is unavailable",
+      "rule_id": "win_rate_expected_value_branch",
+      "symbol": "ETH"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "backtest:sample_quality:low",
+      "previous_rule_id": "technical_unvalidated_predicate",
+      "reason": "the previous trace recorded no second decision degradation",
+      "rule_id": "technical_unvalidated_predicate",
+      "symbol": "ETH"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "HIMS"
+    },
+    {
+      "classification": "false_positive",
+      "evidence_key": "data:earnings:missing",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "HIMS"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "HIMS"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "HOOD"
+    },
+    {
+      "classification": "false_positive",
+      "evidence_key": "data:earnings:missing",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "HOOD"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "HOOD"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "HYPE"
+    },
+    {
+      "classification": "false_positive",
+      "evidence_key": "crypto:premium:unavailable",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "HYPE"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "HYPE"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "backtest:sample_quality:low",
+      "previous_rule_id": "technical_unvalidated_predicate",
+      "reason": "the previous trace recorded no second decision degradation",
+      "rule_id": "technical_unvalidated_predicate",
+      "symbol": "HYPE"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "INTC"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "data:earnings:missing",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "INTC"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "INTC"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "MRVL"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "data:earnings:missing",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "MRVL"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "MRVL"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "MSFT"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "data:earnings:missing",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "MSFT"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "MSFT"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "MU"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "data:earnings:missing",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "MU"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "MU"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "NVDA"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "data:earnings:missing",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "NVDA"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "NVDA"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "SOL"
+    },
+    {
+      "classification": "confirmed_duplicate_penalty",
+      "evidence_key": "crypto:flow:binance_unavailable",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "SOL"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "SOL"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "backtest:sample_quality:low",
+      "previous_rule_id": "technical_unvalidated_predicate",
+      "reason": "the previous trace recorded no second decision degradation",
+      "rule_id": "technical_unvalidated_predicate",
+      "symbol": "SOL"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "score:decision_confidence:below_65",
+      "previous_rule_id": "decision_confidence_below_65",
+      "reason": "the previous trace recorded no decision change",
+      "rule_id": "decision_confidence_below_65_cap",
+      "symbol": "USAR"
+    },
+    {
+      "classification": "no_op",
+      "evidence_key": "data:earnings:missing",
+      "previous_rule_id": "high_severity_data_not_watchlist",
+      "reason": "classified from effective decision changes and canonical evidence key",
+      "rule_id": "high_missing_data_severity_cap",
+      "symbol": "USAR"
+    },
+    {
+      "classification": "independent_gate",
+      "evidence_key": "market:regime:not_risk_on",
+      "previous_rule_id": "market_not_risk_on",
+      "reason": "market regime is independent evidence, not a duplicate of missing data",
+      "rule_id": "market_not_risk_on",
+      "symbol": "USAR"
+    }
+  ],
+  "schema_version": "phase3-suspected-penalties-reclassification-v1",
+  "source": {
+    "code_ref": "6d0c1f705032606d6b449f79b8c151b941e1c037",
+    "report_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md"
+  },
+  "summary": {
+    "confirmed_duplicate_penalty_count": 2,
+    "explicit_override_count": 0,
+    "false_positive_count": 4,
+    "independent_gate_count": 15,
+    "no_op_count": 28,
+    "previous_suspected_count": 49,
+    "shadowed_count": 0,
+    "unable_to_determine_count": 0
+  },
+  "superseded_reason_codes": [
+    "synthetic_suspected_occurrence_set",
+    "news_status_scope_collapsed",
+    "counterfactual_parallel_simulation",
+    "partially_tautological_tests"
+  ]
+}

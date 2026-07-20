@@ -1,0 +1,9 @@
+{
+  "source_status": "fixture_source",
+  "immutable_records": [
+    {"original_occurrence_id": "fixture-eth-1", "symbol": "ETH", "original_rule_or_reason": "high_severity_data_not_watchlist"},
+    {"original_occurrence_id": "fixture-sol-1", "symbol": "SOL", "original_rule_or_reason": "market_not_risk_on"}
+  ],
+  "original_occurrence_set_status": "unavailable",
+  "reconciled": false
+}

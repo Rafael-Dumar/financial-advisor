@@ -1,0 +1,16 @@
+{
+  "confirmed_duplicates": 0,
+  "occurrences": [],
+  "original_occurrence_set_status": "unavailable",
+  "reason": "original_occurrence_artifact_not_found",
+  "reconciled": false,
+  "recovered_occurrence_count": null,
+  "searched_artifacts": [
+    "reports/audit/phase3-original-suspected-occurrences.json",
+    "reports/audit/phase3-suspected-penalties-reclassification.json",
+    "reports/audit/phase3-suspected-penalties-reclassification.superseded-needs-revision.json",
+    "tests/fixtures/phase3/occurrence_source_fixture.json"
+  ],
+  "source_search_status": "completed_no_original_runtime_artifact",
+  "status": "original_occurrence_set_unavailable"
+}

@@ -1,0 +1,237 @@
+{
+  "baseline_status": "superseded_needs_revision",
+  "corrected_symbols": [
+    "AMD",
+    "BTC",
+    "CRDO",
+    "ETH",
+    "HYPE",
+    "INTC",
+    "MRVL",
+    "USAR"
+  ],
+  "diagnostic_only": true,
+  "sample_quality": [
+    {
+      "baseline_after": "low",
+      "baseline_before": "high",
+      "material_effect_on_trace": "technical_unvalidated predicate input corrected",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "702",
+        "section": "AMD"
+      },
+      "symbol": "AMD"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "medium",
+      "material_effect_on_trace": "technical_unvalidated predicate input corrected",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "484",
+        "section": "BTC"
+      },
+      "symbol": "BTC"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "medium",
+      "material_effect_on_trace": "technical_unvalidated predicate input corrected",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "1088",
+        "section": "CRDO"
+      },
+      "symbol": "CRDO"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "low",
+      "material_effect_on_trace": "no normalized-value change; provenance corrected to observed",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "779",
+        "section": "DELL"
+      },
+      "symbol": "DELL"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "medium",
+      "material_effect_on_trace": "technical_unvalidated predicate input corrected",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "292",
+        "section": "ETH"
+      },
+      "symbol": "ETH"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "low",
+      "material_effect_on_trace": "no normalized-value change; provenance corrected to observed",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "856",
+        "section": "HIMS"
+      },
+      "symbol": "HIMS"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "low",
+      "material_effect_on_trace": "no normalized-value change; provenance corrected to observed",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "548",
+        "section": "HOOD"
+      },
+      "symbol": "HOOD"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "medium",
+      "material_effect_on_trace": "technical_unvalidated predicate input corrected",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "420",
+        "section": "HYPE"
+      },
+      "symbol": "HYPE"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "high",
+      "material_effect_on_trace": "technical_unvalidated predicate input corrected",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "1010",
+        "section": "INTC"
+      },
+      "symbol": "INTC"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "medium",
+      "material_effect_on_trace": "technical_unvalidated predicate input corrected",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "1166",
+        "section": "MRVL"
+      },
+      "symbol": "MRVL"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "low",
+      "material_effect_on_trace": "no normalized-value change; provenance corrected to observed",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "933",
+        "section": "MSFT"
+      },
+      "symbol": "MSFT"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "low",
+      "material_effect_on_trace": "no normalized-value change; provenance corrected to observed",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "1244",
+        "section": "MU"
+      },
+      "symbol": "MU"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "low",
+      "material_effect_on_trace": "no normalized-value change; provenance corrected to observed",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "625",
+        "section": "NVDA"
+      },
+      "symbol": "NVDA"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "low",
+      "material_effect_on_trace": "no normalized-value change; provenance corrected to observed",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "356",
+        "section": "SOL"
+      },
+      "symbol": "SOL"
+    },
+    {
+      "baseline_after": "low",
+      "baseline_before": "medium",
+      "material_effect_on_trace": "technical_unvalidated predicate input corrected",
+      "provenance": "observed",
+      "report_raw_value": "baixa",
+      "source": {
+        "field": "Qualidade da amostra",
+        "file": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "line_or_locator": "1322",
+        "section": "USAR"
+      },
+      "symbol": "USAR"
+    }
+  ],
+  "schema_version": "phase3-baseline-reconciliation-v1",
+  "source": {
+    "code_ref": "6d0c1f705032606d6b449f79b8c151b941e1c037",
+    "report_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md"
+  },
+  "superseded_reason_codes": [
+    "synthetic_suspected_occurrence_set",
+    "news_status_scope_collapsed",
+    "counterfactual_parallel_simulation",
+    "partially_tautological_tests"
+  ]
+}

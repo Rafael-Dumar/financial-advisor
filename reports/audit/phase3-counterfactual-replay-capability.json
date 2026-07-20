@@ -1,0 +1,776 @@
+{
+  "assets": [
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "technical_unvalidated",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "ETH"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "technical_unvalidated",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "SOL"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "technical_unvalidated",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "HYPE"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "technical_unvalidated",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "BTC"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "technical_unvalidated",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "HOOD"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "wait",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "NVDA"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "wait",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "AMD"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "wait",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "DELL"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "avoid",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "HIMS"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "avoid",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "MSFT"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "avoid",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "INTC"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "avoid",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "CRDO"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "avoid",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "MRVL"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "avoid",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "MU"
+    },
+    {
+      "counterfactuals": [
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_optional_news_context",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "without_backtest_low_sample_effect",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        },
+        {
+          "counterfactual_decision": null,
+          "input_transformations": [],
+          "name": "only_real_risk_gates",
+          "reason": "exact_classify_asset_inputs_not_recoverable",
+          "removed_evidence_keys": [],
+          "status": "unavailable"
+        }
+      ],
+      "inputs": {
+        "observed": [],
+        "reconstructed_losslessly": [],
+        "unavailable": [
+          "ScoredAsset",
+          "AssetSnapshot",
+          "BacktestStats",
+          "risk_plan",
+          "event",
+          "alerts",
+          "limitations",
+          "scores"
+        ]
+      },
+      "original_replay": {
+        "actual_decision": null,
+        "expected_decision": "avoid",
+        "parity": false,
+        "reason": "exact_classify_asset_inputs_not_recoverable"
+      },
+      "symbol": "USAR"
+    }
+  ],
+  "manifest": {
+    "observed": [],
+    "reconstructed_losslessly": [],
+    "unavailable": [
+      "ScoredAsset",
+      "AssetSnapshot",
+      "BacktestStats",
+      "risk_plan",
+      "event",
+      "alerts",
+      "limitations",
+      "scores"
+    ]
+  },
+  "schema_version": "phase3-counterfactual-replay-capability-v1",
+  "source": {
+    "code_ref": "6d0c1f705032606d6b449f79b8c151b941e1c037",
+    "machine_readable_artifacts": [
+      ".tmp/nightly-review/2026-07-15/run-29429941131-main/audit/phase2-cache-validation.json",
+      ".tmp/nightly-review/2026-07-15/run-29429941131-main/audit/phase2-capability-matrix.json",
+      ".tmp/nightly-review/2026-07-15/run-29429941131-main/audit/phase2-provider-validation.json",
+      ".tmp/nightly-review/2026-07-15/run-29429941131-main/audit/phase2-source-timestamps.json",
+      ".tmp/nightly-review/2026-07-15/run-29429941131-main/audit/phase25-artifact-selection-tests.json",
+      ".tmp/nightly-review/2026-07-15/run-29429941131-main/audit/phase25-before-after.json",
+      ".tmp/nightly-review/2026-07-15/run-29429941131-main/audit/phase25-decision-preservation.json",
+      ".tmp/nightly-review/2026-07-15/run-29429941131-main/audit/post-phase2-gate-baseline.json",
+      ".tmp/nightly-review/2026-07-15/run-29429941131-main/audit/post-phase2-schema-drift.json"
+    ],
+    "network_used": false,
+    "report": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md"
+  },
+  "summary": {
+    "asset_count": 15,
+    "counterfactual_calculated_count": 0,
+    "counterfactual_unavailable_count": 45,
+    "parity_complete_count": 0
+  }
+}

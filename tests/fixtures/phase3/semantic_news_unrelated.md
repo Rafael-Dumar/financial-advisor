@@ -1,0 +1,14 @@
+## HIMS
+- Ativo: `HIMS`
+- decision_label: `avoid`
+- Swing Trade Score: 69
+- News/catalyst summary: sec_8k status=confirmed
+- news_status: `collected`
+- Data source: yahoo
+- provider: `yahoo`
+- quote_status: `unsupported_by_plan`
+- guidance_status: `not_implemented`
+- news_status: `temporarily_unavailable`
+- Entrada ideal: 36.97
+- news_status: `unrelated_status`
+- Risco por trade: 246.94

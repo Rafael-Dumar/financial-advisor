@@ -1,0 +1,9 @@
+- decision_label: `avoid`
+- Decisao: `avoid`
+- reason_codes: below_minimum_market_cap, data_incomplete_confidence_limited, earnings_data_missing, fundamentals_unavailable, guidance_recent_not_collected, high_severity_data_not_watchlist, macro_not_collected_confidence_limited, market_not_risk_on, missing_eps_growth, missing_free_cash_flow, missing_margin_trend, missing_pe_history, missing_peg, missing_revenue_growth, mixed_provider_data, possible_priced_in, sector_relative_strength_not_collected, source_mismatch_possible, yahoo_price_fallback
+- data_quality: `limited`
+- missing_data_severity: `high`
+- data_quality_score: 55
+- decision_confidence_score: 45
+- Investment Quality Score: 38
+- Swing Trade Score: 69

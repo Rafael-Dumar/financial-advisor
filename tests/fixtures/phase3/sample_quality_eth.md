@@ -1,0 +1,2 @@
+- Ativo: `ETH`
+- Qualidade da amostra: baixa

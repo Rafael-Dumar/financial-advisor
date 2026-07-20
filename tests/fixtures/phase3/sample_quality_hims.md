@@ -1,0 +1,2 @@
+- Ativo: `HIMS`
+- Qualidade da amostra: baixa

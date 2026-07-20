@@ -1,0 +1,4829 @@
+{
+  "assets": [
+    {
+      "capability_status": {
+        "asset": "ETH",
+        "locator": null,
+        "marker_evidence": [],
+        "provenance": "unavailable",
+        "raw_value": null,
+        "reason": "semantic_scope_not_identifiable",
+        "relative_path": null,
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": null,
+        "value": null
+      },
+      "collection_attempt_status": {
+        "asset": "ETH",
+        "locator": {
+          "line": 299,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "ETH",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "not_collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 299,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "ETH",
+          "subsection": "collection_attempt"
+        },
+        "value": "not_collected"
+      },
+      "conflict": false,
+      "conflict_type": null,
+      "decision_status": {
+        "asset": "ETH",
+        "locator": {
+          "line": 300,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "ETH",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "not_verified",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 300,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "ETH",
+          "subsection": "decision"
+        },
+        "value": "not_verified"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 1,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 45,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            }
+          ],
+          "missing_signature_evidence": [
+            "news_status"
+          ],
+          "news_status_present": false,
+          "partial_candidate_types": [
+            "capability"
+          ],
+          "signature_complete": false,
+          "start_line": 32,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 62,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 46,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 47,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 48,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 49,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 50,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 51,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 52,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 53,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 54,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 55,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 56,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 57,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 58,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 46,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "ETH"
+    },
+    {
+      "capability_status": {
+        "asset": "SOL",
+        "locator": null,
+        "marker_evidence": [],
+        "provenance": "unavailable",
+        "raw_value": null,
+        "reason": "semantic_scope_not_identifiable",
+        "relative_path": null,
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": null,
+        "value": null
+      },
+      "collection_attempt_status": {
+        "asset": "SOL",
+        "locator": {
+          "line": 363,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "SOL",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "not_collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 363,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "SOL",
+          "subsection": "collection_attempt"
+        },
+        "value": "not_collected"
+      },
+      "conflict": false,
+      "conflict_type": null,
+      "decision_status": {
+        "asset": "SOL",
+        "locator": {
+          "line": 364,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "SOL",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "not_verified",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 364,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "SOL",
+          "subsection": "decision"
+        },
+        "value": "not_verified"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 1,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 45,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            }
+          ],
+          "missing_signature_evidence": [
+            "news_status"
+          ],
+          "news_status_present": false,
+          "partial_candidate_types": [
+            "capability"
+          ],
+          "signature_complete": false,
+          "start_line": 32,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 62,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 46,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 47,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 48,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 49,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 50,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 51,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 52,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 53,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 54,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 55,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 56,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 57,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 58,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 46,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "SOL"
+    },
+    {
+      "capability_status": {
+        "asset": "HYPE",
+        "locator": null,
+        "marker_evidence": [],
+        "provenance": "unavailable",
+        "raw_value": null,
+        "reason": "semantic_scope_not_identifiable",
+        "relative_path": null,
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": null,
+        "value": null
+      },
+      "collection_attempt_status": {
+        "asset": "HYPE",
+        "locator": {
+          "line": 427,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HYPE",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "not_collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 427,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HYPE",
+          "subsection": "collection_attempt"
+        },
+        "value": "not_collected"
+      },
+      "conflict": false,
+      "conflict_type": null,
+      "decision_status": {
+        "asset": "HYPE",
+        "locator": {
+          "line": 428,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HYPE",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "not_verified",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 428,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HYPE",
+          "subsection": "decision"
+        },
+        "value": "not_verified"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 1,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 45,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            }
+          ],
+          "missing_signature_evidence": [
+            "news_status"
+          ],
+          "news_status_present": false,
+          "partial_candidate_types": [
+            "capability"
+          ],
+          "signature_complete": false,
+          "start_line": 32,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 62,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 46,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 47,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 48,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 49,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 50,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 51,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 52,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 53,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 54,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 55,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 56,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 57,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 58,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 46,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "HYPE"
+    },
+    {
+      "capability_status": {
+        "asset": "BTC",
+        "locator": null,
+        "marker_evidence": [],
+        "provenance": "unavailable",
+        "raw_value": null,
+        "reason": "semantic_scope_not_identifiable",
+        "relative_path": null,
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": null,
+        "value": null
+      },
+      "collection_attempt_status": {
+        "asset": "BTC",
+        "locator": {
+          "line": 491,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "BTC",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "not_collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 491,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "BTC",
+          "subsection": "collection_attempt"
+        },
+        "value": "not_collected"
+      },
+      "conflict": false,
+      "conflict_type": null,
+      "decision_status": {
+        "asset": "BTC",
+        "locator": {
+          "line": 492,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "BTC",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "not_verified",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 492,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "BTC",
+          "subsection": "decision"
+        },
+        "value": "not_verified"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 1,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 45,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            }
+          ],
+          "missing_signature_evidence": [
+            "news_status"
+          ],
+          "news_status_present": false,
+          "partial_candidate_types": [
+            "capability"
+          ],
+          "signature_complete": false,
+          "start_line": 32,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 62,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 46,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 47,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 48,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 49,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 50,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 51,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 52,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 53,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 54,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 55,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 56,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 57,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 58,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 46,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "BTC"
+    },
+    {
+      "capability_status": {
+        "asset": "HOOD",
+        "locator": {
+          "line": 582,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HOOD",
+          "subsection": "capability"
+        },
+        "marker_evidence": [
+          32,
+          34,
+          35,
+          46,
+          54,
+          55,
+          57,
+          58
+        ],
+        "provenance": "observed",
+        "raw_value": "temporarily_unavailable",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": {
+          "line": 582,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HOOD",
+          "subsection": "capability"
+        },
+        "value": "temporarily_unavailable"
+      },
+      "collection_attempt_status": {
+        "asset": "HOOD",
+        "locator": {
+          "line": 555,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HOOD",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 555,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HOOD",
+          "subsection": "collection_attempt"
+        },
+        "value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium"
+      },
+      "conflict": true,
+      "conflict_type": "decision_vs_capability",
+      "decision_status": {
+        "asset": "HOOD",
+        "locator": {
+          "line": 556,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HOOD",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 556,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HOOD",
+          "subsection": "decision"
+        },
+        "value": "collected"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 2,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 58,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            },
+            {
+              "kind": "capability",
+              "line": 46,
+              "name": "quote_status"
+            },
+            {
+              "kind": "capability",
+              "line": 54,
+              "name": "guidance_status"
+            },
+            {
+              "kind": "capability",
+              "line": 55,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 57,
+              "name": "sec_filings_status"
+            },
+            {
+              "kind": "capability",
+              "line": 58,
+              "name": "sector_benchmark_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 32,
+          "type": "capability",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 75,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 63,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 64,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 65,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 66,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 67,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 68,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 69,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 70,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 71,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 72,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 73,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 74,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 75,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 59,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "HOOD"
+    },
+    {
+      "capability_status": {
+        "asset": "NVDA",
+        "locator": {
+          "line": 659,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "NVDA",
+          "subsection": "capability"
+        },
+        "marker_evidence": [
+          32,
+          34,
+          35,
+          46,
+          54,
+          55,
+          57,
+          58
+        ],
+        "provenance": "observed",
+        "raw_value": "temporarily_unavailable",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": {
+          "line": 659,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "NVDA",
+          "subsection": "capability"
+        },
+        "value": "temporarily_unavailable"
+      },
+      "collection_attempt_status": {
+        "asset": "NVDA",
+        "locator": {
+          "line": 632,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "NVDA",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 632,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "NVDA",
+          "subsection": "collection_attempt"
+        },
+        "value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium"
+      },
+      "conflict": true,
+      "conflict_type": "decision_vs_capability",
+      "decision_status": {
+        "asset": "NVDA",
+        "locator": {
+          "line": 633,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "NVDA",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 633,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "NVDA",
+          "subsection": "decision"
+        },
+        "value": "collected"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 2,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 58,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            },
+            {
+              "kind": "capability",
+              "line": 46,
+              "name": "quote_status"
+            },
+            {
+              "kind": "capability",
+              "line": 54,
+              "name": "guidance_status"
+            },
+            {
+              "kind": "capability",
+              "line": 55,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 57,
+              "name": "sec_filings_status"
+            },
+            {
+              "kind": "capability",
+              "line": 58,
+              "name": "sector_benchmark_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 32,
+          "type": "capability",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 75,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 63,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 64,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 65,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 66,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 67,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 68,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 69,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 70,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 71,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 72,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 73,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 74,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 75,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 59,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "NVDA"
+    },
+    {
+      "capability_status": {
+        "asset": "AMD",
+        "locator": {
+          "line": 736,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "AMD",
+          "subsection": "capability"
+        },
+        "marker_evidence": [
+          32,
+          34,
+          35,
+          46,
+          54,
+          55,
+          57,
+          58
+        ],
+        "provenance": "observed",
+        "raw_value": "temporarily_unavailable",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": {
+          "line": 736,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "AMD",
+          "subsection": "capability"
+        },
+        "value": "temporarily_unavailable"
+      },
+      "collection_attempt_status": {
+        "asset": "AMD",
+        "locator": {
+          "line": 709,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "AMD",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 709,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "AMD",
+          "subsection": "collection_attempt"
+        },
+        "value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium"
+      },
+      "conflict": true,
+      "conflict_type": "decision_vs_capability",
+      "decision_status": {
+        "asset": "AMD",
+        "locator": {
+          "line": 710,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "AMD",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 710,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "AMD",
+          "subsection": "decision"
+        },
+        "value": "collected"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 2,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 58,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            },
+            {
+              "kind": "capability",
+              "line": 46,
+              "name": "quote_status"
+            },
+            {
+              "kind": "capability",
+              "line": 54,
+              "name": "guidance_status"
+            },
+            {
+              "kind": "capability",
+              "line": 55,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 57,
+              "name": "sec_filings_status"
+            },
+            {
+              "kind": "capability",
+              "line": 58,
+              "name": "sector_benchmark_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 32,
+          "type": "capability",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 75,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 63,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 64,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 65,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 66,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 67,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 68,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 69,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 70,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 71,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 72,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 73,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 74,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 75,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 59,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "AMD"
+    },
+    {
+      "capability_status": {
+        "asset": "DELL",
+        "locator": {
+          "line": 813,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "DELL",
+          "subsection": "capability"
+        },
+        "marker_evidence": [
+          32,
+          34,
+          35,
+          46,
+          54,
+          55,
+          57,
+          58
+        ],
+        "provenance": "observed",
+        "raw_value": "temporarily_unavailable",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": {
+          "line": 813,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "DELL",
+          "subsection": "capability"
+        },
+        "value": "temporarily_unavailable"
+      },
+      "collection_attempt_status": {
+        "asset": "DELL",
+        "locator": {
+          "line": 786,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "DELL",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 786,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "DELL",
+          "subsection": "collection_attempt"
+        },
+        "value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium"
+      },
+      "conflict": true,
+      "conflict_type": "decision_vs_capability",
+      "decision_status": {
+        "asset": "DELL",
+        "locator": {
+          "line": 787,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "DELL",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 787,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "DELL",
+          "subsection": "decision"
+        },
+        "value": "collected"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 2,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 58,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            },
+            {
+              "kind": "capability",
+              "line": 46,
+              "name": "quote_status"
+            },
+            {
+              "kind": "capability",
+              "line": 54,
+              "name": "guidance_status"
+            },
+            {
+              "kind": "capability",
+              "line": 55,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 57,
+              "name": "sec_filings_status"
+            },
+            {
+              "kind": "capability",
+              "line": 58,
+              "name": "sector_benchmark_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 32,
+          "type": "capability",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 75,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 63,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 64,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 65,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 66,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 67,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 68,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 69,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 70,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 71,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 72,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 73,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 74,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 75,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 59,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "DELL"
+    },
+    {
+      "capability_status": {
+        "asset": "HIMS",
+        "locator": {
+          "line": 890,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HIMS",
+          "subsection": "capability"
+        },
+        "marker_evidence": [
+          32,
+          34,
+          35,
+          46,
+          54,
+          55,
+          57,
+          58
+        ],
+        "provenance": "observed",
+        "raw_value": "temporarily_unavailable",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": {
+          "line": 890,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HIMS",
+          "subsection": "capability"
+        },
+        "value": "temporarily_unavailable"
+      },
+      "collection_attempt_status": {
+        "asset": "HIMS",
+        "locator": {
+          "line": 863,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HIMS",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 863,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HIMS",
+          "subsection": "collection_attempt"
+        },
+        "value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium"
+      },
+      "conflict": true,
+      "conflict_type": "decision_vs_capability",
+      "decision_status": {
+        "asset": "HIMS",
+        "locator": {
+          "line": 864,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HIMS",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 864,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HIMS",
+          "subsection": "decision"
+        },
+        "value": "collected"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 2,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 58,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            },
+            {
+              "kind": "capability",
+              "line": 46,
+              "name": "quote_status"
+            },
+            {
+              "kind": "capability",
+              "line": 54,
+              "name": "guidance_status"
+            },
+            {
+              "kind": "capability",
+              "line": 55,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 57,
+              "name": "sec_filings_status"
+            },
+            {
+              "kind": "capability",
+              "line": 58,
+              "name": "sector_benchmark_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 32,
+          "type": "capability",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 75,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 63,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 64,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 65,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 66,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 67,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 68,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 69,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 70,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 71,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 72,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 73,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 74,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 75,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 59,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "HIMS"
+    },
+    {
+      "capability_status": {
+        "asset": "MSFT",
+        "locator": {
+          "line": 967,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MSFT",
+          "subsection": "capability"
+        },
+        "marker_evidence": [
+          32,
+          34,
+          35,
+          46,
+          54,
+          55,
+          57,
+          58
+        ],
+        "provenance": "observed",
+        "raw_value": "temporarily_unavailable",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": {
+          "line": 967,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MSFT",
+          "subsection": "capability"
+        },
+        "value": "temporarily_unavailable"
+      },
+      "collection_attempt_status": {
+        "asset": "MSFT",
+        "locator": {
+          "line": 940,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MSFT",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 940,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MSFT",
+          "subsection": "collection_attempt"
+        },
+        "value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium"
+      },
+      "conflict": true,
+      "conflict_type": "decision_vs_capability",
+      "decision_status": {
+        "asset": "MSFT",
+        "locator": {
+          "line": 941,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MSFT",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 941,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MSFT",
+          "subsection": "decision"
+        },
+        "value": "collected"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 2,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 58,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            },
+            {
+              "kind": "capability",
+              "line": 46,
+              "name": "quote_status"
+            },
+            {
+              "kind": "capability",
+              "line": 54,
+              "name": "guidance_status"
+            },
+            {
+              "kind": "capability",
+              "line": 55,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 57,
+              "name": "sec_filings_status"
+            },
+            {
+              "kind": "capability",
+              "line": 58,
+              "name": "sector_benchmark_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 32,
+          "type": "capability",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 75,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 63,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 64,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 65,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 66,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 67,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 68,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 69,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 70,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 71,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 72,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 73,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 74,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 75,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 59,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "MSFT"
+    },
+    {
+      "capability_status": {
+        "asset": "INTC",
+        "locator": {
+          "line": 1044,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "INTC",
+          "subsection": "capability"
+        },
+        "marker_evidence": [
+          32,
+          34,
+          35,
+          46,
+          54,
+          55,
+          57,
+          58
+        ],
+        "provenance": "observed",
+        "raw_value": "temporarily_unavailable",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": {
+          "line": 1044,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "INTC",
+          "subsection": "capability"
+        },
+        "value": "temporarily_unavailable"
+      },
+      "collection_attempt_status": {
+        "asset": "INTC",
+        "locator": {
+          "line": 1017,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "INTC",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "not_collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 1017,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "INTC",
+          "subsection": "collection_attempt"
+        },
+        "value": "not_collected"
+      },
+      "conflict": true,
+      "conflict_type": "decision_vs_capability",
+      "decision_status": {
+        "asset": "INTC",
+        "locator": {
+          "line": 1018,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "INTC",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "not_verified",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 1018,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "INTC",
+          "subsection": "decision"
+        },
+        "value": "not_verified"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 2,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 58,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            },
+            {
+              "kind": "capability",
+              "line": 46,
+              "name": "quote_status"
+            },
+            {
+              "kind": "capability",
+              "line": 54,
+              "name": "guidance_status"
+            },
+            {
+              "kind": "capability",
+              "line": 55,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 57,
+              "name": "sec_filings_status"
+            },
+            {
+              "kind": "capability",
+              "line": 58,
+              "name": "sector_benchmark_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 32,
+          "type": "capability",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 76,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 63,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 64,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 65,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 66,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 67,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 68,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 69,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 70,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 71,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 72,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 73,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 74,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 75,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 59,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "INTC"
+    },
+    {
+      "capability_status": {
+        "asset": "CRDO",
+        "locator": {
+          "line": 1122,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "CRDO",
+          "subsection": "capability"
+        },
+        "marker_evidence": [
+          32,
+          34,
+          35,
+          46,
+          54,
+          55,
+          57,
+          58
+        ],
+        "provenance": "observed",
+        "raw_value": "temporarily_unavailable",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": {
+          "line": 1122,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "CRDO",
+          "subsection": "capability"
+        },
+        "value": "temporarily_unavailable"
+      },
+      "collection_attempt_status": {
+        "asset": "CRDO",
+        "locator": {
+          "line": 1095,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "CRDO",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "sec_10k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 1095,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "CRDO",
+          "subsection": "collection_attempt"
+        },
+        "value": "sec_10k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium"
+      },
+      "conflict": true,
+      "conflict_type": "decision_vs_capability",
+      "decision_status": {
+        "asset": "CRDO",
+        "locator": {
+          "line": 1096,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "CRDO",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 1096,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "CRDO",
+          "subsection": "decision"
+        },
+        "value": "collected"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 2,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 58,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            },
+            {
+              "kind": "capability",
+              "line": 46,
+              "name": "quote_status"
+            },
+            {
+              "kind": "capability",
+              "line": 54,
+              "name": "guidance_status"
+            },
+            {
+              "kind": "capability",
+              "line": 55,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 57,
+              "name": "sec_filings_status"
+            },
+            {
+              "kind": "capability",
+              "line": 58,
+              "name": "sector_benchmark_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 32,
+          "type": "capability",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 76,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 63,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 64,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 65,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 66,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 67,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 68,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 69,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 70,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 71,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 72,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 73,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 74,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 75,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 59,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "CRDO"
+    },
+    {
+      "capability_status": {
+        "asset": "MRVL",
+        "locator": {
+          "line": 1200,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MRVL",
+          "subsection": "capability"
+        },
+        "marker_evidence": [
+          32,
+          34,
+          35,
+          46,
+          54,
+          55,
+          57,
+          58
+        ],
+        "provenance": "observed",
+        "raw_value": "temporarily_unavailable",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": {
+          "line": 1200,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MRVL",
+          "subsection": "capability"
+        },
+        "value": "temporarily_unavailable"
+      },
+      "collection_attempt_status": {
+        "asset": "MRVL",
+        "locator": {
+          "line": 1173,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MRVL",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 1173,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MRVL",
+          "subsection": "collection_attempt"
+        },
+        "value": "sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium"
+      },
+      "conflict": true,
+      "conflict_type": "decision_vs_capability",
+      "decision_status": {
+        "asset": "MRVL",
+        "locator": {
+          "line": 1174,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MRVL",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 1174,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MRVL",
+          "subsection": "decision"
+        },
+        "value": "collected"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 2,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 58,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            },
+            {
+              "kind": "capability",
+              "line": 46,
+              "name": "quote_status"
+            },
+            {
+              "kind": "capability",
+              "line": 54,
+              "name": "guidance_status"
+            },
+            {
+              "kind": "capability",
+              "line": 55,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 57,
+              "name": "sec_filings_status"
+            },
+            {
+              "kind": "capability",
+              "line": 58,
+              "name": "sector_benchmark_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 32,
+          "type": "capability",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 76,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 63,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 64,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 65,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 66,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 67,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 68,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 69,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 70,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 71,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 72,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 73,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 74,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 75,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 59,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "MRVL"
+    },
+    {
+      "capability_status": {
+        "asset": "MU",
+        "locator": {
+          "line": 1278,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MU",
+          "subsection": "capability"
+        },
+        "marker_evidence": [
+          32,
+          34,
+          35,
+          46,
+          54,
+          55,
+          57,
+          58
+        ],
+        "provenance": "observed",
+        "raw_value": "temporarily_unavailable",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": {
+          "line": 1278,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MU",
+          "subsection": "capability"
+        },
+        "value": "temporarily_unavailable"
+      },
+      "collection_attempt_status": {
+        "asset": "MU",
+        "locator": {
+          "line": 1251,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MU",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "sec_10q status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 1251,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MU",
+          "subsection": "collection_attempt"
+        },
+        "value": "sec_10q status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium; sec_8k status=confirmed effect=neutral priced=unclear confidence=medium"
+      },
+      "conflict": true,
+      "conflict_type": "decision_vs_capability",
+      "decision_status": {
+        "asset": "MU",
+        "locator": {
+          "line": 1252,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MU",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 1252,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MU",
+          "subsection": "decision"
+        },
+        "value": "collected"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 2,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 58,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            },
+            {
+              "kind": "capability",
+              "line": 46,
+              "name": "quote_status"
+            },
+            {
+              "kind": "capability",
+              "line": 54,
+              "name": "guidance_status"
+            },
+            {
+              "kind": "capability",
+              "line": 55,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 57,
+              "name": "sec_filings_status"
+            },
+            {
+              "kind": "capability",
+              "line": 58,
+              "name": "sector_benchmark_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 32,
+          "type": "capability",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 76,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 63,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 64,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 65,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 66,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 67,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 68,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 69,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 70,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 71,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 72,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 73,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 74,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 75,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 59,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "MU"
+    },
+    {
+      "capability_status": {
+        "asset": "USAR",
+        "locator": {
+          "line": 1356,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "USAR",
+          "subsection": "capability"
+        },
+        "marker_evidence": [
+          32,
+          34,
+          35,
+          46,
+          54,
+          55,
+          57,
+          58
+        ],
+        "provenance": "observed",
+        "raw_value": "temporarily_unavailable",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "capability",
+        "semantic_block_type": "capability",
+        "source": {
+          "line": 1356,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "USAR",
+          "subsection": "capability"
+        },
+        "value": "temporarily_unavailable"
+      },
+      "collection_attempt_status": {
+        "asset": "USAR",
+        "locator": {
+          "line": 1329,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "USAR",
+          "subsection": "collection_attempt"
+        },
+        "marker_evidence": [
+          29,
+          29
+        ],
+        "provenance": "observed",
+        "raw_value": "not_collected",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "collection_attempt",
+        "semantic_block_type": "collection_attempt",
+        "source": {
+          "line": 1329,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "USAR",
+          "subsection": "collection_attempt"
+        },
+        "value": "not_collected"
+      },
+      "conflict": true,
+      "conflict_type": "decision_vs_capability",
+      "decision_status": {
+        "asset": "USAR",
+        "locator": {
+          "line": 1330,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "USAR",
+          "subsection": "decision"
+        },
+        "marker_evidence": [
+          5,
+          6,
+          7,
+          12,
+          13
+        ],
+        "provenance": "observed",
+        "raw_value": "not_verified",
+        "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+        "scope": "decision",
+        "semantic_block_type": "decision",
+        "source": {
+          "line": 1330,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "USAR",
+          "subsection": "decision"
+        },
+        "value": "not_verified"
+      },
+      "interpretation": "decision and capability are separate scopes",
+      "raw_occurrence_count": 2,
+      "semantic_blocks": [
+        {
+          "block_id": "block-1",
+          "end_line": 31,
+          "marker_evidence": [
+            {
+              "kind": "decision",
+              "line": 5,
+              "name": "decision_label"
+            },
+            {
+              "kind": "decision",
+              "line": 6,
+              "name": "Decisao"
+            },
+            {
+              "kind": "decision",
+              "line": 7,
+              "name": "reason_codes"
+            },
+            {
+              "kind": "decision",
+              "line": 12,
+              "name": "Investment Quality Score"
+            },
+            {
+              "kind": "decision",
+              "line": 13,
+              "name": "Swing Trade Score"
+            },
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 5,
+          "type": "decision",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-2",
+          "end_line": 58,
+          "marker_evidence": [
+            {
+              "kind": "capability",
+              "line": 32,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 34,
+              "name": "Data source"
+            },
+            {
+              "kind": "capability",
+              "line": 35,
+              "name": "provider"
+            },
+            {
+              "kind": "capability",
+              "line": 46,
+              "name": "quote_status"
+            },
+            {
+              "kind": "capability",
+              "line": 54,
+              "name": "guidance_status"
+            },
+            {
+              "kind": "capability",
+              "line": 55,
+              "name": "macro_status"
+            },
+            {
+              "kind": "capability",
+              "line": 57,
+              "name": "sec_filings_status"
+            },
+            {
+              "kind": "capability",
+              "line": 58,
+              "name": "sector_benchmark_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": true,
+          "start_line": 32,
+          "type": "capability",
+          "used_for_scope": true
+        },
+        {
+          "block_id": "block-3",
+          "end_line": 76,
+          "marker_evidence": [
+            {
+              "kind": "unclassified",
+              "line": 59,
+              "name": "Entrada ideal"
+            },
+            {
+              "kind": "unclassified",
+              "line": 60,
+              "name": "Entrada alternativa"
+            },
+            {
+              "kind": "unclassified",
+              "line": 61,
+              "name": "Stop/invalidation"
+            },
+            {
+              "kind": "unclassified",
+              "line": 62,
+              "name": "Alvo 2R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 63,
+              "name": "Alvo 3R"
+            },
+            {
+              "kind": "unclassified",
+              "line": 64,
+              "name": "Risco por trade"
+            },
+            {
+              "kind": "unclassified",
+              "line": 65,
+              "name": "Tamanho maximo da posicao"
+            },
+            {
+              "kind": "unclassified",
+              "line": 66,
+              "name": "Relacao risco/retorno"
+            },
+            {
+              "kind": "unclassified",
+              "line": 67,
+              "name": "Leverage risk gate"
+            },
+            {
+              "kind": "unclassified",
+              "line": 68,
+              "name": "Leverage risk gate reasons"
+            },
+            {
+              "kind": "unclassified",
+              "line": 69,
+              "name": "Principais alertas"
+            },
+            {
+              "kind": "unclassified",
+              "line": 70,
+              "name": "Dados ausentes ou limitacoes"
+            },
+            {
+              "kind": "unclassified",
+              "line": 71,
+              "name": "short_setup_score"
+            },
+            {
+              "kind": "unclassified",
+              "line": 72,
+              "name": "squeeze_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 73,
+              "name": "gap_risk"
+            },
+            {
+              "kind": "unclassified",
+              "line": 74,
+              "name": "borrow_data_available"
+            },
+            {
+              "kind": "unclassified",
+              "line": 75,
+              "name": "short_status"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": false,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 59,
+          "type": "unclassified",
+          "used_for_scope": false
+        },
+        {
+          "block_id": "block-1-collection",
+          "end_line": 30,
+          "marker_evidence": [
+            {
+              "kind": "collection",
+              "line": 29,
+              "name": "News/catalyst summary"
+            }
+          ],
+          "missing_signature_evidence": [],
+          "news_status_present": true,
+          "partial_candidate_types": [],
+          "signature_complete": false,
+          "start_line": 29,
+          "type": "collection",
+          "used_for_scope": true
+        }
+      ],
+      "semantic_note": {
+        "capability": "provider/capability status emitted in the capability or provenance block",
+        "collection_attempt": "whether collection was attempted or yielded news/catalyst content",
+        "decision": "status emitted in the decision block"
+      },
+      "symbol": "USAR"
+    }
+  ],
+  "capability_signature_matrix": [
+    {
+      "classification": "capability",
+      "end_line": 58,
+      "markers": [
+        "macro_status",
+        "Data source",
+        "provider",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "news_status_present": true,
+      "optional_markers": [
+        "macro_status",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "required_signature_matched": true,
+      "start_line": 32,
+      "symbol": "HOOD"
+    },
+    {
+      "classification": "capability",
+      "end_line": 58,
+      "markers": [
+        "macro_status",
+        "Data source",
+        "provider",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "news_status_present": true,
+      "optional_markers": [
+        "macro_status",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "required_signature_matched": true,
+      "start_line": 32,
+      "symbol": "NVDA"
+    },
+    {
+      "classification": "capability",
+      "end_line": 58,
+      "markers": [
+        "macro_status",
+        "Data source",
+        "provider",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "news_status_present": true,
+      "optional_markers": [
+        "macro_status",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "required_signature_matched": true,
+      "start_line": 32,
+      "symbol": "AMD"
+    },
+    {
+      "classification": "capability",
+      "end_line": 58,
+      "markers": [
+        "macro_status",
+        "Data source",
+        "provider",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "news_status_present": true,
+      "optional_markers": [
+        "macro_status",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "required_signature_matched": true,
+      "start_line": 32,
+      "symbol": "DELL"
+    },
+    {
+      "classification": "capability",
+      "end_line": 58,
+      "markers": [
+        "macro_status",
+        "Data source",
+        "provider",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "news_status_present": true,
+      "optional_markers": [
+        "macro_status",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "required_signature_matched": true,
+      "start_line": 32,
+      "symbol": "HIMS"
+    },
+    {
+      "classification": "capability",
+      "end_line": 58,
+      "markers": [
+        "macro_status",
+        "Data source",
+        "provider",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "news_status_present": true,
+      "optional_markers": [
+        "macro_status",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "required_signature_matched": true,
+      "start_line": 32,
+      "symbol": "MSFT"
+    },
+    {
+      "classification": "capability",
+      "end_line": 58,
+      "markers": [
+        "macro_status",
+        "Data source",
+        "provider",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "news_status_present": true,
+      "optional_markers": [
+        "macro_status",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "required_signature_matched": true,
+      "start_line": 32,
+      "symbol": "INTC"
+    },
+    {
+      "classification": "capability",
+      "end_line": 58,
+      "markers": [
+        "macro_status",
+        "Data source",
+        "provider",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "news_status_present": true,
+      "optional_markers": [
+        "macro_status",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "required_signature_matched": true,
+      "start_line": 32,
+      "symbol": "CRDO"
+    },
+    {
+      "classification": "capability",
+      "end_line": 58,
+      "markers": [
+        "macro_status",
+        "Data source",
+        "provider",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "news_status_present": true,
+      "optional_markers": [
+        "macro_status",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "required_signature_matched": true,
+      "start_line": 32,
+      "symbol": "MRVL"
+    },
+    {
+      "classification": "capability",
+      "end_line": 58,
+      "markers": [
+        "macro_status",
+        "Data source",
+        "provider",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "news_status_present": true,
+      "optional_markers": [
+        "macro_status",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "required_signature_matched": true,
+      "start_line": 32,
+      "symbol": "MU"
+    },
+    {
+      "classification": "capability",
+      "end_line": 58,
+      "markers": [
+        "macro_status",
+        "Data source",
+        "provider",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "news_status_present": true,
+      "optional_markers": [
+        "macro_status",
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "required_signature_matched": true,
+      "start_line": 32,
+      "symbol": "USAR"
+    }
+  ],
+  "capability_signature_policy": {
+    "minimum_group_coverage": 2,
+    "required_marker_groups": {
+      "capability_context": [
+        "quote_status",
+        "guidance_status",
+        "macro_status",
+        "sec_filings_status",
+        "sector_benchmark_status"
+      ],
+      "provider_identity": [
+        "Data source",
+        "provider"
+      ]
+    },
+    "required_markers": [
+      "news_status",
+      "Data source",
+      "provider"
+    ]
+  },
+  "capability_signature_strategy": "required_semantic_marker_groups",
+  "multi_status_assets": [
+    "HOOD",
+    "NVDA",
+    "AMD",
+    "DELL",
+    "HIMS",
+    "MSFT",
+    "INTC",
+    "CRDO",
+    "MRVL",
+    "MU",
+    "USAR"
+  ],
+  "parser_strategy": "semantic_block_segmentation_and_classification",
+  "partial_capability_blocks_ignored": true,
+  "positional_fallback_used": false,
+  "schema_version": "phase3-news-status-reconciliation-v2",
+  "source": {
+    "report": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md"
+  },
+  "unclassified_blocks_ignored": true
+}

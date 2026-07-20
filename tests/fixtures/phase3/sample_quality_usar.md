@@ -1,0 +1,2 @@
+- Ativo: `USAR`
+- Qualidade da amostra: baixa

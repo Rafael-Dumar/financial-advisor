@@ -1,0 +1,2 @@
+- Ativo: `AMD`
+- Qualidade da amostra: baixa

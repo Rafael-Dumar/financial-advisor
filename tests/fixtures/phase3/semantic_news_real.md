@@ -1,0 +1,20 @@
+## HIMS
+- Ativo: `HIMS`
+- decision_label: `avoid`
+- reason_codes: below_minimum_market_cap
+- Investment Quality Score: 38
+- Swing Trade Score: 69
+- Event risk: unknown
+- event_check_status: `not_verified`
+- News/catalyst summary: sec_8k status=confirmed effect=neutral priced=unclear confidence=medium
+- news_status: `collected`
+- macro_regime: `neutral`
+- thesis_status: `unknown`
+- guidance_status: `not_implemented`
+- macro_status: `not_implemented`
+- Data source: yahoo
+- provider: `yahoo`
+- quote_status: `unsupported_by_plan`
+- news_status: `temporarily_unavailable`
+- sec_filings_status: `available`
+- sector_benchmark_status: `unavailable`

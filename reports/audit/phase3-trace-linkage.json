@@ -1,0 +1,91 @@
+{
+  "classification_method": "mechanical_from_linked_events_only",
+  "occurrences": [],
+  "rule_catalog": [
+    {
+      "rule_id": "classify_asset.initial_confidence_limiting_cap",
+      "source_code_locator": {
+        "branch_signature": "if _has_confidence_limiting_data_gap(limitations)",
+        "function": "classify_asset",
+        "line_range": "148",
+        "path": "advisor/scoring.py"
+      }
+    },
+    {
+      "rule_id": "classify_asset.high_missing_data_severity_cap",
+      "source_code_locator": {
+        "branch_signature": "if _missing_data_severity(limitations) == \"high\":",
+        "function": "classify_asset",
+        "line_range": "159",
+        "path": "advisor/scoring.py"
+      }
+    },
+    {
+      "rule_id": "classify_asset.below_minimum_market_cap_override",
+      "source_code_locator": {
+        "branch_signature": "if \"below_minimum_market_cap\" in alerts:",
+        "function": "classify_asset",
+        "line_range": "203",
+        "path": "advisor/scoring.py"
+      }
+    },
+    {
+      "rule_id": "classify_asset.decision_confidence_cap",
+      "source_code_locator": {
+        "branch_signature": "if decision_confidence_score < 65:",
+        "function": "classify_asset",
+        "line_range": "198",
+        "path": "advisor/scoring.py"
+      }
+    },
+    {
+      "rule_id": "classify_asset.technical_unvalidated_predicate",
+      "source_code_locator": {
+        "branch_signature": "if _is_technical_unvalidated(",
+        "function": "classify_asset",
+        "line_range": "200",
+        "path": "advisor/scoring.py"
+      }
+    },
+    {
+      "rule_id": "classify_asset.win_rate_branch",
+      "source_code_locator": {
+        "branch_signature": "if not has_low_sample and backtest_stats and backtest_stats.win_rate_2r is not None:",
+        "function": "classify_asset",
+        "line_range": "166",
+        "path": "advisor/scoring.py"
+      }
+    },
+    {
+      "rule_id": "classify_asset.uncollected_context_limits",
+      "source_code_locator": {
+        "branch_signature": "_apply_uncollected_context_limits(scored, backtest_stats, limitations)",
+        "function": "classify_asset",
+        "line_range": "128",
+        "path": "advisor/scoring.py"
+      }
+    }
+  ],
+  "schema_version": "phase3-trace-linkage-v1",
+  "shadow_detector": {
+    "applied_to_real_occurrence_set": false,
+    "implemented": true,
+    "name": "same_axis_later_weaker_or_override",
+    "reason": "original occurrence set unavailable"
+  },
+  "source": {
+    "report": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+    "runtime_trace_artifact": null,
+    "status": "runtime_trace_unavailable"
+  },
+  "summary": {
+    "confirmed_duplicate_penalty_count": 0,
+    "linked_occurrence_count": null,
+    "original_occurrence_count": null,
+    "real_trace_event_count": 0,
+    "shadowed_count": null,
+    "status": "not_reconcilable_original_source_missing",
+    "unable_to_determine_count": null
+  },
+  "trace_events": []
+}

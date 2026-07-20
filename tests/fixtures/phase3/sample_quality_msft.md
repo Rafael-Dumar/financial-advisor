@@ -1,0 +1,2 @@
+- Ativo: `MSFT`
+- Qualidade da amostra: baixa

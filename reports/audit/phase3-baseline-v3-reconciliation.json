@@ -1,0 +1,250 @@
+{
+  "original_occurrence_set": "original_occurrence_set_unavailable",
+  "sample_quality": [
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 292,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "ETH",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "ETH"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 356,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "SOL",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "SOL"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 420,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HYPE",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "HYPE"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 484,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "BTC",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "BTC"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 548,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HOOD",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "HOOD"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 625,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "NVDA",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "NVDA"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 702,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "AMD",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "AMD"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 779,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "DELL",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "DELL"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 856,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "HIMS",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "HIMS"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 933,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MSFT",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "MSFT"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 1010,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "INTC",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "INTC"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 1088,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "CRDO",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "CRDO"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 1166,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MRVL",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "MRVL"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 1244,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "MU",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "MU"
+    },
+    {
+      "parsed_value": {
+        "provenance": "observed",
+        "raw_value": "baixa",
+        "source": {
+          "line": 1322,
+          "relative_path": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md",
+          "section": "USAR",
+          "subsection": "sample_quality"
+        },
+        "value": "low"
+      },
+      "provenance": "observed",
+      "raw_value": "baixa",
+      "symbol": "USAR"
+    }
+  ],
+  "schema_version": "phase3-baseline-reconciliation-v3",
+  "source": {
+    "code_ref": "6d0c1f705032606d6b449f79b8c151b941e1c037",
+    "report": ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md"
+  }
+}
