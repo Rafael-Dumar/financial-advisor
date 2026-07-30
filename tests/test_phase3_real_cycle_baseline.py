@@ -9,7 +9,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORT = ROOT / ".tmp/nightly-review/2026-07-15/run-29429941131-main/history/2026-07-15-main.md"
-EXPECTED_SCORING_SHA256 = "16B7A0A4C93ECD0E633B7DF560C585F10398426EDA8861D7D06C38E3449BAFAD"
+PRE_3A3_1_SCORING_SHA256 = "16B7A0A4C93ECD0E633B7DF560C585F10398426EDA8861D7D06C38E3449BAFAD"
+PRE_3A3_1_3_SCORING_SHA256 = "DD26BC8CAC4B49F606168CA4EEAE0DA109FB5E7EAF522C3EB406F6004EA94056"
+EXPECTED_SCORING_SHA256 = "C9FEDA47CDBBCD0CC0A9132D3FFD7FBC07988E28226427E1259C2E60711B9E8C"
 EXPECTED_REPORT_SHA256 = "410DCADEA7EB22DCB71C53A45B05E1C70484B038D87565847C966351805D4E8A"
 
 
@@ -22,11 +24,19 @@ class Phase3BaselineArtifactTests(unittest.TestCase):
 
     def test_scoring_bytes_are_unchanged_by_audit_builder(self):
         from scripts.phase3a2_forensics import build_all
+        before_scoring = (ROOT / "advisor/scoring.py").read_bytes()
+        before_diff = subprocess.run(
+            ["git", "diff", "--", "advisor/scoring.py"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        ).stdout
         build_all(ROOT, REPORT, run_mutations=False)
         self.assertEqual(hashlib.sha256((ROOT / "advisor/scoring.py").read_bytes()).hexdigest().upper(), EXPECTED_SCORING_SHA256)
+        self.assertEqual((ROOT / "advisor/scoring.py").read_bytes(), before_scoring)
         self.assertEqual(hashlib.sha256(REPORT.read_bytes()).hexdigest().upper(), EXPECTED_REPORT_SHA256)
         diff = subprocess.run(["git", "diff", "--", "advisor/scoring.py"], cwd=ROOT, capture_output=True, text=True)
-        self.assertEqual(diff.stdout, "")
+        self.assertEqual(diff.stdout, before_diff)
 
     def test_fixed_scoring_hash_detects_mutated_copy(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -36,6 +46,8 @@ class Phase3BaselineArtifactTests(unittest.TestCase):
             copy.write_bytes(copy.read_bytes() + b"\n# controlled mutation\n")
             mutated = hashlib.sha256(copy.read_bytes()).hexdigest()
             self.assertEqual(original.upper(), EXPECTED_SCORING_SHA256)
+            self.assertNotEqual(original.upper(), PRE_3A3_1_SCORING_SHA256)
+            self.assertNotEqual(original.upper(), PRE_3A3_1_3_SCORING_SHA256)
             self.assertNotEqual(mutated.upper(), EXPECTED_SCORING_SHA256)
 
     def test_unavailable_occurrence_contract_is_explicit(self):

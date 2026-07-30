@@ -5,6 +5,7 @@ from itertools import combinations
 
 from advisor.indicators import percent_returns
 from advisor.models import Candle, LeveragePolicy, RiskPlan
+from advisor.runtime_scoring_observability import ObservationContext, observe_condition, observed_helper
 
 
 def calculate_trade_plan(
@@ -78,11 +79,46 @@ def evaluate_leverage_policy(
     return LeveragePolicy(allowed=not reasons, reasons=reasons)
 
 
-def rate_sample_quality(sample_size: int) -> str:
-    if sample_size < 30:
+@observed_helper("rate_sample_quality")
+def rate_sample_quality(
+    sample_size: int,
+    *,
+    observation_context: ObservationContext | None = None,
+) -> str:
+    if observation_context is None:
+        if sample_size < 30:
+            return "low"
+        if sample_size < 100:
+            return "medium"
+        return "high"
+
+    invocation = observation_context.invocation_stack[-1] if observation_context.invocation_stack else None
+    low = sample_size < 30
+    token = observe_condition(
+        observation_context,
+        invocation,
+        "classify_asset.sample_quality_low",
+        lambda: low,
+        condition_inputs=lambda: {"sample_size": sample_size},
+        terminate_if_matched=True,
+    )
+    if low:
+        token.finish(terminated=True, termination_kind="return")
         return "low"
-    if sample_size < 100:
+    token.finish()
+    medium = sample_size < 100
+    token = observe_condition(
+        observation_context,
+        invocation,
+        "classify_asset.sample_quality_medium",
+        lambda: medium,
+        condition_inputs=lambda: {"sample_size": sample_size},
+        terminate_if_matched=True,
+    )
+    if medium:
+        token.finish(terminated=True, termination_kind="return")
         return "medium"
+    token.finish()
     return "high"
 
 

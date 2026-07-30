@@ -1,0 +1,1678 @@
+{
+  "schema_version": 1,
+  "specification_commit": "64abb26ccce5e92d0ca3c1b8e340313fbf398837",
+  "specification_path": "docs/PHASE3_RUNTIME_SCORING_OBSERVABILITY_SPEC.md",
+  "expected_if_count": 74,
+  "expected_elif_count": 8,
+  "expected_ifexp_count": 15,
+  "rules": [
+    {
+     "rule_id": "classify_asset.apply_cap_rank_choice",
+     "function": "_apply_cap",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_apply_cap",
+        "line_start": 1210,
+        "line_end": 1215
+     },
+      "canonical_branch_signature": "Compare(left=Call(func=Name(id='_decision_rank', ctx=Load()), args=[Name(id='decision', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='context', ctx=Load()))]), ops=[GtE()], comparators=[Call(func=Name(id='_decision_rank', ctx=Load()), args=[Name(id='cap', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='context', ctx=Load()))])])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.backtest_branch_entry",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 659,
+        "line_end": 668
+     },
+      "canonical_branch_signature": "Call(func=Name(id='bool', ctx=Load()), args=[BoolOp(op=And(), values=[UnaryOp(op=Not(), operand=Name(id='has_low_sample', ctx=Load())), Name(id='backtest_stats', ctx=Load()), Compare(left=Attribute(value=Name(id='backtest_stats', ctx=Load()), attr='win_rate_2r', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)])])], keywords=[])",
+      "axis": "decision",
+      "effect_type": "control_flow",
+      "evidence_keys": [
+        "backtest.sample_size",
+        "backtest.win_rate_2r"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.base_avoid",
+     "function": "_base_decision",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_base_decision",
+        "line_start": 1112,
+        "line_end": 1121
+     },
+      "canonical_branch_signature": "BoolOp(op=Or(), values=[Compare(left=Attribute(value=Name(id='scored', ctx=Load()), attr='swing_trade_score', ctx=Load()), ops=[Lt()], comparators=[Constant(value=45)]), Compare(left=Attribute(value=Name(id='scored', ctx=Load()), attr='investment_quality_score', ctx=Load()), ops=[Lt()], comparators=[Constant(value=25)])])",
+      "axis": "decision",
+      "effect_type": "base",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.base_technical_unvalidated",
+     "function": "_base_decision",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_base_decision",
+        "line_start": 1177,
+        "line_end": 1186
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Compare(left=Attribute(value=Name(id='scored', ctx=Load()), attr='swing_trade_score', ctx=Load()), ops=[GtE()], comparators=[Constant(value=70)]), Compare(left=Attribute(value=Name(id='scored', ctx=Load()), attr='investment_quality_score', ctx=Load()), ops=[Lt()], comparators=[Constant(value=50)])])",
+      "axis": "decision",
+      "effect_type": "base",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.base_tradeable",
+     "function": "_base_decision",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_base_decision",
+        "line_start": 1155,
+        "line_end": 1164
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Compare(left=Attribute(value=Name(id='scored', ctx=Load()), attr='swing_trade_score', ctx=Load()), ops=[GtE()], comparators=[Constant(value=75)]), Compare(left=Attribute(value=Name(id='scored', ctx=Load()), attr='investment_quality_score', ctx=Load()), ops=[GtE()], comparators=[Constant(value=70)])])",
+      "axis": "decision",
+      "effect_type": "base",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.base_wait",
+     "function": "_base_decision",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_base_decision",
+        "line_start": 1135,
+        "line_end": 1141
+     },
+      "canonical_branch_signature": "Compare(left=Attribute(value=Name(id='scored', ctx=Load()), attr='swing_trade_score', ctx=Load()), ops=[Lt()], comparators=[Constant(value=60)])",
+      "axis": "decision",
+      "effect_type": "base",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.bucket_known",
+     "function": "_bucket_for_decision",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_bucket_for_decision",
+        "line_start": 2363,
+        "line_end": 2369
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='decision', ctx=Load()), ops=[In()], comparators=[Set(elts=[Constant(value='tradeable'), Constant(value='watch_buy'), Constant(value='watch_only'), Constant(value='technical_unvalidated'), Constant(value='wait'), Constant(value='blocked'), Constant(value='avoid')])])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.bucket_speculative",
+     "function": "_bucket_for_decision",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_bucket_for_decision",
+        "line_start": 2380,
+        "line_end": 2386
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='decision', ctx=Load()), ops=[Eq()], comparators=[Constant(value='speculative_watch')])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.cache_stale",
+     "function": "_freshness_context",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_freshness_context",
+        "line_start": 1711,
+        "line_end": 1716
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Compare(left=Attribute(value=Name(id='snapshot', ctx=Load()), attr='cache_age_seconds', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Attribute(value=Name(id='snapshot', ctx=Load()), attr='cache_age_seconds', ctx=Load()), ops=[Gt()], comparators=[BinOp(left=BinOp(left=Constant(value=60), op=Mult(), right=Constant(value=60)), op=Mult(), right=Constant(value=24))])])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "technical.price_stale"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_below_65",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 835,
+        "line_end": 840
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='decision_confidence_score', ctx=Load()), ops=[Lt()], comparators=[Constant(value=65)])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "decision_confidence.score"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_earnings_missing",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2091,
+        "line_end": 2096
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='earnings_data_missing'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])",
+      "axis": "confidence",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_ev_components",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2253,
+        "line_end": 2258
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='ev_components_missing'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])",
+      "axis": "confidence",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "backtest.expected_value_r"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_explicit_limitation",
+     "function": "_has_confidence_limiting_data_gap",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_has_confidence_limiting_data_gap",
+        "line_start": 1398,
+        "line_end": 1404
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='limitation', ctx=Load()), ops=[In()], comparators=[Name(id='explicitly_limiting', ctx=Load())])",
+      "axis": "confidence",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_macro_not_collected",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2217,
+        "line_end": 2222
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='macro_not_collected_confidence_limited'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])",
+      "axis": "confidence",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "market.regime"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_mixed_provider",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2109,
+        "line_end": 2114
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='mixed_provider_data'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])",
+      "axis": "confidence",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "provider.mixed_data"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_neutral_market",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2127,
+        "line_end": 2132
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='market_not_risk_on'), ops=[In()], comparators=[Name(id='alerts', ctx=Load())])",
+      "axis": "confidence",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "market.regime"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_news_low",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2181,
+        "line_end": 2186
+     },
+      "canonical_branch_signature": "BoolOp(op=Or(), values=[Compare(left=Constant(value='news_rumor_not_confirmed'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())]), Compare(left=Constant(value='news_confidence_low'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])])",
+      "axis": "confidence",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "news.confirmed_status",
+        "news.confidence"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_news_not_collected",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2199,
+        "line_end": 2204
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='news_not_collected_confidence_limited'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])",
+      "axis": "confidence",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "provider.news.status"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_nonblocking_skip",
+     "function": "_has_confidence_limiting_data_gap",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_has_confidence_limiting_data_gap",
+        "line_start": 1382,
+        "line_end": 1387
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='limitation', ctx=Load()), ops=[In()], comparators=[Name(id='non_blocking', ctx=Load())])",
+      "axis": "confidence",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_nonpositive_ev",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2071,
+        "line_end": 2078
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Name(id='backtest_stats', ctx=Load()), Compare(left=Attribute(value=Name(id='backtest_stats', ctx=Load()), attr='expected_value_r', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Attribute(value=Name(id='backtest_stats', ctx=Load()), attr='expected_value_r', ctx=Load()), ops=[LtE()], comparators=[Constant(value=0)])])",
+      "axis": "confidence",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "backtest.expected_value_r"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_pattern_limitation",
+     "function": "_has_confidence_limiting_data_gap",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_has_confidence_limiting_data_gap",
+        "line_start": 1421,
+        "line_end": 1427
+     },
+      "canonical_branch_signature": "BoolOp(op=Or(), values=[Call(func=Attribute(value=Name(id='limitation', ctx=Load()), attr='startswith', ctx=Load()), args=[Constant(value='missing_')], keywords=[]), Call(func=Attribute(value=Name(id='limitation', ctx=Load()), attr='startswith', ctx=Load()), args=[Constant(value='insufficient_')], keywords=[]), Call(func=Attribute(value=Name(id='limitation', ctx=Load()), attr='endswith', ctx=Load()), args=[Constant(value='_unavailable')], keywords=[]), Call(func=Attribute(value=Name(id='limitation', ctx=Load()), attr='endswith', ctx=Load()), args=[Constant(value='_not_live')], keywords=[]), Call(func=Attribute(value=Name(id='limitation', ctx=Load()), attr='endswith', ctx=Load()), args=[Constant(value='_demo')], keywords=[])])",
+      "axis": "confidence",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_risk_off",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2145,
+        "line_end": 2150
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='market_risk_off'), ops=[In()], comparators=[Name(id='alerts', ctx=Load())])",
+      "axis": "confidence",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "market.regime"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_sample_low",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2031,
+        "line_end": 2036
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='sample_size', ctx=Load()), ops=[Lt()], comparators=[Constant(value=30)])",
+      "axis": "confidence",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "backtest.sample_size"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_sample_medium",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2053,
+        "line_end": 2058
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='sample_size', ctx=Load()), ops=[Lt()], comparators=[Constant(value=100)])",
+      "axis": "confidence",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "backtest.sample_size"
+      ],
+      "branch_kind": "elif"
+    },
+    {
+     "rule_id": "classify_asset.confidence_sample_size_presence",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2017,
+        "line_end": 2023
+     },
+      "canonical_branch_signature": "IfExp(test=Name(id='backtest_stats', ctx=Load()), body=Attribute(value=Name(id='backtest_stats', ctx=Load()), attr='sample_size', ctx=Load()), orelse=Constant(value=0))",
+      "axis": "confidence",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "backtest.sample_size"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.confidence_sector_not_collected",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2235,
+        "line_end": 2240
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='sector_relative_strength_not_collected'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])",
+      "axis": "confidence",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "asset.theme"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.confidence_stale",
+     "function": "_decision_confidence_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_decision_confidence_score",
+        "line_start": 2163,
+        "line_end": 2168
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='stale_price_data'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])",
+      "axis": "confidence",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "technical.price_stale"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.data_quality_blocked",
+     "function": "_data_quality",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_data_quality",
+        "line_start": 1479,
+        "line_end": 1485
+     },
+      "canonical_branch_signature": "Call(func=Name(id='_has_blocking_data_gap', ctx=Load()), args=[Name(id='limitations', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='context', ctx=Load()))])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.data_quality_limited",
+     "function": "_data_quality",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_data_quality",
+        "line_start": 1497,
+        "line_end": 1503
+     },
+      "canonical_branch_signature": "Call(func=Name(id='_has_confidence_limiting_data_gap', ctx=Load()), args=[Name(id='limitations', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='context', ctx=Load()))])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.data_score_blocked",
+     "function": "_data_quality_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_data_quality_score",
+        "line_start": 1890,
+        "line_end": 1896
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='data_quality', ctx=Load()), ops=[Eq()], comparators=[Constant(value='blocked')])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "data_quality.score"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.data_score_critical_severity",
+     "function": "_data_quality_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_data_quality_score",
+        "line_start": 1948,
+        "line_end": 1953
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='missing_severity', ctx=Load()), ops=[Eq()], comparators=[Constant(value='critical')])",
+      "axis": "quality",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "data_quality.missing_severity"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.data_score_earnings_missing",
+     "function": "_data_quality_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_data_quality_score",
+        "line_start": 1966,
+        "line_end": 1971
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='earnings_data_missing'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])",
+      "axis": "quality",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.data_score_high_severity",
+     "function": "_data_quality_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_data_quality_score",
+        "line_start": 1930,
+        "line_end": 1935
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='missing_severity', ctx=Load()), ops=[Eq()], comparators=[Constant(value='high')])",
+      "axis": "quality",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "data_quality.missing_severity"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.data_score_limited",
+     "function": "_data_quality_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_data_quality_score",
+        "line_start": 1912,
+        "line_end": 1917
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='data_quality', ctx=Load()), ops=[Eq()], comparators=[Constant(value='limited')])",
+      "axis": "quality",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "data_quality.score"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.data_score_stale",
+     "function": "_data_quality_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_data_quality_score",
+        "line_start": 1984,
+        "line_end": 1989
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='stale_price_data'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])",
+      "axis": "quality",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "technical.price_stale"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.earnings_imminent_wait",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 904,
+        "line_end": 909
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Compare(left=Name(id='decision', ctx=Load()), ops=[Eq()], comparators=[Constant(value='watch_buy')]), Compare(left=Constant(value='earnings_imminent'), ops=[In()], comparators=[Name(id='alerts', ctx=Load())])])",
+      "axis": "decision",
+      "effect_type": "adjustment",
+      "evidence_keys": [
+        "event.earnings_imminent",
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.earnings_missing_thesis",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 946,
+        "line_end": 951
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='earnings_data_missing'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "fundamentals.earnings_status"
+      ],
+      "branch_kind": "elif"
+    },
+    {
+     "rule_id": "classify_asset.event_crypto",
+     "function": "_event_check_status",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_event_check_status",
+        "line_start": 2282,
+        "line_end": 2288
+     },
+      "canonical_branch_signature": "Compare(left=Attribute(value=Name(id='snapshot', ctx=Load()), attr='asset_type', ctx=Load()), ops=[Eq()], comparators=[Constant(value='crypto')])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "asset.type"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.event_not_collected",
+     "function": "_event_check_status",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_event_check_status",
+        "line_start": 2316,
+        "line_end": 2322
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='earnings_data_missing'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "fundamentals.earnings_status"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.event_source_unavailable",
+     "function": "_event_check_status",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_event_check_status",
+        "line_start": 2299,
+        "line_end": 2305
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='earnings_unavailable'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "fundamentals.earnings_status"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.event_verified",
+     "function": "_event_check_status",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_event_check_status",
+        "line_start": 2333,
+        "line_end": 2342
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Compare(left=Attribute(value=Name(id='snapshot', ctx=Load()), attr='event', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Attribute(value=Attribute(value=Name(id='snapshot', ctx=Load()), attr='event', ctx=Load()), attr='days_to_earnings', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)])])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "event.earnings_status"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.freshness_stale_reason_choice",
+     "function": "_freshness_context",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_freshness_context",
+        "line_start": 1697,
+        "line_end": 1702
+     },
+      "canonical_branch_signature": "Name(id='is_stale', ctx=Load())",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "technical.price_stale"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.fundamental_gap_thesis",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 924,
+        "line_end": 929
+     },
+      "canonical_branch_signature": "Call(func=Name(id='_has_fundamental_validation_gap', ctx=Load()), args=[Name(id='limitations', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='observation_context', ctx=Load()))])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.gap_risk_field",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 1015,
+        "line_end": 1020
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='recent_gap_risk'), ops=[In()], comparators=[Name(id='alerts', ctx=Load())])",
+      "axis": "risk",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "technical.recent_gap"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.hard_gate_earnings_choice",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 563,
+        "line_end": 568
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='earnings_imminent'), ops=[In()], comparators=[Name(id='alerts', ctx=Load())])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "event.earnings_imminent"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.high_severity_cap",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 622,
+        "line_end": 627
+     },
+      "canonical_branch_signature": "Compare(left=Call(func=Name(id='_missing_data_severity', ctx=Load()), args=[Name(id='limitations', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='observation_context', ctx=Load()))]), ops=[Eq()], comparators=[Constant(value='high')])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "data_quality.missing_severity"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.hold_median_days",
+     "function": "_hold_suggestion",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_hold_suggestion",
+        "line_start": 1348,
+        "line_end": 1357
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Compare(left=Name(id='backtest_stats', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Attribute(value=Name(id='backtest_stats', ctx=Load()), attr='sample_size', ctx=Load()), ops=[GtE()], comparators=[Constant(value=30)]), Compare(left=Attribute(value=Name(id='backtest_stats', ctx=Load()), attr='median_days_to_2r', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)])])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "backtest.sample_size"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.initial_blocking_base",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 507,
+        "line_end": 512
+     },
+      "canonical_branch_signature": "Call(func=Name(id='_has_blocking_data_gap', ctx=Load()), args=[Name(id='limitations', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='observation_context', ctx=Load()))])",
+      "axis": "decision",
+      "effect_type": "base",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.initial_confidence_cap",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 581,
+        "line_end": 586
+     },
+      "canonical_branch_signature": "Call(func=Name(id='_has_confidence_limiting_data_gap', ctx=Load()), args=[Name(id='limitations', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='observation_context', ctx=Load()))])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "elif"
+    },
+    {
+     "rule_id": "classify_asset.initial_hard_gate_cap",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 594,
+        "line_end": 599
+     },
+      "canonical_branch_signature": "Call(func=Name(id='any', ctx=Load()), args=[GeneratorExp(elt=Compare(left=Name(id='alert', ctx=Load()), ops=[In()], comparators=[Name(id='hard_gates', ctx=Load())]), generators=[comprehension(target=Name(id='alert', ctx=Store()), iter=Name(id='alerts', ctx=Load()), ifs=[], is_async=0)])], keywords=[])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "market.regime",
+        "market.liquidity",
+        "event.earnings_imminent",
+        "technical.recent_gap"
+      ],
+      "branch_kind": "elif"
+    },
+    {
+     "rule_id": "classify_asset.initial_low_sample_cap",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 603,
+        "line_end": 611
+     },
+      "canonical_branch_signature": "Name(id='has_low_sample', ctx=Load())",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "backtest.sample_size"
+      ],
+      "branch_kind": "elif"
+    },
+    {
+     "rule_id": "classify_asset.intc_gap_requirement",
+     "function": "_is_intc_like_case",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_is_intc_like_case",
+        "line_start": 1297,
+        "line_end": 1303
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='recent_gap_risk'), ops=[NotIn()], comparators=[Name(id='alerts', ctx=Load())])",
+      "axis": "decision",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.intc_investment_threshold",
+     "function": "_is_intc_like_case",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_is_intc_like_case",
+        "line_start": 1279,
+        "line_end": 1285
+     },
+      "canonical_branch_signature": "Compare(left=Attribute(value=Name(id='scored', ctx=Load()), attr='investment_quality_score', ctx=Load()), ops=[GtE()], comparators=[Constant(value=45)])",
+      "axis": "decision",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.intc_like_cap",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 797,
+        "line_end": 806
+     },
+      "canonical_branch_signature": "Call(func=Name(id='_is_intc_like_case', ctx=Load()), args=[Name(id='scored', ctx=Load()), Name(id='alerts', ctx=Load()), Name(id='backtest_stats', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='observation_context', ctx=Load()))])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "decision.base_score_inputs",
+        "technical.recent_gap",
+        "backtest.win_rate_2r"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.intc_valuation_requirement",
+     "function": "_is_intc_like_case",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_is_intc_like_case",
+        "line_start": 1315,
+        "line_end": 1321
+     },
+      "canonical_branch_signature": "UnaryOp(op=Not(), operand=BinOp(left=Set(elts=[Constant(value='negative_or_invalid_pe'), Constant(value='negative_or_invalid_peg')]), op=BitAnd(), right=Call(func=Name(id='set', ctx=Load()), args=[Name(id='alerts', ctx=Load())], keywords=[])))",
+      "axis": "decision",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.last_price_timestamp_fallback",
+     "function": "_freshness_context",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_freshness_context",
+        "line_start": 1679,
+        "line_end": 1687
+     },
+      "canonical_branch_signature": "Call(func=Name(id='bool', ctx=Load()), args=[Attribute(value=Name(id='snapshot', ctx=Load()), attr='candles', ctx=Load())], keywords=[])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "asset.data_timestamp"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.last_price_timestamp_field",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 970,
+        "line_end": 975
+     },
+      "canonical_branch_signature": "Call(func=Name(id='bool', ctx=Load()), args=[Subscript(value=Name(id='freshness', ctx=Load()), slice=Constant(value='last_price_timestamp'), ctx=Load())], keywords=[])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "asset.data_timestamp"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.low_win_rate_choice",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 695,
+        "line_end": 703
+     },
+      "canonical_branch_signature": "Compare(left=Attribute(value=Name(id='scored', ctx=Load()), attr='investment_quality_score', ctx=Load()), ops=[Lt()], comparators=[Constant(value=35)])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "backtest.win_rate_2r",
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.market_session_after",
+     "function": "_market_session",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_market_session",
+        "line_start": 1800,
+        "line_end": 1806
+     },
+      "canonical_branch_signature": "Compare(left=BinOp(left=Constant(value=20), op=Mult(), right=Constant(value=60)), ops=[LtE(), Lt()], comparators=[Name(id='minutes', ctx=Load()), BinOp(left=Constant(value=24), op=Mult(), right=Constant(value=60))])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "market.session"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.market_session_pre",
+     "function": "_market_session",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_market_session",
+        "line_start": 1782,
+        "line_end": 1788
+     },
+      "canonical_branch_signature": "Compare(left=BinOp(left=Constant(value=8), op=Mult(), right=Constant(value=60)), ops=[LtE(), Lt()], comparators=[Name(id='minutes', ctx=Load()), BinOp(left=BinOp(left=Constant(value=13), op=Mult(), right=Constant(value=60)), op=Add(), right=Constant(value=30))])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "market.session"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.market_session_regular",
+     "function": "_market_session",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_market_session",
+        "line_start": 1764,
+        "line_end": 1770
+     },
+      "canonical_branch_signature": "Compare(left=BinOp(left=BinOp(left=Constant(value=13), op=Mult(), right=Constant(value=60)), op=Add(), right=Constant(value=30)), ops=[LtE(), Lt()], comparators=[Name(id='minutes', ctx=Load()), BinOp(left=Constant(value=20), op=Mult(), right=Constant(value=60))])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "market.session"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.market_session_weekend",
+     "function": "_market_session",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_market_session",
+        "line_start": 1746,
+        "line_end": 1752
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='weekday', ctx=Load()), ops=[GtE()], comparators=[Constant(value=5)])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "market.session"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.max_blocking_cap",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 538,
+        "line_end": 543
+     },
+      "canonical_branch_signature": "Call(func=Name(id='_has_blocking_data_gap', ctx=Load()), args=[Name(id='limitations', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='observation_context', ctx=Load()))])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.minimum_market_cap_override",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 885,
+        "line_end": 890
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='below_minimum_market_cap'), ops=[In()], comparators=[Name(id='alerts', ctx=Load())])",
+      "axis": "decision",
+      "effect_type": "override",
+      "evidence_keys": [
+        "fundamentals.market_cap_status"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.missing_ev_components",
+     "function": "_apply_uncollected_context_limits",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_apply_uncollected_context_limits",
+        "line_start": 1647,
+        "line_end": 1656
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Compare(left=Name(id='backtest_stats', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Attribute(value=Name(id='backtest_stats', ctx=Load()), attr='expected_value_r', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), BoolOp(op=Or(), values=[Compare(left=Attribute(value=Name(id='backtest_stats', ctx=Load()), attr='avg_win_r', ctx=Load()), ops=[Is()], comparators=[Constant(value=None)]), Compare(left=Attribute(value=Name(id='backtest_stats', ctx=Load()), attr='avg_loss_r', ctx=Load()), ops=[Is()], comparators=[Constant(value=None)])])])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "backtest.expected_value_r",
+        "backtest.avg_win_r",
+        "backtest.avg_loss_r"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.negative_ev_high_severity",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 775,
+        "line_end": 780
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Compare(left=Name(id='ev', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='ev', ctx=Load()), ops=[Lt()], comparators=[Constant(value=0)]), Compare(left=Call(func=Name(id='_missing_data_severity', ctx=Load()), args=[Name(id='limitations', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='observation_context', ctx=Load()))]), ops=[In()], comparators=[Set(elts=[Constant(value='high'), Constant(value='critical')])])])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "backtest.expected_value_r",
+        "data_quality.missing_severity"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.news_status_field",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 999,
+        "line_end": 1004
+     },
+      "canonical_branch_signature": "Call(func=Name(id='bool', ctx=Load()), args=[Attribute(value=Attribute(value=Name(id='scored', ctx=Load()), attr='snapshot', ctx=Load()), attr='news_events', ctx=Load())], keywords=[])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "provider.news.status"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.news_summary_empty",
+     "function": "_news_summary",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_news_summary",
+        "line_start": 2597,
+        "line_end": 2603
+     },
+      "canonical_branch_signature": "UnaryOp(op=Not(), operand=Name(id='news_events', ctx=Load()))",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "news.confirmed_status"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.nonpositive_ev",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 757,
+        "line_end": 762
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Compare(left=Name(id='ev', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='ev', ctx=Load()), ops=[LtE()], comparators=[Constant(value=0)])])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "backtest.expected_value_r"
+      ],
+      "branch_kind": "elif"
+    },
+    {
+     "rule_id": "classify_asset.sample_quality_derived",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 450,
+        "line_end": 455
+     },
+      "canonical_branch_signature": "Call(func=Name(id='bool', ctx=Load()), args=[Name(id='backtest_stats', ctx=Load())], keywords=[])",
+      "axis": "confidence",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "backtest.sample_size"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+      "rule_id": "classify_asset.sample_quality_low",
+      "function": "rate_sample_quality",
+      "source_code_locator": {
+        "path": "advisor/risk.py",
+        "function": "rate_sample_quality",
+        "line_start": 97,
+        "line_end": 104
+      },
+      "canonical_branch_signature": "Name(id='low', ctx=Load())",
+      "axis": "confidence",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "backtest.sample_size"
+      ],
+      "branch_kind": "if"
+    },
+    {
+      "rule_id": "classify_asset.sample_quality_medium",
+      "function": "rate_sample_quality",
+      "source_code_locator": {
+        "path": "advisor/risk.py",
+        "function": "rate_sample_quality",
+        "line_start": 110,
+        "line_end": 117
+      },
+      "canonical_branch_signature": "Name(id='medium', ctx=Load())",
+      "axis": "confidence",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "backtest.sample_size"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.sample_quality_setup_quality",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 428,
+        "line_end": 437
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Name(id='backtest_stats', ctx=Load()), Attribute(value=Name(id='backtest_stats', ctx=Load()), attr='setup_quality', ctx=Load())])",
+      "axis": "confidence",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "backtest.sample_quality"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.sector_cloud",
+     "function": "_sector_benchmark",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_sector_benchmark",
+        "line_start": 2526,
+        "line_end": 2532
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='theme', ctx=Load()), ops=[Eq()], comparators=[Constant(value='cloud_ecommerce')])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "asset.theme"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.sector_healthcare",
+     "function": "_sector_benchmark",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_sector_benchmark",
+        "line_start": 2543,
+        "line_end": 2549
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='theme', ctx=Load()), ops=[Eq()], comparators=[Constant(value='healthcare')])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "asset.theme"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.sector_semiconductors",
+     "function": "_sector_benchmark",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_sector_benchmark",
+        "line_start": 2492,
+        "line_end": 2498
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='theme', ctx=Load()), ops=[Eq()], comparators=[Constant(value='semiconductors')])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "asset.theme"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.sector_software",
+     "function": "_sector_benchmark",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_sector_benchmark",
+        "line_start": 2509,
+        "line_end": 2515
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='theme', ctx=Load()), ops=[In()], comparators=[Set(elts=[Constant(value='software'), Constant(value='software_ai')])])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "asset.theme"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.severity_blocking",
+     "function": "_missing_data_severity",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_missing_data_severity",
+        "line_start": 1525,
+        "line_end": 1531
+     },
+      "canonical_branch_signature": "Call(func=Name(id='_has_blocking_data_gap', ctx=Load()), args=[Name(id='limitations', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='context', ctx=Load()))])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.severity_high",
+     "function": "_missing_data_severity",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_missing_data_severity",
+        "line_start": 1543,
+        "line_end": 1549
+     },
+      "canonical_branch_signature": "Call(func=Name(id='any', ctx=Load()), args=[GeneratorExp(elt=BoolOp(op=Or(), values=[Compare(left=Name(id='limitation', ctx=Load()), ops=[Eq()], comparators=[Constant(value='earnings_data_missing')]), Call(func=Attribute(value=Name(id='limitation', ctx=Load()), attr='endswith', ctx=Load()), args=[Constant(value='_unavailable')], keywords=[])]), generators=[comprehension(target=Name(id='limitation', ctx=Store()), iter=Name(id='limitations', ctx=Load()), ifs=[], is_async=0)])], keywords=[])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.severity_medium",
+     "function": "_missing_data_severity",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_missing_data_severity",
+        "line_start": 1561,
+        "line_end": 1567
+     },
+      "canonical_branch_signature": "Call(func=Name(id='_has_confidence_limiting_data_gap', ctx=Load()), args=[Name(id='limitations', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='context', ctx=Load()))])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "data_quality.limitation"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.short_setup_threshold",
+     "function": "_short_setup_score",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_short_setup_score",
+        "line_start": 2570,
+        "line_end": 2576
+     },
+      "canonical_branch_signature": "Compare(left=Attribute(value=Name(id='scored', ctx=Load()), attr='swing_trade_score', ctx=Load()), ops=[LtE()], comparators=[Constant(value=35)])",
+      "axis": "risk",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.short_status_field",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 1028,
+        "line_end": 1033
+     },
+      "canonical_branch_signature": "Compare(left=Call(func=Name(id='_short_setup_score', ctx=Load()), args=[Name(id='scored', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='observation_context', ctx=Load()))]), ops=[GtE()], comparators=[Constant(value=70)])",
+      "axis": "risk",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.stale_annotation",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 480,
+        "line_end": 485
+     },
+      "canonical_branch_signature": "Subscript(value=Name(id='freshness', ctx=Load()), slice=Constant(value='is_stale'), ctx=Load())",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "technical.price_stale"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.stale_cap",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 641,
+        "line_end": 646
+     },
+      "canonical_branch_signature": "Compare(left=Constant(value='stale_price_data'), ops=[In()], comparators=[Name(id='limitations', ctx=Load())])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "technical.price_stale"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.stale_reason_field",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 985,
+        "line_end": 990
+     },
+      "canonical_branch_signature": "Call(func=Name(id='bool', ctx=Load()), args=[Subscript(value=Name(id='freshness', ctx=Load()), slice=Constant(value='stale_reason'), ctx=Load())], keywords=[])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "technical.price_stale"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.technical_ev_presence",
+     "function": "_is_technical_unvalidated",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_is_technical_unvalidated",
+        "line_start": 1851,
+        "line_end": 1860
+     },
+      "canonical_branch_signature": "IfExp(test=Name(id='backtest_stats', ctx=Load()), body=Attribute(value=Name(id='backtest_stats', ctx=Load()), attr='expected_value_r', ctx=Load()), orelse=Constant(value=None))",
+      "axis": "decision",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "backtest.expected_value_r"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.technical_unvalidated_cap",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 862,
+        "line_end": 872
+     },
+      "canonical_branch_signature": "Call(func=Name(id='_is_technical_unvalidated', ctx=Load()), args=[Name(id='scored', ctx=Load()), Name(id='limitations', ctx=Load()), Name(id='backtest_stats', ctx=Load()), Name(id='data_quality', ctx=Load()), Name(id='missing_severity', ctx=Load()), Name(id='sample_quality', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='observation_context', ctx=Load()))])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "decision.base_score_inputs",
+        "data_quality.limitation",
+        "data_quality.missing_severity",
+        "backtest.expected_value_r",
+        "backtest.sample_quality"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.thesis_fundamental_gap",
+     "function": "_thesis_status",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_thesis_status",
+        "line_start": 2409,
+        "line_end": 2415
+     },
+      "canonical_branch_signature": "Call(func=Name(id='_has_fundamental_validation_gap', ctx=Load()), args=[Name(id='limitations', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='context', ctx=Load()))])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.thesis_stable",
+     "function": "_thesis_status",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_thesis_status",
+        "line_start": 2465,
+        "line_end": 2471
+     },
+      "canonical_branch_signature": "Compare(left=Attribute(value=Name(id='scored', ctx=Load()), attr='investment_quality_score', ctx=Load()), ops=[GtE()], comparators=[Constant(value=55)])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.thesis_strengthening",
+     "function": "_thesis_status",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_thesis_status",
+        "line_start": 2426,
+        "line_end": 2435
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Compare(left=Attribute(value=Name(id='scored', ctx=Load()), attr='investment_quality_score', ctx=Load()), ops=[GtE()], comparators=[Constant(value=70)]), Compare(left=Attribute(value=Name(id='scored', ctx=Load()), attr='swing_trade_score', ctx=Load()), ops=[GtE()], comparators=[Constant(value=70)])])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.thesis_weakening",
+     "function": "_thesis_status",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_thesis_status",
+        "line_start": 2446,
+        "line_end": 2454
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Name(id='backtest_stats', ctx=Load()), Compare(left=Attribute(value=Name(id='backtest_stats', ctx=Load()), attr='expected_value_r', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Attribute(value=Name(id='backtest_stats', ctx=Load()), attr='expected_value_r', ctx=Load()), ops=[Lt()], comparators=[Constant(value=0)])])",
+      "axis": "other",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.uncollected_news_limit",
+     "function": "_apply_uncollected_context_limits",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_apply_uncollected_context_limits",
+        "line_start": 1602,
+        "line_end": 1607
+     },
+      "canonical_branch_signature": "UnaryOp(op=Not(), operand=Attribute(value=Attribute(value=Name(id='scored', ctx=Load()), attr='snapshot', ctx=Load()), attr='news_events', ctx=Load()))",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "provider.news.status"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.uncollected_sector_limit",
+     "function": "_apply_uncollected_context_limits",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_apply_uncollected_context_limits",
+        "line_start": 1623,
+        "line_end": 1631
+     },
+      "canonical_branch_signature": "Call(func=Name(id='bool', ctx=Load()), args=[BoolOp(op=And(), values=[Call(func=Name(id='_sector_benchmark', ctx=Load()), args=[Attribute(value=Attribute(value=Name(id='scored', ctx=Load()), attr='snapshot', ctx=Load()), attr='theme', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='context', ctx=Load()))]), Compare(left=Attribute(value=Attribute(value=Name(id='scored', ctx=Load()), attr='snapshot', ctx=Load()), attr='asset_type', ctx=Load()), ops=[Eq()], comparators=[Constant(value='stock')])])], keywords=[])",
+      "axis": "quality",
+      "effect_type": "annotation",
+      "evidence_keys": [
+        "asset.theme",
+        "asset.type"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.weaker_cap_rank_choice",
+     "function": "_weaker_cap",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_weaker_cap",
+        "line_start": 1234,
+        "line_end": 1239
+     },
+      "canonical_branch_signature": "Compare(left=Call(func=Name(id='_decision_rank', ctx=Load()), args=[Name(id='current', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='context', ctx=Load()))]), ops=[GtE()], comparators=[Call(func=Name(id='_decision_rank', ctx=Load()), args=[Name(id='new_cap', ctx=Load())], keywords=[keyword(arg='observation_context', value=Name(id='context', ctx=Load()))])])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "ifexp"
+    },
+    {
+     "rule_id": "classify_asset.win_rate_below_35",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 678,
+        "line_end": 683
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='win_rate', ctx=Load()), ops=[Lt()], comparators=[Constant(value=0.35)])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "backtest.win_rate_2r",
+        "decision.base_score_inputs"
+      ],
+      "branch_kind": "if"
+    },
+    {
+     "rule_id": "classify_asset.win_rate_below_40",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 725,
+        "line_end": 730
+     },
+      "canonical_branch_signature": "Compare(left=Name(id='win_rate', ctx=Load()), ops=[Lt()], comparators=[Constant(value=0.4)])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "backtest.win_rate_2r"
+      ],
+      "branch_kind": "elif"
+    },
+    {
+     "rule_id": "classify_asset.win_rate_below_45_nonpositive_ev",
+     "function": "classify_asset",
+     "source_code_locator": {
+       "path": "advisor/scoring.py",
+       "function": "_classify_asset_observed",
+        "line_start": 741,
+        "line_end": 746
+     },
+      "canonical_branch_signature": "BoolOp(op=And(), values=[Compare(left=Name(id='win_rate', ctx=Load()), ops=[Lt()], comparators=[Constant(value=0.45)]), Compare(left=Name(id='ev', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='ev', ctx=Load()), ops=[LtE()], comparators=[Constant(value=0)])])",
+      "axis": "decision",
+      "effect_type": "cap",
+      "evidence_keys": [
+        "backtest.win_rate_2r",
+        "backtest.expected_value_r"
+      ],
+      "branch_kind": "elif"
+    }
+  ]
+}

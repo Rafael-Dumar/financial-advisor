@@ -347,13 +347,41 @@ class Phase3A2ForensicsTests(unittest.TestCase):
             self.assertEqual(asset["counterfactuals"][0]["reason"], "exact_classify_asset_inputs_not_recoverable")
 
     def test_rule_catalog_points_to_real_branches(self):
-        from scripts.phase3a2_forensics import rule_catalog
-        catalog = rule_catalog(ROOT / "advisor/scoring.py")
-        self.assertTrue(catalog)
-        source = (ROOT / "advisor/scoring.py").read_text(encoding="utf-8")
-        for rule in catalog:
-            self.assertIn(rule["source_code_locator"]["branch_signature"].split("(")[0], source)
-        self.assertFalse(any("technical_unvalidated_predicate:backtest_component" in r["rule_id"] for r in catalog))
+        from advisor.runtime_scoring_observability import RULE_CATALOG, _source_rule_records, validate_rule_catalog
+
+        self.assertEqual(len(RULE_CATALOG), 97)
+        self.assertEqual(len({rule.rule_id for rule in RULE_CATALOG}), 97)
+        snapshot_path = ROOT / "tests/fixtures/runtime_scoring_rule_catalog_expected.json"
+        snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        report = validate_rule_catalog(ROOT, expected_snapshot=snapshot_path)
+        self.assertEqual(report, {
+            "missing_ids": [],
+            "extra_ids": [],
+            "metadata_mismatches": [],
+            "invalid_locators": [],
+            "signature_mismatches": [],
+            "ownership_mismatches": [],
+        })
+        source_records = _source_rule_records(ROOT)
+        expected_records = {entry["rule_id"]: entry for entry in snapshot["rules"]}
+        for rule in RULE_CATALOG:
+            expected = expected_records[rule.rule_id]
+            source = source_records[rule.rule_id]
+            self.assertEqual(rule.function, expected["function"])
+            self.assertEqual(rule.source_code_locator, expected["source_code_locator"])
+            self.assertEqual(rule.source_code_locator, {
+                "path": source["path"],
+                "function": source["function"],
+                "line_start": source["line_start"],
+                "line_end": source["line_end"],
+            })
+            self.assertEqual(rule.branch_signature, expected["canonical_branch_signature"])
+            self.assertEqual(rule.branch_signature, source["canonical_branch_signature"])
+            self.assertEqual(rule.branch_kind, expected["branch_kind"])
+            self.assertEqual(rule.axis, expected["axis"])
+            self.assertEqual(rule.effect_type, expected["effect_type"])
+            self.assertEqual(list(rule.evidence_keys), expected["evidence_keys"])
+        self.assertFalse(any("technical_unvalidated_predicate:backtest_component" in r.rule_id for r in RULE_CATALOG))
 
     def test_occurrence_mutations_change_source_derived_count(self):
         from scripts.phase3a2_forensics import occurrence_ids_from_source
