@@ -1655,6 +1655,18 @@ def _schema_float_tag(
         raise ArtifactValidationError(f"{name} contains a non-finite float")
 
 
+def _schema_nonnegative_integral_or_float_tag(value: object, name: str) -> None:
+    if isinstance(value, int) and not isinstance(value, bool):
+        if value < 0:
+            raise ArtifactValidationError(f"{name} must be >= 0")
+        return
+
+    _schema_float_tag(value, name)
+    encoded = value["__float__"]  # type: ignore[index]
+    if float.fromhex(encoded) < 0:  # type: ignore[arg-type]
+        raise ArtifactValidationError(f"{name} must be >= 0")
+
+
 def _schema_float_map(value: object, name: str) -> None:
     mapping = _schema_object(value, name)
     for key, item in mapping.items():
@@ -2187,10 +2199,12 @@ def _validate_decision_payload(value: object, *, name: str) -> None:
         "per_unit_risk",
         "risk_amount",
         "risk_fraction",
-        "max_position_units",
         "max_position_value",
     ):
         _schema_float_tag(risk_plan[key], f"{name}.risk_plan.{key}")
+    _schema_nonnegative_integral_or_float_tag(
+        risk_plan["max_position_units"], f"{name}.risk_plan.max_position_units"
+    )
     _schema_text(risk_plan["risk_reward_2r"], f"{name}.risk_plan.risk_reward_2r")
     _schema_string_list(risk_plan["alerts"], f"{name}.risk_plan.alerts")
     _schema_text(risk_plan["position_size_display"], f"{name}.risk_plan.position_size_display")

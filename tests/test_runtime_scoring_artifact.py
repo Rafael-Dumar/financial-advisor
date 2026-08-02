@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from advisor.models import AssetDecision, RiskPlan
+from advisor.risk import calculate_trade_plan
 from advisor.runtime_scoring_observability import (
     RULE_CATALOG,
     InvocationTrace,
@@ -19,6 +20,7 @@ from advisor.runtime_scoring_observability import (
     RuntimeEvent,
     RuntimeTrace,
     asset_decision_sha256,
+    canonical_asset_decision_bytes,
 )
 from advisor.runtime_scoring_artifact import (
     ArtifactAssetInput,
@@ -286,6 +288,31 @@ def _asset(symbol: str, **kwargs: object) -> ArtifactAssetInput:
     )
 
 
+def _real_risk_plan(*, allow_fractional: bool) -> RiskPlan:
+    return calculate_trade_plan(
+        entry=100.25,
+        stop=95.25,
+        account_capital=50_000,
+        risk_fraction=0.005,
+        atr_value=2.0,
+        average_volume=1_000_000,
+        allow_fractional=allow_fractional,
+    )
+
+
+def _real_risk_asset(symbol: str, *, asset_type: str, allow_fractional: bool) -> ArtifactAssetInput:
+    trace = _trace(symbol)
+    decision = replace(
+        _decision(symbol, asset_type=asset_type),
+        risk_plan=_real_risk_plan(allow_fractional=allow_fractional),
+    )
+    return ArtifactAssetInput(
+        decision=decision,
+        trace=trace,
+        runtime_metadata=trace.runtime_metadata,
+    )
+
+
 def _read_json(path: Path) -> dict[str, object]:
     with gzip.open(path, "rb") as source:
         return json.loads(source.read())
@@ -516,6 +543,116 @@ class RuntimeScoringArtifactDeterminismTests(unittest.TestCase):
             self.assertEqual(first_bytes, second.output_paths[0].read_bytes())
             self.assertEqual(int.from_bytes(first_bytes[4:8], "little"), 0)
             self.assertEqual(first_bytes[3] & 0x08, 0)
+
+
+class RuntimeScoringArtifactIntegralUnitCompatibilityTests(unittest.TestCase):
+    def test_real_stock_integer_max_position_units_is_accepted(self) -> None:
+        asset = _real_risk_asset("STOCK", asset_type="stock", allow_fractional=False)
+        self.assertIs(type(asset.decision.risk_plan.max_position_units), int)
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = write_runtime_scoring_artifact(
+                Path(directory), run_metadata=RUN_METADATA, rule_catalog=RULE_CATALOG, assets=[asset]
+            )
+            validated = validate_runtime_scoring_artifact(result.output_paths[0])
+            payload = _read_json(result.output_paths[0])
+
+        self.assertEqual(validated.symbols, ("STOCK",))
+        encoded_units = payload["assets"][0]["serialized_asset_decision"]["risk_plan"][
+            "max_position_units"
+        ]
+        self.assertIs(type(encoded_units), int)
+        self.assertEqual(encoded_units, asset.decision.risk_plan.max_position_units)
+
+    def test_real_crypto_float_max_position_units_remains_valid(self) -> None:
+        asset = _real_risk_asset("BTCUSD", asset_type="crypto", allow_fractional=True)
+        self.assertIs(type(asset.decision.risk_plan.max_position_units), float)
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = write_runtime_scoring_artifact(
+                Path(directory), run_metadata=RUN_METADATA, rule_catalog=RULE_CATALOG, assets=[asset]
+            )
+            validated = validate_runtime_scoring_artifact(result.output_paths[0])
+            payload = _read_json(result.output_paths[0])
+
+        self.assertEqual(validated.symbols, ("BTCUSD",))
+        encoded_units = payload["assets"][0]["serialized_asset_decision"]["risk_plan"][
+            "max_position_units"
+        ]
+        self.assertEqual(
+            encoded_units,
+            {"__float__": asset.decision.risk_plan.max_position_units.hex()},
+        )
+
+    def test_real_decisions_preserve_lossless_bytes_and_hashes(self) -> None:
+        for asset in (
+            _real_risk_asset("STOCK", asset_type="stock", allow_fractional=False),
+            _real_risk_asset("BTCUSD", asset_type="crypto", allow_fractional=True),
+        ):
+            with self.subTest(symbol=asset.decision.symbol):
+                before_bytes = canonical_asset_decision_bytes(asset.decision)
+                before_hash = asset_decision_sha256(asset.decision)
+
+                with tempfile.TemporaryDirectory() as directory:
+                    result = write_runtime_scoring_artifact(
+                        Path(directory), run_metadata=RUN_METADATA, rule_catalog=RULE_CATALOG,
+                        assets=[asset]
+                    )
+                    validate_runtime_scoring_artifact(result.output_paths[0])
+                    payload = _read_json(result.output_paths[0])
+
+                serialized_decision = payload["assets"][0]["serialized_asset_decision"]
+                self.assertEqual(
+                    canonical_json_bytes(serialized_decision).removesuffix(b"\n"),
+                    before_bytes,
+                )
+                self.assertEqual(
+                    payload["assets"][0]["serialized_asset_decision_hash"],
+                    before_hash,
+                )
+                self.assertEqual(canonical_asset_decision_bytes(asset.decision), before_bytes)
+                self.assertEqual(asset_decision_sha256(asset.decision), before_hash)
+
+    def test_max_position_units_rejects_invalid_integer_and_float_forms(self) -> None:
+        invalid_values = (
+            ("true", True),
+            ("false", False),
+            ("negative_integer", -1),
+            ("negative_float", {"__float__": (-1.0).hex()}),
+            ("string", "10"),
+            ("invalid_float_tag", {"__float__": "not-a-float"}),
+            ("null", None),
+        )
+        for label, invalid_value in invalid_values:
+            with self.subTest(value=label), tempfile.TemporaryDirectory() as directory:
+                result = write_runtime_scoring_artifact(
+                    Path(directory), run_metadata=RUN_METADATA, rule_catalog=RULE_CATALOG,
+                    assets=[_asset("AAA")]
+                )
+                payload = _read_json(result.output_paths[0])
+                payload["assets"][0]["serialized_asset_decision"]["risk_plan"][
+                    "max_position_units"
+                ] = invalid_value
+                _recompute_decision_trace_and_payload_hashes(payload)
+                _write_canonical_gzip(result.output_paths[0], payload)
+
+                with self.assertRaises(ArtifactValidationError):
+                    validate_runtime_scoring_artifact(result.output_paths[0])
+
+    def test_other_risk_plan_fields_still_require_float_tags(self) -> None:
+        for field in ("entry", "stop", "risk_amount"):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                result = write_runtime_scoring_artifact(
+                    Path(directory), run_metadata=RUN_METADATA, rule_catalog=RULE_CATALOG,
+                    assets=[_asset("AAA")]
+                )
+                payload = _read_json(result.output_paths[0])
+                payload["assets"][0]["serialized_asset_decision"]["risk_plan"][field] = 10
+                _recompute_decision_trace_and_payload_hashes(payload)
+                _write_canonical_gzip(result.output_paths[0], payload)
+
+                with self.assertRaises(ArtifactValidationError):
+                    validate_runtime_scoring_artifact(result.output_paths[0])
 
 
 class RuntimeScoringArtifactStatusAndBudgetTests(unittest.TestCase):
