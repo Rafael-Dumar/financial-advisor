@@ -7,6 +7,9 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
+import time
 
 from advisor.backtest import backtest_similar_setups, summarize_backtest_setups
 from advisor.audit import run_data_audit
@@ -17,8 +20,10 @@ from advisor.live_loader import LiveDataLoader
 from advisor.models import AssetDecision, AssetSnapshot, BacktestStats, Candle, RiskPlan
 from advisor.report import render_analyst_review_input, render_blocked_report, render_html_report, render_markdown_report
 from advisor.risk import detect_return_correlation, detect_theme_concentration, rate_sample_quality
+from advisor.runtime_scoring_artifact import ArtifactAssetInput, validate_runtime_scoring_artifact, write_runtime_scoring_artifact
+from advisor.runtime_scoring_observability import RULE_CATALOG, RuntimeTrace
 from advisor.scan_engine import derive_market_regimes, derive_relative_strength
-from advisor.scoring import classify_asset, score_asset
+from advisor.scoring import classify_asset, classify_asset_with_trace, score_asset
 from advisor.telegram_notify import notify_from_report
 
 
@@ -36,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     scan_parser.add_argument("--db", default=None)
     scan_parser.add_argument("--include-discovery", action="store_true")
     scan_parser.add_argument("--require-live", action="store_true")
+    scan_parser.add_argument("--runtime-scoring-artifact", action="store_true")
 
     backtest_parser = subparsers.add_parser("backtest")
     backtest_parser.add_argument("--fixture-dir", type=Path)
@@ -51,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--include-discovery", action="store_true")
     report_parser.add_argument("--require-live", action="store_true")
     report_parser.add_argument("--from-main", action="store_true")
+    report_parser.add_argument("--runtime-scoring-artifact", action="store_true")
 
     notify_parser = subparsers.add_parser("notify-telegram")
     notify_parser.add_argument("--report", type=Path, default=Path("reports/latest.md"))
@@ -173,6 +180,8 @@ def _scan(args: argparse.Namespace) -> int:
     stock_regime = payload.get("stock_regime", regimes.stock.label)
     crypto_regime = payload.get("crypto_regime", regimes.crypto.label)
     decisions = []
+    runtime_artifact_enabled = bool(getattr(args, "runtime_scoring_artifact", False))
+    runtime_trace_records: list[tuple[int, RuntimeTrace, dict[str, object]]] = []
     for snapshot in snapshots:
         if len(snapshot.candles) < MIN_PRICE_HISTORY_FOR_SCORING:
             decisions.append(_unscorable_decision(snapshot, "insufficient_price_history"))
@@ -195,9 +204,35 @@ def _scan(args: argparse.Namespace) -> int:
             ),
         )
         stats = _stats_for_snapshot(payload, snapshot)
-        decisions.append(classify_asset(scored, stats))
+        if runtime_artifact_enabled:
+            trace_started_at = datetime.now(timezone.utc)
+            monotonic_started = time.perf_counter()
+            decision, trace = classify_asset_with_trace(scored, stats)
+            trace_completed_at = datetime.now(timezone.utc)
+            runtime_trace_records.append(
+                (
+                    len(decisions),
+                    trace,
+                    {
+                        "trace_started_at": trace_started_at,
+                        "trace_completed_at": trace_completed_at,
+                        "duration": max(0.0, time.perf_counter() - monotonic_started),
+                        "classification_status": "completed",
+                    },
+                )
+            )
+            decisions.append(decision)
+        else:
+            decisions.append(classify_asset(scored, stats))
 
     decisions = _assign_universe_origins(decisions, config)
+    if runtime_artifact_enabled:
+        _write_runtime_scoring_artifact(
+            output_dir=args.output_dir,
+            report_type=getattr(args, "report_type", None),
+            decisions=decisions,
+            trace_records=runtime_trace_records,
+        )
 
     candidate_symbols = {
         decision.symbol
@@ -268,6 +303,194 @@ def _scan(args: argparse.Namespace) -> int:
     )
     print(f"Report written to {args.output_dir / 'advisor-report.md'}")
     return 0
+
+
+_SOURCE_SHA_PATTERN = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
+
+
+def _valid_source_sha(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    if _SOURCE_SHA_PATTERN.fullmatch(value) is None:
+        return None
+    return value
+
+
+def _source_sha_from_git_stdout(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    if value.endswith("\r\n"):
+        value = value[:-2]
+    elif value.endswith("\n"):
+        value = value[:-1]
+    return _valid_source_sha(value)
+
+
+def _resolve_source_sha() -> str | None:
+    github_sha = _valid_source_sha(os.getenv("GITHUB_SHA"))
+    if github_sha is not None:
+        return github_sha
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return _source_sha_from_git_stdout(result.stdout)
+
+
+def _runtime_artifact_warning(error_code: str) -> None:
+    print(f"runtime_scoring_artifact_status=failed error_code={error_code}")
+
+
+def _cleanup_runtime_directory(path: Path) -> None:
+    try:
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        pass
+
+
+def _new_runtime_transaction_path(parent: Path, prefix: str) -> Path:
+    for attempt in range(100):
+        candidate = parent / f"{prefix}-{os.getpid()}-{time.time_ns()}-{attempt}"
+        if not candidate.exists():
+            return candidate
+    raise OSError("unable to allocate runtime transaction path")
+
+
+def _create_runtime_staging_directory(output_dir: Path) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for _attempt in range(100):
+        candidate = _new_runtime_transaction_path(output_dir, ".runtime-staging")
+        try:
+            candidate.mkdir()
+        except FileExistsError:
+            continue
+        return candidate
+    raise OSError("unable to create runtime staging directory")
+
+
+def _rename_runtime_directory(source: Path, destination: Path) -> None:
+    source.replace(destination)
+
+
+def _publish_runtime_staging(staging_dir: Path, runtime_dir: Path) -> None:
+    backup_dir: Path | None = None
+    if runtime_dir.exists():
+        backup_dir = _new_runtime_transaction_path(runtime_dir.parent, ".runtime-backup")
+        _rename_runtime_directory(runtime_dir, backup_dir)
+    try:
+        _rename_runtime_directory(staging_dir, runtime_dir)
+    except Exception:
+        _cleanup_runtime_directory(runtime_dir)
+        if backup_dir is not None and backup_dir.exists():
+            try:
+                _rename_runtime_directory(backup_dir, runtime_dir)
+            except Exception:
+                pass
+        raise
+    if backup_dir is not None:
+        _cleanup_runtime_directory(backup_dir)
+
+
+def _write_runtime_scoring_artifact(
+    *,
+    output_dir: Path,
+    report_type: str | None,
+    decisions: list[AssetDecision],
+    trace_records: list[tuple[int, RuntimeTrace, dict[str, object]]],
+) -> None:
+    try:
+        source_sha = _resolve_source_sha()
+    except Exception:
+        source_sha = None
+    if source_sha is None:
+        _runtime_artifact_warning("source_sha_unavailable")
+        return
+
+    schedule = report_type if report_type in {"main", "close"} else "main"
+    report_date = datetime.now(timezone(timedelta(hours=-3))).strftime("%Y-%m-%d")
+    run_metadata = {
+        "run_id": f"{report_date}-{schedule}-{source_sha[:12]}",
+        "report_date": report_date,
+        "schedule": schedule,
+        "source_sha": source_sha,
+        "runtime_sha": None,
+        "runtime_sha_status": "unavailable",
+        "timezone": "America/Sao_Paulo",
+        "asset_count": len(trace_records),
+    }
+    try:
+        assets = [
+            ArtifactAssetInput(
+                decision=decisions[position],
+                trace=trace,
+                runtime_metadata=runtime_metadata,
+            )
+            for position, trace, runtime_metadata in trace_records
+        ]
+    except Exception:
+        _runtime_artifact_warning("serialization_error")
+        return
+
+    try:
+        staging_dir = _create_runtime_staging_directory(output_dir)
+    except Exception:
+        _runtime_artifact_warning("staging_error")
+        return
+
+    write_result = None
+    try:
+        write_result = write_runtime_scoring_artifact(
+            staging_dir,
+            run_metadata=run_metadata,
+            rule_catalog=RULE_CATALOG,
+            assets=assets,
+        )
+    except (TypeError, ValueError):
+        _cleanup_runtime_directory(staging_dir)
+        _runtime_artifact_warning("serialization_error")
+        return
+    except OSError:
+        _cleanup_runtime_directory(staging_dir)
+        _runtime_artifact_warning("write_error")
+        return
+    except Exception:
+        _cleanup_runtime_directory(staging_dir)
+        _runtime_artifact_warning("writer_error")
+        return
+
+    try:
+        validation = validate_runtime_scoring_artifact(write_result.output_paths[0])
+        artifact_status = validation.artifact_status
+        artifact_mode = validation.mode
+    except Exception:
+        _cleanup_runtime_directory(staging_dir)
+        _runtime_artifact_warning("validator_error")
+        return
+
+    try:
+        _publish_runtime_staging(staging_dir, output_dir / "runtime")
+    except Exception:
+        _cleanup_runtime_directory(staging_dir)
+        _runtime_artifact_warning("publish_error")
+        return
+
+    print(f"runtime_scoring_artifact_status={artifact_status}")
+    print(f"runtime_scoring_artifact_mode={artifact_mode}")
+    print(f"runtime_scoring_artifact_assets={len(assets)}")
+    print(f"runtime_scoring_artifact_untraced_decisions={len(decisions) - len(assets)}")
 
 
 def _backtest(args: argparse.Namespace) -> int:
@@ -359,6 +582,9 @@ def _collect_crypto_flow(args: argparse.Namespace, default_db: str | None = None
 
 
 def _report(args: argparse.Namespace, default_db: str | None = None) -> int:
+    if getattr(args, "runtime_scoring_artifact", False) and args.report_type not in {"main", "close"}:
+        print("runtime_scoring_artifact_requires_main_or_close")
+        return 1
     if args.report_type in {"main", "close"}:
         return _run_report_job(args, default_db=default_db)
     db_path = Path(args.db or default_db or "data/advisor.db")
@@ -437,6 +663,7 @@ def _run_report_job(args: argparse.Namespace, default_db: str | None = None) -> 
         skip_live_validation=True,
         close_universe_source=close_universe_source,
         cache_reused_from_main=cache_reused_from_main,
+        runtime_scoring_artifact=getattr(args, "runtime_scoring_artifact", False),
     )
     scan_code = _scan(scan_args)
     if scan_code != 0 and args.require_live:
