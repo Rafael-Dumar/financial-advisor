@@ -137,6 +137,15 @@ Manual run:
 3. Select `report_type` as `main` or `close`.
 4. After completion, download the uploaded artifact named `financial-advisor-...`.
 
+Runtime scoring artifact:
+
+- Os reports `main` e `close` agora executam com `--runtime-scoring-artifact`.
+- Quando produzido, o runtime trace fica dentro do mesmo artifact GitHub dos reports, enviado a partir de `reports/`.
+- O CLI pode publicar o runtime em formato `single`, `chunked` ou `failed`, conforme o resultado da coleta e da publicação controlada.
+- Se o runtime estiver ausente porque o CLI entrou em `fail-open` ou porque o scan não começou, o report normal ou bloqueado continua em `reports/` e o upload geral não é bloqueado.
+- Nesta fase, o runtime não é consumido pelo nightly, pelo Final Review ou pelo Telegram; ele fica preservado para consumo futuro.
+- O trace é evidência de auditoria, não autorização de trade. Nenhuma ordem de broker é executada.
+
 Nightly final review:
 
 - Workflow name: `Financial Advisor Nightly Review`.

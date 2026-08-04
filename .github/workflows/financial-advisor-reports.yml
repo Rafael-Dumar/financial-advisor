@@ -85,9 +85,9 @@ jobs:
         shell: bash
         run: |
           if [ "$REPORT_TYPE" = "main" ]; then
-            python -m advisor report main --include-discovery --require-live --output-dir reports
+            python -m advisor report main --include-discovery --require-live --runtime-scoring-artifact --output-dir reports
           else
-            python -m advisor report close --from-main --require-live --output-dir reports
+            python -m advisor report close --from-main --require-live --runtime-scoring-artifact --output-dir reports
           fi
 
       - name: Upload report artifact
