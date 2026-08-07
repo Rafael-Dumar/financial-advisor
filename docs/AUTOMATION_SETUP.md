@@ -143,8 +143,16 @@ Runtime scoring artifact:
 - Quando produzido, o runtime trace fica dentro do mesmo artifact GitHub dos reports, enviado a partir de `reports/`.
 - O CLI pode publicar o runtime em formato `single`, `chunked` ou `failed`, conforme o resultado da coleta e da publicação controlada.
 - Se o runtime estiver ausente porque o CLI entrou em `fail-open` ou porque o scan não começou, o report normal ou bloqueado continua em `reports/` e o upload geral não é bloqueado.
-- Nesta fase, o runtime não é consumido pelo nightly, pelo Final Review ou pelo Telegram; ele fica preservado para consumo futuro.
-- O trace é evidência de auditoria, não autorização de trade. Nenhuma ordem de broker é executada.
+- A FASE 3A.3.5 valida e preserva o runtime selecionado e produz o manifesto sanitizado
+  `reports\runtime\nightly-runtime-manifest.json`.
+- O `Final Review` lê somente `nightly-runtime-manifest.json` como entrada de auditoria.
+  Ele não abre o trace bruto, o índice, as parts, não descomprime gzip e não revalida o artifact.
+- `complete`, `partial`, `failed`, `missing`, `invalid` e `unavailable` são status de
+  observabilidade. `complete` não significa trade confiável e `failed` não significa trade ruim.
+- O runtime audit não altera a decisão, não autoriza trade, não rejeita ou ranqueia ativos e
+  não altera sizing. Ele não mede performance financeira nem aumenta expected return.
+- O `Telegram summary` não consome o runtime audit; ele continua mostrando somente a decisão
+  derivada dos reports. Sem broker e nenhuma ordem é executada.
 
 ## Runtime artifact intake
 
@@ -163,16 +171,18 @@ rede, não executa scoring e não altera o par selecionado.
 - Bundle ausente ou inválido fica registrado como `missing` ou `invalid`; uma
   falha inesperada fica como `unavailable`. Esses estados não bloqueiam o
   Final Review, o Telegram ou o exit code normal do nightly.
-- O manifesto e o trace são uma superfície paralela de auditoria. O nightly
-  review input, o Final Review, o Telegram e as decisões operacionais não
-  consomem esse conteúdo nesta fase.
+- O manifesto e o trace são uma superfície paralela de auditoria. O trace bruto
+  não é consumido pelo Final Review ou pelo Telegram; o Final Review consome
+  somente o manifesto e as decisões operacionais não consomem o trace.
 
 Nightly final review:
 
 - Workflow name: `Financial Advisor Nightly Review`.
 - Schedule: weekdays at 18:30 BRT (`30 21 * * 1-5` UTC), after the close report.
 - It roda no GitHub Actions without Codex or this PC staying open.
-- It uses GitHub CLI with the workflow `GH_TOKEN` to download the latest same-day main/close artifacts, writes `reports\analyst-final-review.md`, sends only the `## Telegram summary` section when Telegram secrets are configured, and uploads the final reports artifact.
+- It uses GitHub CLI with the workflow `GH_TOKEN` to download the latest same-day main/close artifacts, writes `reports\analyst-final-review.md`, passa explicitamente `--runtime-manifest-path reports/runtime/nightly-runtime-manifest.json`, envia somente a seção `## Telegram summary` quando os secrets do Telegram estão configurados e faz upload do artifact final dos reports.
+- A ausência ou degradação do manifesto é fail-open para a geração do Final Review: o diagnóstico
+  de observabilidade pode mudar, mas a autoridade financeira permanece nos reports main/close.
 - Public Equity Investing is not executed automatically in GitHub Actions; the generated review records `Public Equity Investing executed: false` and stays based on `nightly-review-input` plus safety rules.
 
 If `advisor config validate --require-live` fails, the workflow still runs `advisor report ... --require-live`; the CLI writes a blocked/no-trade report under `reports/` so the artifact explains the failure. It does not connect to a broker, execute orders, or recommend automatic buying.

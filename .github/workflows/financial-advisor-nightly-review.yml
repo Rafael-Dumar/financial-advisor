@@ -109,6 +109,7 @@ jobs:
           python -m advisor.analyst_review
           --input-path reports/nightly-review-input.md
           --output-path reports/analyst-final-review.md
+          --runtime-manifest-path reports/runtime/nightly-runtime-manifest.json
 
       - name: Send analyst final Telegram
         id: telegram

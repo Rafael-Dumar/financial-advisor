@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -25,6 +26,195 @@ CRYPTO_TICKER_PRIORITY = {"HYPE": 0, "BTC": 1, "ETH": 2, "SOL": 3}
 CONFIGURED_STOCKS = ("INTC", "AMD", "NVDA", "HIMS", "MU", "MSFT", "USAR", "CRDO", "DELL", "MRVL", "HOOD")
 CONFIGURED_CRYPTOS = ("SOL", "HYPE", "BTC", "ETH")
 CONFIGURED_TICKERS = (*CONFIGURED_STOCKS, *CONFIGURED_CRYPTOS)
+RUNTIME_MANIFEST_MAX_BYTES = 256 * 1024
+_RUNTIME_MANIFEST_SCHEMA_VERSION = "1.0"
+_RUNTIME_INTAKE_STATUSES = {"validated", "missing", "invalid", "unavailable"}
+_RUNTIME_ARTIFACT_STATUSES = {"complete", "partial", "failed"}
+
+
+@dataclass(frozen=True)
+class RuntimeAuditEntry:
+    trace_status: str
+    intake_status: str
+    artifact_status: str
+
+
+@dataclass(frozen=True)
+class RuntimeAuditSummary:
+    runtime_manifest_status: str
+    runtime_audit_status: str
+    main: RuntimeAuditEntry
+    close: RuntimeAuditEntry
+
+    @property
+    def main_trace_status(self) -> str:
+        return self.main.trace_status
+
+    @property
+    def close_trace_status(self) -> str:
+        return self.close.trace_status
+
+    @property
+    def main_intake_status(self) -> str:
+        return self.main.intake_status
+
+    @property
+    def close_intake_status(self) -> str:
+        return self.close.intake_status
+
+    @property
+    def main_artifact_status(self) -> str:
+        return self.main.artifact_status
+
+    @property
+    def close_artifact_status(self) -> str:
+        return self.close.artifact_status
+
+
+def _unavailable_runtime_audit_entry() -> RuntimeAuditEntry:
+    return RuntimeAuditEntry(
+        trace_status="unavailable",
+        intake_status="unavailable",
+        artifact_status="unavailable",
+    )
+
+
+def _runtime_audit_for_manifest_status(status: str) -> RuntimeAuditSummary:
+    entry = _unavailable_runtime_audit_entry()
+    return RuntimeAuditSummary(
+        runtime_manifest_status=status,
+        runtime_audit_status="unavailable",
+        main=entry,
+        close=entry,
+    )
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError
+        result[key] = value
+    return result
+
+
+def _reject_nonfinite_json(_: str) -> object:
+    raise ValueError
+
+
+def _validated_runtime_audit_entry(slot: str, raw_entry: object) -> RuntimeAuditEntry | None:
+    if not isinstance(raw_entry, dict):
+        return None
+    expected_schedule = raw_entry.get("expected_schedule")
+    intake_status = raw_entry.get("intake_status")
+    validation_status = raw_entry.get("validation_status")
+    artifact_status = raw_entry.get("artifact_status")
+    if not isinstance(expected_schedule, str) or expected_schedule != slot:
+        return None
+    if not isinstance(intake_status, str) or intake_status not in _RUNTIME_INTAKE_STATUSES:
+        return None
+    if not isinstance(validation_status, str):
+        return None
+    if intake_status == "validated":
+        if validation_status != "valid":
+            return None
+        if not isinstance(artifact_status, str) or artifact_status not in _RUNTIME_ARTIFACT_STATUSES:
+            return None
+        return RuntimeAuditEntry(
+            trace_status=artifact_status,
+            intake_status=intake_status,
+            artifact_status=artifact_status,
+        )
+    if artifact_status is not None:
+        return None
+    expected_validation_statuses = {
+        "missing": {"not_found"},
+        "invalid": {"rejected", "error"},
+        "unavailable": {"error"},
+    }
+    if validation_status not in expected_validation_statuses[intake_status]:
+        return None
+    return RuntimeAuditEntry(
+        trace_status=intake_status,
+        intake_status=intake_status,
+        artifact_status="unavailable",
+    )
+
+
+def load_runtime_audit(
+    manifest_path: Path | None,
+    *,
+    expected_source_report_sha: str,
+) -> RuntimeAuditSummary:
+    """Load only the sanitized runtime manifest and return audit-only state."""
+    if manifest_path is None:
+        return _runtime_audit_for_manifest_status("unavailable")
+    try:
+        with manifest_path.open("rb") as source:
+            raw_bytes = source.read(RUNTIME_MANIFEST_MAX_BYTES + 1)
+    except FileNotFoundError:
+        return _runtime_audit_for_manifest_status("missing")
+    except OSError:
+        return _runtime_audit_for_manifest_status("unavailable")
+    if len(raw_bytes) > RUNTIME_MANIFEST_MAX_BYTES:
+        return _runtime_audit_for_manifest_status("invalid")
+    try:
+        raw_text = raw_bytes.decode("utf-8")
+        payload = json.loads(
+            raw_text,
+            object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_nonfinite_json,
+        )
+    except (UnicodeDecodeError, ValueError, TypeError, RecursionError):
+        return _runtime_audit_for_manifest_status("invalid")
+    if not isinstance(payload, dict):
+        return _runtime_audit_for_manifest_status("invalid")
+    if payload.get("manifest_schema_version") != _RUNTIME_MANIFEST_SCHEMA_VERSION:
+        return _runtime_audit_for_manifest_status("invalid")
+    source_report_sha = payload.get("source_report_sha")
+    if (
+        not expected_source_report_sha
+        or not isinstance(source_report_sha, str)
+        or source_report_sha != expected_source_report_sha
+    ):
+        return _runtime_audit_for_manifest_status("invalid")
+    entries = payload.get("entries")
+    if not isinstance(entries, dict) or "main" not in entries or "close" not in entries:
+        return _runtime_audit_for_manifest_status("invalid")
+    main_entry = _validated_runtime_audit_entry("main", entries["main"])
+    close_entry = _validated_runtime_audit_entry("close", entries["close"])
+    if main_entry is None or close_entry is None:
+        return _runtime_audit_for_manifest_status("invalid")
+    audit_status = (
+        "complete"
+        if main_entry.trace_status == "complete" and close_entry.trace_status == "complete"
+        else "degraded"
+    )
+    return RuntimeAuditSummary(
+        runtime_manifest_status="loaded",
+        runtime_audit_status=audit_status,
+        main=main_entry,
+        close=close_entry,
+    )
+
+
+def _runtime_audit_lines(summary: RuntimeAuditSummary) -> list[str]:
+    return [
+        "## Runtime scoring audit",
+        "",
+        "- runtime_audit_role: `observability_only`",
+        "- runtime_audit_effect_on_decision: `none`",
+        f"- runtime_manifest_status: `{summary.runtime_manifest_status}`",
+        f"- runtime_audit_status: `{summary.runtime_audit_status}`",
+        f"- main_trace_status: `{summary.main.trace_status}`",
+        f"- close_trace_status: `{summary.close.trace_status}`",
+        f"- main_intake_status: `{summary.main.intake_status}`",
+        f"- close_intake_status: `{summary.close.intake_status}`",
+        f"- main_artifact_status: `{summary.main.artifact_status}`",
+        f"- close_artifact_status: `{summary.close.artifact_status}`",
+        "",
+        "Runtime audit is observability evidence only; it does not authorize, reject, rank or resize trades.",
+    ]
 
 
 @dataclass(frozen=True)
@@ -326,9 +516,14 @@ def generate_analyst_final_review(
     *,
     extra_markdowns: list[str] | None = None,
     public_equity_executed: bool = False,
+    runtime_manifest_path: Path | None = None,
 ) -> str:
     package = parse_review_package(nightly_markdown, extra_markdowns=extra_markdowns)
     context = package.main_context
+    runtime_audit = load_runtime_audit(
+        runtime_manifest_path,
+        expected_source_report_sha=context.head_sha,
+    )
     main_primary_blocked = main_blocks_operation(context)
     primary_assets = [asset for asset in package.main_assets if asset.universe_origin != "discovery"]
     discovery_assets = [asset for asset in package.main_assets if asset.universe_origin == "discovery"]
@@ -423,6 +618,7 @@ def generate_analyst_final_review(
         ]
     )
     lines.extend(["", *_legacy_compatibility_lines(package, nightly_markdown, final_decision)])
+    lines.extend(["", *_runtime_audit_lines(runtime_audit)])
     return "\n".join(lines).strip() + "\n"
 
 
@@ -1167,10 +1363,19 @@ def _field_any(block: str, *names: str) -> str:
     return ""
 
 
-def generate_from_file(input_path: Path, output_path: Path, history_path: Path | None = None) -> None:
+def generate_from_file(
+    input_path: Path,
+    output_path: Path,
+    history_path: Path | None = None,
+    runtime_manifest_path: Path | None = None,
+) -> None:
     nightly_markdown = input_path.read_text(encoding="utf-8")
     extra_markdowns = _load_raw_reports(nightly_markdown)
-    review = generate_analyst_final_review(nightly_markdown, extra_markdowns=extra_markdowns)
+    review = generate_analyst_final_review(
+        nightly_markdown,
+        extra_markdowns=extra_markdowns,
+        runtime_manifest_path=runtime_manifest_path,
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(review, encoding="utf-8")
     if history_path:
@@ -1671,15 +1876,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--input-path", default="reports/nightly-review-input.md")
     parser.add_argument("--output-path", default="reports/analyst-final-review.md")
     parser.add_argument("--history-path", default="")
+    parser.add_argument("--runtime-manifest-path", default="reports/runtime/nightly-runtime-manifest.json")
     args = parser.parse_args(argv)
 
     input_path = Path(args.input_path)
     output_path = Path(args.output_path)
     history_path = Path(args.history_path) if args.history_path else _default_brt_history_path()
+    runtime_manifest_path = Path(args.runtime_manifest_path) if args.runtime_manifest_path else None
     if not input_path.exists():
         print(f"nightly_review_input_missing:{input_path}")
         return 1
-    generate_from_file(input_path=input_path, output_path=output_path, history_path=history_path)
+    generate_from_file(
+        input_path=input_path,
+        output_path=output_path,
+        history_path=history_path,
+        runtime_manifest_path=runtime_manifest_path,
+    )
     print(f"analyst_final_review={output_path}")
     print(f"analyst_final_review_history={history_path}")
     return 0

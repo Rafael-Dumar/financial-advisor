@@ -26,6 +26,29 @@ def _extract_report_invocations(content: str) -> list[list[str]]:
     return invocations
 
 
+def _extract_analyst_review_invocations(content: str) -> list[list[str]]:
+    """Return shell tokens from folded executable analyst-review commands."""
+
+    invocations: list[list[str]] = []
+    lines = content.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith("python -m advisor.analyst_review"):
+            continue
+        tokens = shlex.split(stripped, comments=True, posix=True)
+        cursor = index + 1
+        while cursor < len(lines):
+            continuation = lines[cursor].strip()
+            if not continuation or continuation.startswith("- ") or continuation.startswith("run:"):
+                break
+            if not continuation.startswith("--"):
+                break
+            tokens.extend(shlex.split(continuation, comments=True, posix=True))
+            cursor += 1
+        invocations.append(tokens)
+    return invocations
+
+
 def _extract_named_step(content: str, name: str) -> str:
     marker = f"      - name: {name}\n"
     start = content.index(marker)
@@ -150,8 +173,20 @@ class GitHubActionsWorkflowTests(unittest.TestCase):
         workflow_path = PROJECT_ROOT / ".github" / "workflows" / "financial-advisor-nightly-review.yml"
         content = workflow_path.read_text(encoding="utf-8")
 
+        invocations = _extract_analyst_review_invocations(content)
+
+        self.assertEqual(len(invocations), 1)
+        invocation = invocations[0]
+        self.assertEqual(invocation[:3], ["python", "-m", "advisor.analyst_review"])
+        self.assertEqual(content.count("--runtime-manifest-path"), 1)
+        self.assertEqual(invocation.count("--runtime-manifest-path"), 1)
+        manifest_index = invocation.index("--runtime-manifest-path")
+        self.assertEqual(invocation[manifest_index + 1], "reports/runtime/nightly-runtime-manifest.json")
+        self.assertIn("--input-path", invocation)
+        self.assertIn("--output-path", invocation)
         self.assertNotIn("--runtime-scoring-artifact", content)
         self.assertNotIn("scoring-runtime-trace", content)
+        self.assertNotRegex(content, r"(?im)^\s*(?:if|elif|case|when).*runtime")
         self.assertNotIn("artifact_status", content)
 
     def test_automation_setup_documents_runtime_artifact_contract(self) -> None:
