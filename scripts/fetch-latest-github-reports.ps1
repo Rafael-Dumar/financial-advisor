@@ -166,6 +166,74 @@ function Find-AnalystInputFile {
     return $file.FullName
 }
 
+function Write-RuntimeIntakeFallbackManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OutputPath,
+        [Parameter(Mandatory = $true)]
+        [string]$SourceReportSha,
+        [Parameter(Mandatory = $true)]
+        [object]$MainRun,
+        [Parameter(Mandatory = $true)]
+        [object]$CloseRun
+    )
+
+    $unavailableMain = [ordered]@{
+        artifact_status = $null
+        asset_count = $null
+        error_code = 'runtime_intake_unavailable'
+        expected_report_date = [string]$MainRun.report_brt_date
+        expected_schedule = 'main'
+        expected_source_sha = [string]$MainRun.head_sha
+        files = @()
+        github_artifact_name = [string]$MainRun.artifact_name
+        github_run_id = [string]$MainRun.run_id
+        intake_status = 'unavailable'
+        logical_run_id = $null
+        mode = $null
+        report_date = $null
+        rule_catalog_hash = $null
+        schedule = $null
+        source_sha = $null
+        validation_status = 'error'
+    }
+    $unavailableClose = [ordered]@{
+        artifact_status = $null
+        asset_count = $null
+        error_code = 'runtime_intake_unavailable'
+        expected_report_date = [string]$CloseRun.report_brt_date
+        expected_schedule = 'close'
+        expected_source_sha = [string]$CloseRun.head_sha
+        files = @()
+        github_artifact_name = [string]$CloseRun.artifact_name
+        github_run_id = [string]$CloseRun.run_id
+        intake_status = 'unavailable'
+        logical_run_id = $null
+        mode = $null
+        report_date = $null
+        rule_catalog_hash = $null
+        schedule = $null
+        source_sha = $null
+        validation_status = 'error'
+    }
+    $fallbackManifest = [ordered]@{
+        entries = [ordered]@{
+            close = $unavailableClose
+            main = $unavailableMain
+        }
+        manifest_schema_version = '1.0'
+        source_report_sha = [string]$SourceReportSha
+    }
+    $fallbackJson = $fallbackManifest | ConvertTo-Json -Depth 8
+    $fallbackJson = $fallbackJson -replace "`r`n", "`n" -replace "`r", "`n"
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText(
+        $OutputPath,
+        ($fallbackJson + "`n"),
+        $utf8NoBom
+    )
+}
+
 function Get-ReportSummary {
     param(
         [string]$ReportPath,
@@ -396,6 +464,55 @@ $mainAnalyst = Find-AnalystInputFile -ArtifactRoot $mainRoot
 $closeAnalyst = Find-AnalystInputFile -ArtifactRoot $closeRoot
 if (-not $mainAnalyst -or -not $closeAnalyst) {
     throw 'artifact_content_mismatch:analyst_review_input_missing'
+}
+
+$runtimeOutputDir = Join-Path $ReportsDir 'runtime'
+$runtimeIntakeArgs = @(
+    '-m', 'advisor.runtime_scoring_intake',
+    '--output-dir', $runtimeOutputDir,
+    '--source-report-sha', [string]$mainRun.head_sha,
+    '--main-root', $mainRoot,
+    '--main-run-id', [string]$mainRun.run_id,
+    '--main-artifact-name', [string]$mainRun.artifact_name,
+    '--main-expected-source-sha', [string]$mainRun.head_sha,
+    '--main-expected-report-date', [string]$mainRun.report_brt_date,
+    '--main-expected-schedule', 'main',
+    '--close-root', $closeRoot,
+    '--close-run-id', [string]$closeRun.run_id,
+    '--close-artifact-name', [string]$closeRun.artifact_name,
+    '--close-expected-source-sha', [string]$closeRun.head_sha,
+    '--close-expected-report-date', [string]$closeRun.report_brt_date,
+    '--close-expected-schedule', 'close'
+)
+$runtimeIntakeStderrPath = [System.IO.Path]::GetTempFileName()
+$runtimeIntakeExitCode = 1
+try {
+    $runtimeIntakeOutput = & $Python @runtimeIntakeArgs 2> $runtimeIntakeStderrPath
+    $runtimeIntakeExitCode = $LASTEXITCODE
+}
+catch {
+    $runtimeIntakeExitCode = 1
+}
+finally {
+    Remove-Item -LiteralPath $runtimeIntakeStderrPath -Force -ErrorAction SilentlyContinue
+}
+if ($runtimeIntakeExitCode -ne 0) {
+    Write-Warning 'runtime_scoring_intake_unavailable'
+    try {
+        if (Test-Path -LiteralPath $runtimeOutputDir) {
+            Remove-Item -LiteralPath $runtimeOutputDir -Recurse -Force -ErrorAction Stop
+        }
+        New-Item -ItemType Directory -Force -Path $runtimeOutputDir | Out-Null
+        $runtimeFallbackManifestPath = Join-Path $runtimeOutputDir 'nightly-runtime-manifest.json'
+        Write-RuntimeIntakeFallbackManifest `
+            -OutputPath $runtimeFallbackManifestPath `
+            -SourceReportSha ([string]$mainRun.head_sha) `
+            -MainRun $mainRun `
+            -CloseRun $closeRun
+    }
+    catch {
+        Write-Warning 'runtime_scoring_intake_unavailable'
+    }
 }
 $warnings = New-Object System.Collections.Generic.List[string]
 if (-not [bool]$selection.operational_allowed) {

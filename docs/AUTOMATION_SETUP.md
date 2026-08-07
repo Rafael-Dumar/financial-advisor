@@ -146,6 +146,27 @@ Runtime scoring artifact:
 - Nesta fase, o runtime não é consumido pelo nightly, pelo Final Review ou pelo Telegram; ele fica preservado para consumo futuro.
 - O trace é evidência de auditoria, não autorização de trade. Nenhuma ordem de broker é executada.
 
+## Runtime artifact intake
+
+Depois de selecionar o par main/close e confirmar os dois reports e os dois
+`analyst-review-input.md`, o helper noturno executa uma única vez o intake
+local `python -m advisor.runtime_scoring_intake`. Ele não faz chamadas de
+rede, não executa scoring e não altera o par selecionado.
+
+- O intake reconhece somente `scoring-runtime-trace.json.gz` (single) ou
+  `scoring-runtime-trace.index.json` com as parts referenciadas (chunked).
+- Cada bundle encontrado passa pelo validator existente e é conferido contra
+  o `head_sha`, `report_brt_date` e schedule do report selecionado.
+- Bytes validados são preservados em `reports\runtime\main` e
+  `reports\runtime\close`, com hashes SHA-256, e o manifesto determinístico
+  fica em `reports\runtime\nightly-runtime-manifest.json`.
+- Bundle ausente ou inválido fica registrado como `missing` ou `invalid`; uma
+  falha inesperada fica como `unavailable`. Esses estados não bloqueiam o
+  Final Review, o Telegram ou o exit code normal do nightly.
+- O manifesto e o trace são uma superfície paralela de auditoria. O nightly
+  review input, o Final Review, o Telegram e as decisões operacionais não
+  consomem esse conteúdo nesta fase.
+
 Nightly final review:
 
 - Workflow name: `Financial Advisor Nightly Review`.

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -8,6 +11,95 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class AutomationScriptsTests(unittest.TestCase):
+    def test_fallback_manifest_writer_is_canonical_and_byte_deterministic(self) -> None:
+        script_path = PROJECT_ROOT / "scripts" / "fetch-latest-github-reports.ps1"
+        entry_keys = [
+            "artifact_status",
+            "asset_count",
+            "error_code",
+            "expected_report_date",
+            "expected_schedule",
+            "expected_source_sha",
+            "files",
+            "github_artifact_name",
+            "github_run_id",
+            "intake_status",
+            "logical_run_id",
+            "mode",
+            "report_date",
+            "rule_catalog_hash",
+            "schedule",
+            "source_sha",
+            "validation_status",
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first_path = root / "fallback-one.json"
+            second_path = root / "fallback-two.json"
+            source_sha = "25b11df3f2a4d3dd8cb85cd45682e43811e35884"
+
+            def quote(value: Path | str) -> str:
+                return "'" + str(value).replace("'", "''") + "'"
+
+            command = f"""
+$tokens = $null
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile({quote(script_path)}, [ref]$tokens, [ref]$parseErrors)
+if ($parseErrors.Count -ne 0) {{ throw 'fallback_function_parse_failed' }}
+$functionAst = $ast.FindAll({{ param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq 'Write-RuntimeIntakeFallbackManifest'
+}}, $true) | Select-Object -First 1
+if (-not $functionAst) {{ throw 'fallback_function_missing' }}
+Invoke-Expression $functionAst.Extent.Text
+$mainRun = [pscustomobject]@{{
+    run_id = '100'
+    artifact_name = 'financial-advisor-main-100'
+    report_brt_date = '2026-07-29'
+    head_sha = {quote(source_sha)}
+}}
+$closeRun = [pscustomobject]@{{
+    run_id = '101'
+    artifact_name = 'financial-advisor-close-101'
+    report_brt_date = '2026-07-29'
+    head_sha = {quote(source_sha)}
+}}
+Write-RuntimeIntakeFallbackManifest -OutputPath {quote(first_path)} -SourceReportSha {quote(source_sha)} -MainRun $mainRun -CloseRun $closeRun
+Write-RuntimeIntakeFallbackManifest -OutputPath {quote(second_path)} -SourceReportSha {quote(source_sha)} -MainRun $mainRun -CloseRun $closeRun
+"""
+            completed = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
+            first_bytes = first_path.read_bytes()
+            second_bytes = second_path.read_bytes()
+            self.assertEqual(first_bytes, second_bytes)
+            self.assertFalse(first_bytes.startswith(b"\xef\xbb\xbf"))
+            self.assertNotIn(b"\r", first_bytes)
+            self.assertTrue(first_bytes.endswith(b"\n"))
+            self.assertFalse(first_bytes.endswith(b"\n\n"))
+            self.assertNotIn(str(root).encode(), first_bytes)
+            self.assertNotIn(b"secret", first_bytes.lower())
+            self.assertNotIn(b"exception", first_bytes.lower())
+
+            payload = json.loads(first_bytes)
+            self.assertEqual(list(payload), ["entries", "manifest_schema_version", "source_report_sha"])
+            self.assertEqual(list(payload["entries"]), ["close", "main"])
+            self.assertEqual(payload["manifest_schema_version"], "1.0")
+            self.assertEqual(payload["source_report_sha"], source_sha)
+            for schedule in ("close", "main"):
+                entry = payload["entries"][schedule]
+                self.assertEqual(list(entry), entry_keys)
+                self.assertEqual(set(entry), set(entry_keys))
+                self.assertEqual(entry["intake_status"], "unavailable")
+                self.assertEqual(entry["validation_status"], "error")
+                self.assertEqual(entry["error_code"], "runtime_intake_unavailable")
+                self.assertEqual(entry["files"], [])
+
     def test_automation_scripts_enforce_live_reporting_contract(self) -> None:
         scripts = [
             ("run-main-report.ps1", "advisor report main", "--include-discovery", "main"),
@@ -70,6 +162,71 @@ class AutomationScriptsTests(unittest.TestCase):
         self.assertIn("no order execution", content.lower())
         self.assertNotIn("FMP_API_KEY", content)
         self.assertNotIn("COINGECKO_API_KEY", content)
+
+    def test_fetch_runtime_intake_command_is_after_selection_and_fail_open(self) -> None:
+        script_path = PROJECT_ROOT / "scripts" / "fetch-latest-github-reports.ps1"
+        content = script_path.read_text(encoding="utf-8")
+        command_start = content.index("$runtimeIntakeArgs = @(")
+        command_end = content.index("$runtimeIntakeExitCode", command_start)
+        command = content[command_start:command_end]
+
+        self.assertEqual(content.count("advisor.runtime_scoring_intake"), 1)
+        self.assertGreater(command_start, content.index("if (-not $mainAnalyst -or -not $closeAnalyst)"))
+        self.assertIn("'--output-dir'", command)
+        self.assertIn("$runtimeOutputDir", command)
+        self.assertIn("'--source-report-sha'", command)
+        self.assertIn("[string]$mainRun.head_sha", command)
+        for prefix, run, schedule in (
+            ("main", "$mainRun", "main"),
+            ("close", "$closeRun", "close"),
+        ):
+            self.assertEqual(command.count(f"'--{prefix}-root'"), 1)
+            self.assertIn(f"${prefix}Root", command)
+            self.assertIn(f"'--{prefix}-run-id'", command)
+            self.assertIn(f"[string]{run}.run_id", command)
+            self.assertIn(f"'--{prefix}-artifact-name'", command)
+            self.assertIn(f"[string]{run}.artifact_name", command)
+            self.assertIn(f"'--{prefix}-expected-source-sha'", command)
+            self.assertIn(f"[string]{run}.head_sha", command)
+            self.assertIn(f"'--{prefix}-expected-report-date'", command)
+            self.assertIn(f"[string]{run}.report_brt_date", command)
+            self.assertNotIn(
+                f"'--{prefix}-expected-report-date'\n    $BrtDate",
+                command,
+            )
+            self.assertIn(f"'--{prefix}-expected-schedule'", command)
+            self.assertIn(f"'{schedule}'", command)
+
+        self.assertIn("$runtimeIntakeOutput = & $Python @runtimeIntakeArgs", content)
+        self.assertIn("if ($runtimeIntakeExitCode -ne 0)", content)
+        fail_open_start = content.index("if ($runtimeIntakeExitCode -ne 0)")
+        fail_open_end = content.index("$lines = New-Object", fail_open_start)
+        fail_open = content[fail_open_start:fail_open_end]
+        self.assertIn("runtime_scoring_intake_unavailable", fail_open)
+        self.assertIn("Remove-Item -LiteralPath $runtimeOutputDir -Recurse -Force", fail_open)
+        self.assertIn("nightly-runtime-manifest.json", fail_open)
+        self.assertIn("Write-RuntimeIntakeFallbackManifest", fail_open)
+        self.assertNotIn("Write-Error $_", fail_open)
+        self.assertNotIn("$runtimeIntakeOutput |", fail_open)
+
+        review_start = content.index("$lines = New-Object", fail_open_start)
+        review_block = content[review_start:]
+        self.assertNotIn("runtime_scoring_intake", review_block)
+        self.assertNotIn("nightly-runtime-manifest", review_block)
+
+    def test_docs_explain_runtime_intake_preservation_and_fail_open(self) -> None:
+        doc_path = PROJECT_ROOT / "docs" / "AUTOMATION_SETUP.md"
+        content = doc_path.read_text(encoding="utf-8")
+
+        self.assertIn("## Runtime artifact intake", content)
+        self.assertIn("scoring-runtime-trace.json.gz", content)
+        self.assertIn("scoring-runtime-trace.index.json", content)
+        self.assertIn("nightly-runtime-manifest.json", content)
+        self.assertIn("missing", content)
+        self.assertIn("invalid", content)
+        self.assertIn("unavailable", content)
+        self.assertIn("não bloqueia", content.lower())
+        self.assertIn("não é consumido", content.lower())
 
     def test_docs_explain_nightly_review_artifact_fetch(self) -> None:
         doc_path = PROJECT_ROOT / "docs" / "AUTOMATION_SETUP.md"
