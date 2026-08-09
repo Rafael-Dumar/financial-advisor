@@ -24,6 +24,11 @@ from advisor.runtime_scoring_artifact import ArtifactAssetInput, validate_runtim
 from advisor.runtime_scoring_observability import RULE_CATALOG, RuntimeTrace
 from advisor.scan_engine import derive_market_regimes, derive_relative_strength
 from advisor.scoring import classify_asset, classify_asset_with_trace, score_asset
+from advisor.signal_observation import (
+    SignalRunMetadata,
+    build_signal_observation,
+    create_run_metadata,
+)
 from advisor.telegram_notify import notify_from_report
 
 
@@ -292,8 +297,24 @@ def _scan(args: argparse.Namespace) -> int:
     html = render_html_report(markdown)
     cache = SQLiteCache(db_path)
     cache.save_latest_report(markdown, html)
-    report_file = str(args.output_dir / "advisor-report.md")
-    cache.save_signal_journal(decisions, report_file=report_file)
+    report_type = getattr(args, "report_type", None)
+    if report_type in {"main", "close"}:
+        _persist_signal_observations(
+            cache,
+            decisions,
+            snapshots_by_symbol=snapshots_by_symbol,
+            stock_regime=stock_regime,
+            crypto_regime=crypto_regime,
+            run_metadata=getattr(args, "signal_observation_metadata", None),
+            unavailable_error_code=getattr(
+                args,
+                "signal_observation_error_code",
+                "source_sha_unavailable",
+            ),
+        )
+    else:
+        report_file = str(args.output_dir / "advisor-report.md")
+        cache.save_signal_journal(decisions, report_file=report_file)
     _write_reports(
         args.output_dir,
         markdown,
@@ -303,6 +324,51 @@ def _scan(args: argparse.Namespace) -> int:
     )
     print(f"Report written to {args.output_dir / 'advisor-report.md'}")
     return 0
+
+
+def _persist_signal_observations(
+    cache: SQLiteCache,
+    decisions: list[AssetDecision],
+    *,
+    snapshots_by_symbol: dict[str, AssetSnapshot],
+    stock_regime: str,
+    crypto_regime: str,
+    run_metadata: SignalRunMetadata | None,
+    unavailable_error_code: str,
+) -> None:
+    if run_metadata is None:
+        _signal_observation_status("unavailable", unavailable_error_code)
+        return
+    try:
+        observations = [
+            build_signal_observation(
+                decision,
+                snapshots_by_symbol[decision.symbol],
+                run_metadata,
+                stock_regime=stock_regime,
+                crypto_regime=crypto_regime,
+            )
+            for decision in decisions
+        ]
+    except Exception:
+        _signal_observation_status("unavailable", "serialization_error")
+        return
+    try:
+        result = cache.save_signal_observations(observations)
+    except Exception:
+        _signal_observation_status("unavailable", "storage_error")
+        return
+    if result.status == "unavailable":
+        _signal_observation_status("unavailable", "storage_error")
+        return
+    _signal_observation_status(result.status)
+
+
+def _signal_observation_status(status: str, error_code: str | None = None) -> None:
+    if status == "unavailable":
+        print(f"signal_observation_status=unavailable error_code={error_code or 'storage_error'}")
+        return
+    print(f"signal_observation_status={status}")
 
 
 _SOURCE_SHA_PATTERN = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
@@ -650,6 +716,22 @@ def _run_report_job(args: argparse.Namespace, default_db: str | None = None) -> 
         else:
             close_universe_source = "fallback"
         args.include_discovery = False
+    signal_observation_metadata = None
+    signal_observation_error_code = "source_sha_unavailable"
+    try:
+        source_sha = _resolve_source_sha()
+    except Exception:
+        source_sha = None
+    if source_sha is not None:
+        try:
+            signal_observation_metadata = create_run_metadata(
+                source_sha=source_sha,
+                report_type=args.report_type,
+                signal_timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            )
+            signal_observation_error_code = "serialization_error"
+        except Exception:
+            signal_observation_error_code = "serialization_error"
     scan_args = argparse.Namespace(
         db=str(db_path),
         fixture_dir=None,
@@ -664,6 +746,8 @@ def _run_report_job(args: argparse.Namespace, default_db: str | None = None) -> 
         close_universe_source=close_universe_source,
         cache_reused_from_main=cache_reused_from_main,
         runtime_scoring_artifact=getattr(args, "runtime_scoring_artifact", False),
+        signal_observation_metadata=signal_observation_metadata,
+        signal_observation_error_code=signal_observation_error_code,
     )
     scan_code = _scan(scan_args)
     if scan_code != 0 and args.require_live:

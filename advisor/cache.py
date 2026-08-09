@@ -8,15 +8,27 @@ from pathlib import Path
 from typing import Any
 
 from advisor.models import AssetDecision, Candle
+from advisor.signal_observation import (
+    SignalObservation,
+    SignalObservationWriteResult,
+    compute_observation_hash,
+    compute_signal_id,
+    observation_record,
+)
 
 
 class SQLiteCache:
     def __init__(self, db_path: Path | str, *, read_only: bool = False):
         self.db_path = Path(db_path)
         self.read_only = read_only
+        self._signal_observation_schema_error = False
         if not read_only:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             self._ensure_schema()
+            try:
+                self._ensure_signal_observation_schema()
+            except (OSError, sqlite3.Error):
+                self._signal_observation_schema_error = True
 
     def inspect(
         self,
@@ -179,6 +191,148 @@ class SQLiteCache:
                         _signal_row(generated_at, decision, report_file),
                     )
 
+    def save_signal_observations(
+        self,
+        observations: list[SignalObservation],
+    ) -> SignalObservationWriteResult:
+        """Append a batch of canonical observations atomically.
+
+        The logical identity is checked independently from ``signal_id`` so a
+        divergent retry cannot be hidden by a hash or primary-key collision.
+        Existing rows are never updated, replaced, or deleted.
+        """
+        self._assert_writable()
+        if self._signal_observation_schema_error:
+            return SignalObservationWriteResult(status="unavailable")
+        if not observations:
+            return SignalObservationWriteResult(status="duplicate_same")
+
+        prepared: list[tuple[SignalObservation, dict[str, object], str]] = []
+        try:
+            for observation in observations:
+                expected_signal_id = compute_signal_id(
+                    {
+                        "schema_version": observation.schema_version,
+                        "source_sha": observation.source_sha,
+                        "run_id": observation.run_id,
+                        "report_type": observation.report_type,
+                        "symbol": observation.asset,
+                    }
+                )
+                if observation.signal_id != expected_signal_id:
+                    raise ValueError("signal_id_identity_mismatch")
+                observation_hash = compute_observation_hash(observation)
+                persisted_at = _observation_now_iso()
+                record = observation_record(observation, persisted_at_utc=persisted_at)
+                record["observation_hash"] = observation_hash
+                prepared.append((observation, record, observation_hash))
+        except (TypeError, ValueError):
+            return SignalObservationWriteResult(status="unavailable")
+
+        written = 0
+        duplicate_same = 0
+        conflicts: list[str] = []
+        try:
+            with closing(sqlite3.connect(self.db_path)) as connection:
+                connection.row_factory = sqlite3.Row
+                try:
+                    connection.execute("BEGIN IMMEDIATE")
+                    for observation, record, observation_hash in prepared:
+                        identity_parameters = (
+                            observation.source_sha,
+                            observation.run_id,
+                            observation.report_type,
+                            observation.asset,
+                        )
+                        existing = connection.execute(
+                            """
+                            select signal_id, observation_hash
+                            from signal_observations
+                            where source_sha = ?
+                              and run_id = ?
+                              and report_type = ?
+                              and asset = ?
+                            """,
+                            identity_parameters,
+                        ).fetchone()
+                        if existing is not None:
+                            if existing["observation_hash"] == observation_hash:
+                                duplicate_same += 1
+                                continue
+                            conflicts.append(observation.signal_id)
+                            raise _SignalObservationConflict
+
+                        existing_by_id = connection.execute(
+                            """
+                            select source_sha, run_id, report_type, asset,
+                                   observation_hash
+                            from signal_observations
+                            where signal_id = ?
+                            """,
+                            (observation.signal_id,),
+                        ).fetchone()
+                        if existing_by_id is not None:
+                            same_identity = (
+                                existing_by_id["source_sha"],
+                                existing_by_id["run_id"],
+                                existing_by_id["report_type"],
+                                existing_by_id["asset"],
+                            ) == identity_parameters
+                            if same_identity and existing_by_id["observation_hash"] == observation_hash:
+                                duplicate_same += 1
+                                continue
+                            conflicts.append(observation.signal_id)
+                            raise _SignalObservationConflict
+
+                        columns = tuple(record)
+                        placeholders = ", ".join("?" for _ in columns)
+                        connection.execute(
+                            f"insert into signal_observations({', '.join(columns)}) values ({placeholders})",
+                            tuple(record[column] for column in columns),
+                        )
+                        written += 1
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
+        except _SignalObservationConflict:
+            return SignalObservationWriteResult(
+                status="conflict",
+                conflicts=tuple(conflicts),
+            )
+        except (OSError, sqlite3.Error):
+            return SignalObservationWriteResult(status="unavailable")
+
+        status = "written" if written else "duplicate_same"
+        return SignalObservationWriteResult(
+            status=status,
+            written=written,
+            duplicate_same=duplicate_same,
+        )
+
+    def load_signal_observations(self) -> list[dict[str, Any]]:
+        if not self.db_path.exists():
+            return []
+        try:
+            with closing(sqlite3.connect(self.db_path)) as connection:
+                connection.row_factory = sqlite3.Row
+                rows = connection.execute(
+                    "select * from signal_observations order by persisted_at_utc, signal_id"
+                ).fetchall()
+        except (OSError, sqlite3.Error):
+            return []
+        return [dict(row) for row in rows]
+
+    def count_signal_observations(self) -> int:
+        if not self.db_path.exists():
+            return 0
+        try:
+            with closing(sqlite3.connect(self.db_path)) as connection:
+                row = connection.execute("select count(*) from signal_observations").fetchone()
+        except (OSError, sqlite3.Error):
+            return 0
+        return int(row[0]) if row else 0
+
     def load_signal_journal(self) -> list[dict[str, Any]]:
         with closing(sqlite3.connect(self.db_path)) as connection:
             connection.row_factory = sqlite3.Row
@@ -324,6 +478,100 @@ class SQLiteCache:
                     """
                 )
 
+    def _ensure_signal_observation_schema(self) -> None:
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            with connection:
+                connection.execute(
+                    """
+                    create table if not exists signal_observations(
+                        signal_id text primary key not null,
+                        schema_version text not null check (schema_version = '1.0'),
+                        source_sha text not null,
+                        run_id text not null,
+                        run_origin text not null check (run_origin in ('github', 'local')),
+                        report_date_brt text not null,
+                        report_type text not null check (report_type in ('main', 'close')),
+                        signal_timestamp_utc text not null,
+                        asset text not null,
+                        asset_type text not null check (asset_type in ('stock', 'crypto')),
+                        universe_origin text not null,
+                        market_session text not null,
+                        market_timezone text not null
+                            check (market_timezone in ('America/New_York', 'UTC')),
+                        decision_label text not null,
+                        bucket text not null,
+                        investment_quality_score real not null,
+                        swing_trade_score real not null,
+                        decision_confidence_score integer not null,
+                        data_quality_score integer not null,
+                        expected_value_r real,
+                        backtest_sample_size integer not null,
+                        sample_quality text,
+                        data_quality text not null,
+                        missing_data_severity text not null,
+                        ideal_entry real not null,
+                        alternative_entry real,
+                        entry_semantics text not null
+                            check (entry_semantics = 'reference_close_not_fill'),
+                        alternative_entry_semantics text not null
+                            check (alternative_entry_semantics in ('conditional_untracked', 'not_present')),
+                        stop real not null,
+                        target_2r real not null,
+                        target_3r real not null,
+                        per_unit_risk real not null,
+                        risk_amount real not null,
+                        risk_fraction real not null,
+                        max_position_units real not null,
+                        max_position_value real not null,
+                        reason_codes text not null,
+                        data_source text not null,
+                        data_timestamp text,
+                        last_price_timestamp text,
+                        provider text not null,
+                        is_stale integer not null check (is_stale in (0, 1)),
+                        stock_regime text not null,
+                        crypto_regime text not null,
+                        relative_strength_vs_spy real,
+                        relative_strength_vs_qqq real,
+                        relative_strength_vs_sector real,
+                        sector_benchmark text,
+                        evaluation_role text not null check (
+                            evaluation_role in (
+                                'trade_candidate',
+                                'conditional_candidate',
+                                'observational_candidate',
+                                'observational_wait',
+                                'observational_avoid',
+                                'observational_blocked',
+                                'observational_other'
+                            )
+                        ),
+                        provenance_json text not null,
+                        observation_hash text not null,
+                        persisted_at_utc text not null,
+                        unique(source_sha, run_id, report_type, asset)
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    create trigger if not exists signal_observations_no_update
+                    before update on signal_observations
+                    begin
+                        select raise(abort, 'signal_observations_append_only');
+                    end
+                    """
+                )
+                connection.execute(
+                    """
+                    create trigger if not exists signal_observations_no_delete
+                    before delete on signal_observations
+                    begin
+                        select raise(abort, 'signal_observations_append_only');
+                    end
+                    """
+                )
+
 
     def _assert_writable(self) -> None:
         if self.read_only:
@@ -359,6 +607,14 @@ class ApiLimiter:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _observation_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+class _SignalObservationConflict(Exception):
+    pass
 
 
 def _parse_iso(value: str) -> datetime:
