@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import sqlite3
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import json
@@ -28,6 +29,12 @@ from advisor.signal_observation import (
     SignalRunMetadata,
     build_signal_observation,
     create_run_metadata,
+)
+from advisor.signal_outcome import (
+    OutcomeInputError,
+    OutcomeUnavailable,
+    evaluate_signal_observation,
+    load_forward_market_input,
 )
 from advisor.telegram_notify import notify_from_report
 
@@ -63,6 +70,12 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--require-live", action="store_true")
     report_parser.add_argument("--from-main", action="store_true")
     report_parser.add_argument("--runtime-scoring-artifact", action="store_true")
+
+    outcomes_parser = subparsers.add_parser("outcomes")
+    outcomes_subparsers = outcomes_parser.add_subparsers(dest="outcomes_command", required=True)
+    outcomes_evaluate_parser = outcomes_subparsers.add_parser("evaluate")
+    outcomes_evaluate_parser.add_argument("--input-path", type=Path, required=True)
+    outcomes_evaluate_parser.add_argument("--db", default=argparse.SUPPRESS)
 
     notify_parser = subparsers.add_parser("notify-telegram")
     notify_parser.add_argument("--report", type=Path, default=Path("reports/latest.md"))
@@ -104,6 +117,8 @@ def main(argv: list[str] | None = None) -> int:
         return _collect_crypto_flow(args, default_db=args.db)
     if args.command == "report":
         return _report(args, default_db=args.db)
+    if args.command == "outcomes" and args.outcomes_command == "evaluate":
+        return _outcomes_evaluate(args, default_db=args.db)
     if args.command == "notify-telegram":
         return _notify_telegram(args)
     if args.command == "signals" and args.signals_command == "update-results":
@@ -369,6 +384,67 @@ def _signal_observation_status(status: str, error_code: str | None = None) -> No
         print(f"signal_observation_status=unavailable error_code={error_code or 'storage_error'}")
         return
     print(f"signal_observation_status={status}")
+
+
+def _outcomes_evaluate(args: argparse.Namespace, *, default_db: str | None = None) -> int:
+    try:
+        summary = evaluate_outcomes_from_json(
+            input_path=args.input_path,
+            db_path=Path(args.db or default_db or "data/advisor.db"),
+        )
+    except OutcomeInputError:
+        print(json.dumps({"error": "invalid_input"}, sort_keys=True, separators=(",", ":")))
+        return 2
+    except (OSError, RuntimeError, sqlite3.Error):
+        print(json.dumps({"error": "storage_unavailable"}, sort_keys=True, separators=(",", ":")))
+        return 1
+    print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
+    return 1 if summary["signals_conflict"] or summary["signals_unavailable"] else 0
+
+
+def evaluate_outcomes_from_json(*, input_path: Path, db_path: Path) -> dict[str, int]:
+    """Evaluate canonical observations against one explicit local JSON input."""
+    series_by_asset = load_forward_market_input(input_path)
+    cache = SQLiteCache(db_path)
+    observations = sorted(cache.load_signal_observations(), key=lambda row: str(row.get("signal_id", "")))
+    summary = {
+        "observations_considered": len(observations),
+        "signals_conflict": 0,
+        "signals_duplicate_same": 0,
+        "signals_pending": 0,
+        "signals_unavailable": 0,
+        "signals_written": 0,
+        "outcomes_written": 0,
+    }
+    for observation in observations:
+        try:
+            series = series_by_asset.get(str(observation.get("asset", "")))
+            if series is None:
+                raise OutcomeUnavailable("asset_series_unavailable")
+            evaluation = evaluate_signal_observation(observation, series)
+        except (OutcomeUnavailable, ValueError, TypeError):
+            summary["signals_unavailable"] += 1
+            continue
+
+        if evaluation.pending_horizons:
+            summary["signals_pending"] += 1
+        if not evaluation.outcomes:
+            continue
+        try:
+            result = cache.save_signal_forward_outcomes_for_signal(evaluation.outcomes)
+        except (OSError, RuntimeError, sqlite3.Error):
+            summary["signals_unavailable"] += 1
+            continue
+        if result.status == "written":
+            summary["signals_written"] += 1
+            summary["outcomes_written"] += result.outcomes_written
+        elif result.status == "duplicate_same":
+            summary["signals_duplicate_same"] += 1
+        elif result.status == "conflict":
+            summary["signals_conflict"] += 1
+        else:
+            summary["signals_unavailable"] += 1
+    return summary
 
 
 _SOURCE_SHA_PATTERN = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")

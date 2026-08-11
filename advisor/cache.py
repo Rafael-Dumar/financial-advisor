@@ -15,6 +15,18 @@ from advisor.signal_observation import (
     compute_signal_id,
     observation_record,
 )
+from advisor.signal_outcome import (
+    EVALUATION_POLICY_VERSION,
+    OUTCOME_TABLE_SQL,
+    OUTCOME_DELETE_TRIGGER_SQL,
+    OUTCOME_UPDATE_TRIGGER_SQL,
+    SCHEMA_VERSION as OUTCOME_SCHEMA_VERSION,
+    SignalForwardOutcome,
+    SignalForwardOutcomeWriteResult,
+    compute_outcome_hash,
+    compute_outcome_id,
+    outcome_record,
+)
 
 
 class SQLiteCache:
@@ -22,6 +34,7 @@ class SQLiteCache:
         self.db_path = Path(db_path)
         self.read_only = read_only
         self._signal_observation_schema_error = False
+        self._signal_forward_outcome_schema_error = False
         if not read_only:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             self._ensure_schema()
@@ -29,6 +42,10 @@ class SQLiteCache:
                 self._ensure_signal_observation_schema()
             except (OSError, sqlite3.Error):
                 self._signal_observation_schema_error = True
+            try:
+                self._ensure_signal_forward_outcome_schema()
+            except (OSError, sqlite3.Error):
+                self._signal_forward_outcome_schema_error = True
 
     def inspect(
         self,
@@ -333,6 +350,168 @@ class SQLiteCache:
             return 0
         return int(row[0]) if row else 0
 
+    def save_signal_forward_outcomes_for_signal(
+        self,
+        outcomes: list[SignalForwardOutcome] | tuple[SignalForwardOutcome, ...],
+    ) -> SignalForwardOutcomeWriteResult:
+        """Append one signal's complete outcomes atomically.
+
+        A signal is the transaction boundary. Existing rows are checked by
+        logical identity and hash; neither UPDATE nor replacement is allowed.
+        """
+        self._assert_writable()
+        if self._signal_forward_outcome_schema_error:
+            return SignalForwardOutcomeWriteResult(status="unavailable", error_code="schema_unavailable")
+        if not outcomes:
+            return SignalForwardOutcomeWriteResult(status="duplicate_same")
+        signal_ids = {outcome.signal_id for outcome in outcomes}
+        horizons = [outcome.horizon_bars for outcome in outcomes]
+        if len(signal_ids) != 1 or len(set(horizons)) != len(horizons):
+            return SignalForwardOutcomeWriteResult(status="unavailable", error_code="invalid_outcome_batch")
+
+        signal_id = next(iter(signal_ids))
+        prepared: list[tuple[SignalForwardOutcome, dict[str, object], str]] = []
+        try:
+            persisted_at = _observation_now_iso()
+            for outcome in outcomes:
+                expected_id = compute_outcome_id(
+                    schema_version=outcome.schema_version,
+                    evaluation_policy_version=outcome.evaluation_policy_version,
+                    signal_id=outcome.signal_id,
+                    observation_hash=outcome.observation_hash,
+                    horizon_bars=outcome.horizon_bars,
+                )
+                expected_hash = compute_outcome_hash(outcome)
+                if (
+                    outcome.outcome_id != expected_id
+                    or outcome.outcome_hash != expected_hash
+                    or outcome.schema_version != OUTCOME_SCHEMA_VERSION
+                    or outcome.evaluation_policy_version != EVALUATION_POLICY_VERSION
+                ):
+                    raise ValueError("invalid_outcome_identity")
+                prepared.append((outcome, outcome_record(outcome, persisted_at_utc=persisted_at), expected_hash))
+        except (TypeError, ValueError):
+            return SignalForwardOutcomeWriteResult(status="unavailable", error_code="serialization_error")
+
+        written = 0
+        duplicate_same = 0
+        conflicts: list[str] = []
+        try:
+            with closing(sqlite3.connect(self.db_path)) as connection:
+                connection.row_factory = sqlite3.Row
+                try:
+                    connection.execute("BEGIN IMMEDIATE")
+                    canonical_signal = connection.execute(
+                        "select signal_id, observation_hash from signal_observations where signal_id = ?",
+                        (signal_id,),
+                    ).fetchone()
+                    if canonical_signal is None:
+                        connection.rollback()
+                        return SignalForwardOutcomeWriteResult(
+                            status="unavailable",
+                            error_code="signal_not_found",
+                        )
+                    if any(outcome.observation_hash != canonical_signal["observation_hash"] for outcome in outcomes):
+                        connection.rollback()
+                        return SignalForwardOutcomeWriteResult(
+                            status="unavailable",
+                            error_code="observation_hash_mismatch",
+                        )
+
+                    for outcome, record, expected_hash in prepared:
+                        existing = connection.execute(
+                            """
+                            select outcome_id, outcome_hash
+                            from signal_forward_outcomes
+                            where signal_id = ?
+                              and observation_hash = ?
+                              and evaluation_policy_version = ?
+                              and horizon_bars = ?
+                            """,
+                            (
+                                outcome.signal_id,
+                                outcome.observation_hash,
+                                outcome.evaluation_policy_version,
+                                outcome.horizon_bars,
+                            ),
+                        ).fetchone()
+                        if existing is not None:
+                            if existing["outcome_id"] == outcome.outcome_id and existing["outcome_hash"] == expected_hash:
+                                duplicate_same += 1
+                                continue
+                            conflicts.append(outcome.outcome_id)
+                            raise _SignalForwardOutcomeConflict
+
+                        existing_by_id = connection.execute(
+                            "select signal_id, observation_hash, evaluation_policy_version, horizon_bars, outcome_hash from signal_forward_outcomes where outcome_id = ?",
+                            (outcome.outcome_id,),
+                        ).fetchone()
+                        if existing_by_id is not None:
+                            same_identity = (
+                                existing_by_id["signal_id"],
+                                existing_by_id["observation_hash"],
+                                existing_by_id["evaluation_policy_version"],
+                                existing_by_id["horizon_bars"],
+                            ) == (
+                                outcome.signal_id,
+                                outcome.observation_hash,
+                                outcome.evaluation_policy_version,
+                                outcome.horizon_bars,
+                            )
+                            if same_identity and existing_by_id["outcome_hash"] == expected_hash:
+                                duplicate_same += 1
+                                continue
+                            conflicts.append(outcome.outcome_id)
+                            raise _SignalForwardOutcomeConflict
+
+                        columns = tuple(record)
+                        placeholders = ", ".join("?" for _ in columns)
+                        connection.execute(
+                            f"insert into signal_forward_outcomes({', '.join(columns)}) values ({placeholders})",
+                            tuple(record[column] for column in columns),
+                        )
+                        written += 1
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
+        except _SignalForwardOutcomeConflict:
+            return SignalForwardOutcomeWriteResult(
+                status="conflict",
+                conflicts=tuple(conflicts),
+            )
+        except (OSError, sqlite3.Error):
+            return SignalForwardOutcomeWriteResult(status="unavailable", error_code="storage_error")
+
+        return SignalForwardOutcomeWriteResult(
+            status="written" if written else "duplicate_same",
+            outcomes_written=written,
+            duplicate_same=duplicate_same,
+        )
+
+    def load_signal_forward_outcomes(self) -> list[dict[str, Any]]:
+        if not self.db_path.exists():
+            return []
+        try:
+            with closing(sqlite3.connect(self.db_path)) as connection:
+                connection.row_factory = sqlite3.Row
+                rows = connection.execute(
+                    "select * from signal_forward_outcomes order by signal_id, horizon_bars"
+                ).fetchall()
+        except (OSError, sqlite3.Error):
+            return []
+        return [dict(row) for row in rows]
+
+    def count_signal_forward_outcomes(self) -> int:
+        if not self.db_path.exists():
+            return 0
+        try:
+            with closing(sqlite3.connect(self.db_path)) as connection:
+                row = connection.execute("select count(*) from signal_forward_outcomes").fetchone()
+        except (OSError, sqlite3.Error):
+            return 0
+        return int(row[0]) if row else 0
+
     def load_signal_journal(self) -> list[dict[str, Any]]:
         with closing(sqlite3.connect(self.db_path)) as connection:
             connection.row_factory = sqlite3.Row
@@ -572,6 +751,13 @@ class SQLiteCache:
                     """
                 )
 
+    def _ensure_signal_forward_outcome_schema(self) -> None:
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            with connection:
+                connection.execute(OUTCOME_TABLE_SQL)
+                connection.execute(OUTCOME_UPDATE_TRIGGER_SQL)
+                connection.execute(OUTCOME_DELETE_TRIGGER_SQL)
+
 
     def _assert_writable(self) -> None:
         if self.read_only:
@@ -614,6 +800,10 @@ def _observation_now_iso() -> str:
 
 
 class _SignalObservationConflict(Exception):
+    pass
+
+
+class _SignalForwardOutcomeConflict(Exception):
     pass
 
 
