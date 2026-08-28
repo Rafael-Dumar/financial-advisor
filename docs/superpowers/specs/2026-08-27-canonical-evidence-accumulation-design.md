@@ -1,10 +1,12 @@
 # Fase 3B.3.3 — Design Spec: Canonical Evidence Accumulation
 
 **Classificação:** arquitetural
-**Status:** design aprovado para revisão humana; nenhuma implementação desta
-spec está iniciada.
-**Baseline desta decisão:** `HEAD == origin/main ==
+**Status:** correção documental estreita em revisão humana; nenhuma
+implementação desta spec está iniciada.
+**Baseline original da decisão:** `HEAD == origin/main ==
 4b5e5cfc76ce81863a72e1c3fc984d5bbb330c2f`
+**Baseline desta revisão:** `HEAD == origin/main ==
+56b78a239e7ba53e302377415282da946a9e469f`
 **Data:** 2026-08-27
 
 Esta spec define a arquitetura da acumulação prospectiva de evidência canônica.
@@ -27,17 +29,17 @@ report main/close
     ↓
 canonical observation sidecar
     ↓
-immutable observation archive
+immutable observation archive (observation only; sem maturação)
     ↓
-daily market/corporate-action collection
+collector → local transport → validation
     ↓
-per-horizon split proof
+first archive: canonical market/corporate shards
     ↓
-materialized ForwardMarketSeries
+commit + push confirmado → fresh read da advisor-evidence
     ↓
-frozen 3B.2
+materializer → horizon proofs/outcomes
     ↓
-immutable outcome archive
+second archive: proofs/outcomes
     ↓
 recovery drill
 ```
@@ -174,7 +176,7 @@ Cada shard tem quatro domínios distintos:
 
 1. `logical_identity`: decide qual fato pode existir uma única vez;
 2. `payload`: fato imutável que será recuperado;
-3. `provenance`: origem semântica necessária para validar o fato;
+3. `provenance`: proveniência semântica necessária para validar o fato;
 4. `transport`: detalhes de artifact, runner, publicação e compressão.
 
 `transport` MUST NOT participar da identidade ou do hash canônico. Inclui nome
@@ -199,6 +201,11 @@ Cada shard canônico tem a forma lógica:
 As chaves exibidas são apenas um exemplo estrutural; a serialização final
 ordena-as lexicograficamente.
 
+`canonical content` é exatamente a composição de `logical_identity`, `payload`,
+proveniência semântica e `schema_version`/`evidence_type`. No envelope acima,
+`provenance` contém somente essa proveniência semântica; o domínio `transport`
+fica fora. Portanto, transportes diferentes não alteram o conteúdo canônico.
+
 As definições são:
 
 ```text
@@ -216,8 +223,14 @@ canonical_content_sha256
 ```
 
 O objeto usado no segundo hash não contém nenhum dos dois campos de hash nem
-`transport`. O `canonical_content_sha256` é o hash usado para comparar payloads
-e para vincular evidence. O hash embutido de `SignalObservation` ou de
+`transport`. `payload_sha256` continua útil para inspeção do payload, mas não é
+sozinho uma regra de idempotência. Para a mesma `logical_identity`:
+
+- mesmo `canonical_content_sha256` resulta em `duplicate_same`;
+- `canonical_content_sha256` diferente resulta em `conflict`.
+
+Assim, mesmo OHLC com `price_provider` diferente na proveniência semântica é
+`conflict`, não `duplicate_same`. O hash embutido de `SignalObservation` ou de
 `SignalForwardOutcome` mantém sua semântica própria e é validado
 independentemente.
 
@@ -264,6 +277,7 @@ O layout final é:
 
 ```text
 evidence/
+  branch-schema.json
   observations/
     YYYY/MM/DD/<logical_identity_sha256>.json.gz
   market-bars/
@@ -478,12 +492,16 @@ Assim, cada horizon é independente. O payload MUST conter, no mínimo:
 - `split_check_status`;
 - `split_event_count`;
 - `price_basis`;
+- `signal_price_basis_status`;
 - `evidence_hashes` dos shards de observation, bars e corporate action;
 - `proof_status`.
 
 Para stock/ETF, a policy é exatamente
 `verified_no_split_in_signal_horizon_v1`, o provider é `alpha_vantage` e o
 status terminal é `verified_none` ou `split_in_horizon_unavailable`.
+`verified_none` exige também `signal_price_basis_status=verified_raw_ohlcv` na
+sidecar ligada; sem isso o status do horizon é
+`signal_basis_unavailable` e não há entrega à 3B.2.
 
 Para crypto, a policy é `not_applicable_crypto_raw_ohlcv_v1`, o provider é
 `not_applicable`, `split_check_status=not_applicable`,
@@ -527,10 +545,12 @@ MFE, MAE, touches, primeiros eventos, flags de ambiguity, alternativa,
 provider e price basis. `persisted_at_utc` é metadata de persistência e não
 altera `outcome_hash`.
 
-A proveniência do shard vincula o `horizon-proof` e os market-bar shards usados,
-mas essa proveniência não altera a identidade ou o hash congelado do outcome.
-Outcome não é atualizado. Mesmo identity e mesmo payload são
-`duplicate_same`; mesmo identity e payload divergente são `conflict`.
+A proveniência do shard vincula o `horizon-proof` e os market-bar shards usados.
+Ela não altera o `outcome_hash` congelado pela 3B.2, mas entra no
+`canonical_content_sha256` do shard de evidence. Portanto, mesmo
+`logical_identity` e mesmo conteúdo de payload só são `duplicate_same` quando
+o `canonical_content_sha256` inteiro é igual; proveniência semântica diferente
+produz `conflict`. Outcome não é atualizado.
 
 Uma revisão posterior de corporate action nunca reescreve outcome. Ela gera
 conflict/audit evidence e só uma nova policy/version poderá tratar uma
@@ -538,8 +558,16 @@ reevaluation em fase separada.
 
 ### 8.6 Manifest
 
-Cada operação de archive produz um manifest determinístico, ainda que o
-resultado seja `no_op`. O manifest contém:
+Existe no máximo um manifest canônico para cada `batch_identity` e seu path
+determinístico correspondente. O primeiro
+commit válido de um batch escreve esse manifest com `status=committed`, junto
+com os shards canônicos da transação. Um retry idêntico primeiro faz fetch e
+valida os shards e o manifest já existentes; se forem equivalentes, retorna
+`no_op` somente como resultado operacional. Esse retry não escreve outro
+manifest, não altera o manifest `committed` e não cria evidence histórica de
+`no_op`.
+
+O manifest canônico contém:
 
 - `schema_version`;
 - `operation`;
@@ -551,11 +579,15 @@ resultado seja `no_op`. O manifest contém:
 - counts por `evidence_type` e status;
 - `status`.
 
-`batch_identity` é derivada do operation type e da lista ordenada de hashes de
-entrada; não contém horário corrente. `status` é um dos
-`committed`, `no_op`, `conflict` ou `rejected`. O manifest é um registro de
-transação, não um índice autoritativo: remover manifests não pode remover os
-shards nem impedir sua reconstrução por varredura da branch.
+`batch_identity` é derivada do operation type e da lista ordenada de entries de
+evidence (`evidence_type`, `logical_identity_sha256` e
+`canonical_content_sha256`); não contém hash de transport nem horário
+corrente. Em manifest persistido, `status` é
+`committed` para um batch canônico ou `conflict` para uma transação exclusiva
+de conflict. `no_op` é somente resultado operacional e `rejected` não produz
+manifest. O manifest é um registro de transação, não um índice autoritativo:
+remover manifests não pode remover os shards nem impedir sua reconstrução por
+varredura da branch.
 
 Sua identity exata é o objeto:
 
@@ -578,6 +610,12 @@ Sua identity exata é o objeto:
 `batch_identity_sha256` é o hash desse objeto. Paths, horários, runner e
 commit SHA ficam fora da identity; paths podem ser reproduzidos a partir dos
 entries.
+
+Uma transação de conflict possui identity própria, derivada da lista ordenada
+de conflict entries, e nunca reutiliza a `batch_identity` do batch canônico
+que originou o conflito. Seu manifest exclusivo pode ter `status=conflict`;
+seu `operation` é `conflict_archive`, sua lista de entries contém somente as
+identidades dos conflict shards e ele referencia somente esses shards.
 
 ### 8.7 Conflict evidence
 
@@ -610,8 +648,9 @@ A identity exata do conflict é:
 ```
 
 O path usa o hash canônico desse objeto. O `reason_code` é uma enumeração
-fechada (`divergent_payload`, `hash_mismatch`, `provider_mixing` ou
-`identity_collision`); nenhum texto de exception é aceito.
+fechada (`divergent_payload`, `hash_mismatch`, `provider_mixing`,
+`identity_collision` ou `corporate_action_revision_conflict`); nenhum texto de
+exception é aceito.
 
 ## 9. Observation archival e sidecar
 
@@ -637,21 +676,39 @@ Ele contém `schema_version=1.0`, `source_sha`, `run_id`, `report_type`, a lista
 completa de rows canônicas ordenada por `signal_id` e, quando presente, um
 sidecar de proveniência ligado por `signal_id + observation_hash`.
 
-O sidecar de proveniência pode registrar:
+O sidecar de proveniência registra:
 
 - `signal_price_provider`;
 - `signal_input_hash`;
+- `signal_price_basis_status`;
 - `signal_price_basis_observed`;
 - `collection_provenance`.
+
+`signal_price_basis_status` é obrigatório para toda observation de stock/ETF;
+os demais campos podem ser omitidos somente quando seu status de ausência for
+registrado.
 
 Esses dados são metadata da observação, não parte de `SignalObservation` e não
 entram em `observation_hash`. `signal_input_hash`, quando emitido, é o
 SHA-256 do snapshot de input sanitizado efetivamente passado ao builder da
 observation; não é inferido a partir do Markdown. Se o snapshot não tiver
 representação estável disponível, o campo fica `null` com status explícito
-`unavailable`, sem inventar um hash. `signal_price_basis_observed` só pode ser
-`raw_ohlcv` quando a proveniência do snapshot declarar isso; nunca se presume
-que o provider forneceu adjusted prices.
+`unavailable`, sem inventar um hash.
+
+`signal_price_basis_status` é normativo e fica ligado à observation por
+`signal_id + observation_hash`. Para stock/ETF, a v1 aceita somente
+`verified_raw_ohlcv` e `signal_basis_unavailable`. O primeiro só pode ser
+emitido quando a proveniência do snapshot provar a base exata usada para
+calcular `ideal_entry`, `stop`, `target_2r` e `target_3r`; nome do provider,
+aparência dos candles ou `signal_price_basis_observed` isolado não constituem
+essa prova. Se a sidecar/proveniência não puder fazer essa ligação, o status é
+`signal_basis_unavailable`. Não se presume raw OHLCV.
+
+Uma basis compatível adicional exigiria policy/version explícita futura; nenhum
+valor além de `verified_raw_ohlcv` qualifica stock/ETF na v1. Para crypto, a
+regra própria continua `not_applicable_crypto_raw_ohlcv` e não pode ser usada
+para qualificar a ausência de split de stock/ETF. Nenhum campo é adicionado ou
+alterado em `SignalObservation`.
 
 O archive job explode o sidecar em um shard por observation e valida a linha
 contra `signal_id`, `observation_hash` e o schema 3B.1. A serialização JSON do
@@ -703,9 +760,30 @@ dia UTC. Candle corrente incompleta é rejeitada e não vira ausência definitiv
 `price_provider` e `corporate_action_provider` são conceitos independentes.
 Market bars armazenam o price provider da série; corporate-action shards usam
 Alpha Vantage. A mesma canonical series não pode conter providers diferentes,
-mesmo que cada resposta isolada seja válida. O collector deve rejeitar a
-mistura; não pode aplicar fallback de outro provider sem uma policy explícita
-de série que não existe na v1.
+mesmo que cada resposta isolada seja válida.
+
+A assignment policy determinística da v1 é a versão literal
+`price_provider_assignment_v1`, definida em `main` e incluída na proveniência
+semântica de cada série:
+
+| Chave de série nova | `price_provider` atribuído |
+| --- | --- |
+| `asset_type=stock` | `fmp` |
+| `asset_type=etf` | `fmp` |
+| `asset_type=crypto` e `symbol=HYPE` | `hyperliquid` |
+| `asset_type=crypto` e qualquer outro symbol configurado | `binance` |
+
+O symbol é normalizado antes da consulta à tabela. Se não houver suporte ao
+symbol, ao par ou ao provider atribuído, o resultado é
+`market_data_unavailable`. Provider indisponível também resulta em
+`market_data_unavailable`; não há substituição silenciosa por outro provider.
+
+Para série já existente, o provider é derivado da evidence de market bars
+canônica mais antiga e permanece sticky. A recuperação relê esse provider e a
+`price_provider_assignment_v1` da evidence; não faz nova seleção por sucesso
+de rede. Se a série já contiver providers misturados, o collector rejeita a
+mistura como `conflict` e não publica uma barra que a agrave. A tabela não
+amplia o universe nem introduz providers novos nesta revisão.
 
 ## 11. Corporate-action policy v1
 
@@ -737,11 +815,22 @@ Consequências:
 
 - qualquer split no intervalo resulta em `split_in_horizon_unavailable`;
 - feed indisponível resulta em `feed_unavailable`;
-- zero events explicitamente comprovados resulta em `verified_none`;
+- zero events explicitamente comprovados resulta em `verified_none` somente
+  sem conflict relevante e com `signal_price_basis_status=verified_raw_ohlcv`
+  para stock/ETF;
 - feed ausente nunca é interpretado como zero events;
 - split com `effective_date == signal_market_date` invalida todos os horizons;
 - não se tenta descobrir se `ideal_entry` já estava pós-split;
 - a perda de coverage é aceita para evitar falso outcome.
+
+Snapshots de corporate action do mesmo `corporate_action_provider` e
+`symbol` podem ter coverage windows sobrepostas. Em qualquer interseção, os
+eventos normalizados MUST ser idênticos. Diferença de presença/ausência,
+`effective_date` ou split ratio produz um conflict com reason code
+`corporate_action_revision_conflict`. Enquanto existir esse conflict relevante
+ao intervalo do horizon, nenhum novo proof `verified_none` pode ser produzido.
+Outcomes já congelados permanecem intactos; o conflict é registrado somente
+para audit, e qualquer reevaluation depende de uma policy futura explícita.
 
 Não há Policy B de transformação de preços. Quando o stock raw OHLCV é válido,
 o feed qualificado está disponível e não há split no intervalo, o raw OHLCV é
@@ -771,23 +860,30 @@ O estado por horizon é resolvido nesta ordem:
 
 1. série inválida, bar faltante ou bar incompleto: `market_data_unavailable`;
 2. menos de N bars completas: `pending`;
-3. stock com bars suficientes mas sem corporate-action coverage válido:
+3. conflict de corporate action relevante ao intervalo:
+   `conflict`, com reason `corporate_action_revision_conflict`, sem novo proof;
+4. stock/ETF sem `signal_price_basis_status=verified_raw_ohlcv`:
+   `signal_basis_unavailable`, sem entrega à 3B.2;
+5. stock com bars suficientes mas sem corporate-action coverage válido:
    `feed_unavailable`;
-4. stock com split inclusivo: `split_in_horizon_unavailable`;
-5. stock com zero split comprovado: `verified_none`;
-6. crypto com N bars completas: `not_applicable` para split e basis raw.
+6. stock com split inclusivo: `split_in_horizon_unavailable`;
+7. stock com zero split comprovado e basis de sinal qualificada:
+   `verified_none`;
+8. crypto com N bars completas: `not_applicable` para split e basis raw.
 
-`pending`, `feed_unavailable` e `market_data_unavailable` são estados
-recalculáveis da materialização. Eles não são ausência definitiva e não
-geram proof terminal. `split_in_horizon_unavailable` é terminal para a policy
-v1 porque o evento é evidence durável; `verified_none` também é terminal para
-aquele horizon porque seu proof específico foi escrito.
+`pending`, `feed_unavailable`, `market_data_unavailable`,
+`signal_basis_unavailable` e `conflict` não geram proof terminal entregue à
+3B.2. `split_in_horizon_unavailable` é terminal para a policy v1 porque o
+evento é evidence durável; `verified_none` também é terminal para aquele
+horizon porque seu proof específico foi escrito. Nenhum novo `verified_none`
+é permitido enquanto houver conflict de corporate action relevante, mesmo que
+uma resposta isolada declare zero events.
 
 Exemplo de split entre a quinta e a décima bar:
 
 | Horizon | Resultado |
 | --- | --- |
-| 5 | `verified_none`, se a janela inclusiva de 5 não contém split |
+| 5 | `verified_none`, se a janela inclusiva de 5 não contém split e a basis do sinal é qualificada |
 | 10 | `split_in_horizon_unavailable` |
 | 20 | `split_in_horizon_unavailable` |
 | 40 | `split_in_horizon_unavailable` |
@@ -799,8 +895,10 @@ carrega somente seus próprios N bars e hashes.
 
 Para uma observation com horizons aprovados, o materializer:
 
-1. lê somente shards válidos da `advisor-evidence` e transportes recém-coletados;
-2. valida observation, bars, provider único e proofs;
+1. lê somente shards canônicos válidos da `advisor-evidence`, após fresh
+   fetch/read confirmado do head que contém o archive de market/corporate;
+2. valida observation, bars, provider sticky, signal basis, corporate-action
+   coverage e proofs;
 3. seleciona o maior prefixo de bars cuja prova é válida;
 4. constrói um JSON local com o contrato exato da 3B.2:
 
@@ -822,15 +920,17 @@ Para uma observation com horizons aprovados, o materializer:
 
 5. chama `evaluate_signal_observation` do módulo congelado para receber
    `SignalForwardEvaluation`, outcomes e `pending_horizons`;
-6. aceita somente os outcomes cujos proofs correspondentes são
-   `verified_none` ou crypto `not_applicable`;
-7. emite proof/outcome transports para o único writer.
+6. aceita somente os outcomes de stock/ETF cujos proofs correspondentes são
+   `verified_none` com `signal_price_basis_status=verified_raw_ohlcv`, ou
+   outcomes crypto `not_applicable`;
+7. emite proof/outcome transports para o único writer, mas esses transports
+   não viram authority até a segunda transação de archive.
 
 O JSON local é materialização temporária, não autoridade, e não contém URLs,
-headers, API keys ou paths do provider. Se um horizon tem split ou feed
-indisponível, ele não é entregue ao evaluator como outcome válido. Se o
-evaluator devolver um outcome para horizon sem proof, isso é erro de integração
-e o batch é rejeitado.
+headers, API keys ou paths do provider. Se um horizon tem split, feed
+indisponível, conflict de corporate action ou `signal_basis_unavailable`, ele
+não é entregue ao evaluator como outcome válido. Se o evaluator devolver um
+outcome para horizon sem proof, isso é erro de integração e o batch é rejeitado.
 
 O materializer pode reconstruir uma SQLite vazia para consumo local, mas essa
 SQLite é derivada dos shards e não pode ser lida como fonte histórica. A
@@ -839,18 +939,29 @@ segunda fórmula.
 
 ## 14. Outcome maturation
 
-O orchestration de maturação é:
+Durability MUST preceder maturation. A sequência obrigatória por ciclo é:
 
-1. enumerar observations canônicas, nunca `signal_journal`;
-2. determinar bars e `horizon_end_date` por sessões reais;
-3. validar corporate-action proof para stock/ETF;
-4. construir o JSON local aceito pela 3B.2;
-5. chamar a autoridade congelada;
-6. receber outcomes e horizons pending;
-7. arquivar somente outcomes novos e proofs terminais novos;
-8. reconstruir/atualizar apenas a materialização SQLite local depois de archive
-   válido;
-9. emitir counters sanitizados.
+1. collector produz o transport local;
+2. o transport é validado fora da branch;
+3. o archive writer grava a primeira transação com os canonical market e
+   corporate-action shards;
+4. o commit dessa transação é feito e o push é confirmado;
+5. somente então ocorre fresh fetch/read da `advisor-evidence`;
+6. o materializer enumera observations canônicas, nunca `signal_journal`,
+   determina bars e `horizon_end_date` por sessões reais e lê apenas os
+   canonical shards desse fresh read;
+7. a authority congelada produz os horizon proofs e outcomes permitidos;
+8. proofs e outcomes novos são enviados como segundo transport e arquivados
+   numa segunda transação;
+9. somente depois de archive válido a materialização SQLite local é
+   reconstruída/atualizada e counters sanitizados são emitidos.
+
+Se a primeira transação de archive falhar, o ciclo para antes do fresh
+fetch/materializer e nenhuma maturação ocorre. Transport recém-coletado ou
+proof/outcome ainda não arquivado nunca sustenta outro proof ou outcome.
+Durante a segunda transação, proof e outcome podem ser calculados no mesmo
+passo a partir dos canonical market/corporate shards já lidos; o outcome não
+pode reler um proof ainda não arquivado como authority.
 
 O orchestration nunca reimplementa `return`, `MFE`, `MAE`, stop touch, 2R, 3R,
 ambiguity, alternativa ou qualquer regra da 3B.2. O input não vem da internet
@@ -866,6 +977,7 @@ Os status têm semântica distinta:
 | `split_in_horizon_unavailable` | bars existem, mas split viola policy v1 | não para v1 |
 | `feed_unavailable` | corporate-action evidence não foi comprovada | sim |
 | `market_data_unavailable` | price data está faltante ou inválida | sim |
+| `signal_basis_unavailable` | a base usada no sinal não foi provada | não até nova sidecar válida |
 | `conflict` | mesma identity tem conteúdo divergente | não sem revisão explícita |
 | `verified_none` | zero splits foi comprovado no intervalo | terminal do horizon |
 
@@ -874,9 +986,28 @@ not yet published e `duplicate_same` não são falhas de archive.
 
 ## 16. Branch writer, atomicidade e concurrency
 
+`advisor-evidence` MUST ser uma orphan branch: seu root commit não pode ser
+descendant de `main` nem copiar a árvore de `main`. O bootstrap ocorre uma
+única vez, durante implementação/deployment explicitamente autorizado, antes
+de qualquer archive de runtime. O root commit controlado contém exatamente um
+arquivo fixo, `evidence/branch-schema.json`, com schema/version e zero
+financial evidence, por exemplo:
+
+```json
+{
+  "branch_name": "advisor-evidence",
+  "financial_evidence_count": 0,
+  "schema_version": "1.0"
+}
+```
+
+Nenhum código de `main` pode estar na árvore desse root commit. Em runtime,
+branch inexistente resulta em `evidence_branch_missing` e o writer sai nonzero;
+ele nunca cria automaticamente a branch a partir de `main`. O bootstrap não
+usa force push.
+
 Somente `evidence_archive.py`, executado pelo writer job, pode publicar na
-branch `advisor-evidence`. A branch será criada somente em implementação
-autorizada e conterá evidence, não código. Ela não é checkout padrão do app.
+branch `advisor-evidence`. Ela não é checkout padrão do app.
 
 O writer deve usar estes princípios:
 
@@ -895,8 +1026,8 @@ conflict, pode ser publicado atomicamente somente o conflict/audit shard e seu
 manifest, sem publicar os novos canonical shards; isso não é partial canonical
 commit. Input inválido sem conflict não gera commit.
 
-Um batch contendo apenas `duplicate_same` pode gerar manifest `no_op`; não há
-overwrite. A branch mantém todos os shards anteriores.
+Um batch contendo apenas `duplicate_same` retorna `no_op` operacionalmente,
+sem novo manifest e sem overwrite. A branch mantém todos os shards anteriores.
 
 O workflow e o writer usarão exatamente:
 
@@ -945,9 +1076,11 @@ upload como artifact.
 ### 17.4 Publish/mature job
 
 O job seguinte baixa o artifact, possui `contents: write`, não possui provider
-secrets, publica os shards e executa materialização/maturação somente sobre
-evidence já disponível. O mesmo componente writer publica todas as categorias;
-nenhum job com secret de provider pode escrever na branch.
+secrets, publica a primeira transação e só continua depois de confirmar o push
+e fazer fresh fetch da branch. O materializer/maturer lê somente evidence
+canônica já disponível; seus proofs/outcomes seguem para uma segunda transação.
+O mesmo componente writer publica todas as categorias; nenhum job com secret
+de provider pode escrever na branch.
 
 Handoff entre jobs usa somente artifacts/outputs locais, com paths fixos,
 hashes e validação. Artifacts continuam transporte e recovery auxiliar.
@@ -1008,6 +1141,7 @@ job sai nonzero para:
 - unsafe path;
 - gzip malformado ou decompression over limit;
 - race de push irrecuperável;
+- `evidence_branch_missing`;
 - provider mixing;
 - batch parcialmente inválido.
 
@@ -1097,8 +1231,11 @@ revalida hashes e recria qualquer índice/materialização.
 
 O teste futuro deve cobrir estas propriedades e invariantes:
 
-1. mesma identity + mesmo payload resulta em no-op;
-2. mesma identity + payload divergente resulta em conflict;
+1. mesma identity + mesmo `canonical_content_sha256` resulta em
+   `duplicate_same`/`no_op` operacional;
+2. mesma identity + `canonical_content_sha256` divergente resulta em
+   `conflict`, ainda que o payload OHLC seja igual quando a proveniência
+   semântica seja diferente;
 3. retry de report não duplica observation;
 4. output/decision do report é idêntico com archive on/off;
 5. archive failure não altera decisão;
@@ -1124,6 +1261,24 @@ O teste futuro deve cobrir estas propriedades e invariantes:
 25. legacy journal nunca é materializado como canonical;
 26. comportamento dos módulos protegidos permanece inalterado.
 
+As seguintes propriedades adicionais ficam pré-registradas para esta revisão,
+sem remover as anteriores:
+
+27. retry idêntico do mesmo batch não cria um segundo manifest canônico nem
+    altera o manifest existente;
+28. revisão de corporate action com coverage sobreposta divergente cria
+    `corporate_action_revision_conflict`;
+29. signal basis desconhecida produz `signal_basis_unavailable` e bloqueia a
+    maturação de stock/ETF;
+30. bootstrap de `advisor-evidence` é orphan e contém somente
+    `evidence/branch-schema.json` sem financial evidence;
+31. materialização não consome transport ainda não arquivado;
+32. mesmo payload com proveniência semântica diferente produz `conflict`;
+33. assignment de provider é sticky para série existente e determinístico para
+    série nova;
+34. provider atribuído indisponível produz `market_data_unavailable` sem
+    fallback.
+
 Além desses testes, a suíte deve cruzar independentemente cada hash, verificar
 ordem de arrays, comparar bytes de duas execuções e testar a fronteira de data
 BRT/US/UTC. Testes de decisão devem provar que o caminho de archive não chama
@@ -1141,6 +1296,12 @@ Serão pré-registradas somente mutations de alta alavancagem:
 6. aceitar provider mixing;
 7. importar `signal_journal` no recovery;
 8. fazer archive failure alterar o resultado do report.
+
+Somente quando agregarem cobertura independente, também serão usadas estas
+mutations curtas: escrever um segundo manifest no retry; permitir
+`verified_none` apesar de revision conflict; tratar `signal_basis_unavailable`
+como raw; ler transport não arquivado no materializer; e trocar o provider
+atribuído após indisponibilidade.
 
 Todas devem morrer. O critério de aceitação é
 `mutations_survived=0`; mutations devem ser restauradas imediatamente após a
@@ -1244,6 +1405,16 @@ Esta spec está pronta para revisão humana quando mantiver, sem abrir novas
 decisões arquiteturais:
 
 - identities completas para os sete tipos;
+- um único manifest canônico por `batch_identity`, com retry idêntico somente
+  como `no_op` operacional;
+- conflict determinístico para revisão sobreposta de corporate action;
+- gate de `signal_price_basis_status` antes de `verified_none` de stock/ETF;
+- bootstrap orphan, evidence-only e sem criação automática em runtime;
+- archive/push confirmado antes de qualquer materialização ou maturação;
+- canonical content incluindo proveniência semântica, sem usar `payload_sha256`
+  isoladamente;
+- assignment de price provider versionado, determinístico, sticky e sem
+  fallback silencioso;
 - hash e gzip determinísticos;
 - branch como única authority;
 - intervalo de split inclusivo e signal-date conservador;
