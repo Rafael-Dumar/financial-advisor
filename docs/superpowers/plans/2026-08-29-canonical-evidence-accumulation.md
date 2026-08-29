@@ -52,7 +52,7 @@
 |---|---|
 | `advisor/evidence_schema.py` | Canonical evidence types, schema/evidence-type versions, logical identities, strict JSON parsing, canonical JSON, deterministic gzip, canonical/payload hashes, envelope validation, sidecar shape/basis binding, path partitioning, and duplicate/nonfinite/hash checks. Consumed by the archive, collector, materializer, and CLI sidecar writer. It performs no network, Git, SQLite, scoring, or outcome evaluation. |
 | `advisor/evidence_archive.py` | Validates local transport, stages a complete batch, bootstraps or verifies an orphan `advisor-evidence` branch only through an explicit deployment operation, publishes one atomic Git commit, classifies `committed`/`no_op`/`conflict`, writes conflict-only transactions, and performs at most three non-force push attempts. Consumed by CLI and the evidence workflow. |
-| `advisor/evidence_collector.py` | Implements `price_provider_assignment_v1`, typed asset collection, assigned-provider market collection, Alpha Vantage `SPLITS` fixture-compatible normalization using `Decimal`, coverage windows, session-date handling, and local transport output. It never invokes the report loader’s dynamic fallback chain or compares history. Consumed by the collector job and archive/materializer tests. |
+| `advisor/evidence_collector.py` | Implements `price_provider_assignment_v1`, typed asset collection, assigned-provider market collection, Alpha Vantage `SPLITS` fixture-compatible normalization using `Decimal`, coverage windows, the local deterministic `us_equities_session_v1` DST/holiday/session authority, and local transport output. It never invokes the report loader’s dynamic fallback chain or compares history. Consumed by the collector job and archive/materializer tests. |
 | `advisor/evidence_materializer.py` | Reads a freshly fetched canonical evidence checkout only, reconstructs observations/market/corporate shards, applies basis/split/conflict/feed gates, calls `evaluate_signal_observation(observation, series)` at most once per observation over the largest eligible prefix, and emits proof/outcome transport plus pending maturation state. Consumed by CLI and the publish/mature job. |
 | `tests/test_evidence_accumulation.py` | Deterministic unit, property-style, local-Git integration, recovery acceptance, workflow contract, security, and mutation-resistance tests for all new components. Fixtures are in-memory or temporary-directory data. |
 | `.github/workflows/financial-advisor-evidence.yml` | Separate collector and publish/mature jobs with the required provider-secret and repository-write boundaries, concurrency group, first-archive/fresh-read/second-archive order, and no provider secrets in writer jobs. |
@@ -62,10 +62,10 @@
 | File | Narrow change and consumer |
 |---|---|
 | `advisor/models.py` | Add optional, end-appended `DataFetchMetadata` fields for an explicit `PriceBasisClaim`; do not change `Candle`, `AssetSnapshot` decision fields, or any scoring input shape. |
-| `advisor/data_sources.py` | Expose versioned source/parser claims for only the explicitly qualified raw OHLCV routes and the Alpha Vantage `SPLITS` endpoint. The claim is a source-contract value, never derived from provider name alone. |
+| `advisor/data_sources.py` | Expose versioned source/parser claims for only the explicitly qualified raw OHLCV routes and the Alpha Vantage `SPLITS` endpoint. The claim is a source-contract value, never derived from provider name alone. FMP light remains unqualified unless a separate provider-native contract is proven. |
 | `advisor/data_pipeline.py` | Preserve an explicit basis claim through `_price_fetch_metadata` into `AssetSnapshot.data_fetch_metadata` without inferring it from provider, endpoint appearance, or candle values. |
 | `advisor/live_loader.py` | Thread an optional explicit basis claim through `_fetch`/`_fetch_optional` and `_fetch_metadata`; pass claims only at qualified parser/source call sites while leaving existing report fallback behavior unchanged. |
-| `advisor/cli.py` | Return the already-built observation list from the existing report persistence helper, write the sidecar from that same in-memory list, and add thin `evidence collect`, `evidence archive`, `evidence materialize`, and `evidence mature` dispatch. Existing report behavior and the frozen `outcomes evaluate` interface remain unchanged. |
+| `advisor/cli.py` | Build and retain the valid observation list before attempting operational SQLite persistence, write the sidecar from that same in-memory list regardless of the SQLite result, and add thin `evidence collect`, `evidence archive`, `evidence materialize`, and `evidence mature` dispatch. Existing report behavior and the frozen `outcomes evaluate` interface remain unchanged. |
 | `.github/workflows/financial-advisor-reports.yml` | Preserve the existing report job and provider behavior, upload the observation-sidecar transport with the report output, and add the read-only-to-writer handoff required by the archive job without giving provider secrets to the writer. |
 | `docs/AUTOMATION_SETUP.md` | Document the evidence workflow, exact command boundaries, orphan-branch bootstrap operation, permissions, concurrency, fresh-read requirement, and recovery assumptions. |
 
@@ -83,6 +83,9 @@ The following names and meanings are fixed before task execution so later tasks 
 
 ```python
 # advisor/evidence_schema.py
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal, Mapping, Sequence
 from advisor.models import AssetSnapshot
@@ -187,6 +190,12 @@ def oldest_canonical_provider_by_symbol(
 
 ```python
 # advisor/evidence_collector.py
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
+from pathlib import Path
+from typing import Callable, Literal, Mapping, Sequence
+
 PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION = "price_provider_assignment_v1"
 
 @dataclass(frozen=True)
@@ -220,9 +229,33 @@ class EvidenceCollector:
         coverage_windows: Mapping[str, tuple[date, date]],
     ) -> Path:
         pass
+
+US_EQUITIES_SESSION_POLICY_VERSION = "us_equities_session_v1"
+SessionCandleStatus = Literal["accepted", "rejected"]
+
+def us_eastern_dst_transition_utc(
+    year: int, *, transition: Literal["start", "end"]
+) -> datetime:
+    pass
+def us_eastern_offset_for_utc(utc_datetime: datetime) -> timedelta:
+    pass
+def us_eastern_local(utc_datetime: datetime) -> datetime:
+    pass
+def us_market_holidays(year: int) -> frozenset[date]:
+    pass
+def us_early_close_dates(year: int) -> frozenset[date]:
+    pass
+def us_equity_session_close(session_date: date) -> time:
+    pass
+def validate_us_equity_candle(
+    *, market_date: date, now_utc: datetime, synthetic: bool
+) -> SessionCandleStatus:
+    pass
 ```
 
 The assigned provider function has no success-based fallback. `oldest_canonical_provider_by_symbol` scans canonical market-bar shards in ascending `market_date` order, uses the provider on the oldest record for each symbol, and requires all records in that series to agree; mixed providers raise a provider-assignment conflict before collection. For an existing series, the caller supplies that provider; a mismatch is a provider-assignment conflict, not a provider switch. The v1 mapping constant lives in this main-branch Python module and is included in semantic provenance, never in workflow YAML.
+
+`us_equities_session_v1` is a local stdlib-only authority inside `advisor/evidence_collector.py`. It computes the second Sunday in March at 07:00 UTC as the DST start and the first Sunday in November at 06:00 UTC as the DST end, returning fixed `-05:00`/`-04:00` offsets before/after those instants. It defines regular close as 16:00 local and early close as 13:00 local; it derives observed New Year, Martin Luther King Jr., Presidents, Good Friday, Memorial, Juneteenth, Independence Day, Labor, Thanksgiving, and Christmas holidays. Its exact early-close set is the immediately preceding weekday session for Independence Day and Christmas when that session is not an observed full-market holiday, plus the Friday after Thanksgiving; when the calendar eve is a weekend, the preceding weekday is used, but an observed full-market holiday is never reclassified as an early close. Weekends and those holidays are rejected. `validate_us_equity_candle` rejects a synthetic row and a current/incomplete session before the applicable close, and accepts only a completed prior session. It does not import a private session helper from `advisor/signal_outcome.py`. No third-party timezone database or network calendar service is used.
 
 ```python
 # advisor/evidence_materializer.py
@@ -286,11 +319,10 @@ LiveDataLoader._fetch / _fetch_optional
 The safe implementation path is therefore limited to non-protected metadata propagation. Append an optional `price_basis_claim: PriceBasisClaim | None` field to `DataFetchMetadata` at the end of the dataclass, preserve it through `_price_fetch_metadata`, and pass it explicitly through `_fetch` and `_fetch_optional`. Add source-contract factories in `data_sources.py` for the qualified parser routes only:
 
 - FMP `historical-price-eod/full` parsed through the existing raw OHLCV `historical` fields;
-- FMP `historical-price-eod/light` parsed through the same raw OHLCV field contract;
 - Binance `klines`;
 - Hyperliquid `candleSnapshot`.
 
-Each factory returns `PriceBasisClaim(price_basis="raw_ohlcv", price_basis_policy_version="price_basis_v1", source_contract=source_contract_id)` where `source_contract_id` is one of these exact values: `fmp.historical_price_eod.full.raw_ohlcv_v1`, `fmp.historical_price_eod.light.raw_ohlcv_v1`, `binance.futures_klines.raw_ohlcv_v1`, or `hyperliquid.candle_snapshot.raw_ohlcv_v1`. The claim is passed by the corresponding loader call site, not inferred by `_fetch_metadata`. Yahoo, Stooq, Alpha Vantage adjusted daily history, cache entries without an explicit claim, and any route not in the qualified registry return no claim and therefore produce `signal_basis_unavailable`. The sidecar copies the claim from the snapshot metadata and binds it to `signal_id + observation_hash`; its resolver accepts `verified_raw_ohlcv` only when the claim fields and qualified source-contract ID validate together.
+Each factory returns `PriceBasisClaim(price_basis="raw_ohlcv", price_basis_policy_version="price_basis_v1", source_contract=source_contract_id)` where `source_contract_id` is one of these exact values: `fmp.historical_price_eod.full.raw_ohlcv_v1`, `binance.futures_klines.raw_ohlcv_v1`, or `hyperliquid.candle_snapshot.raw_ohlcv_v1`. The claim is passed by the corresponding loader call site, not inferred by `_fetch_metadata`. A cache hit may reattach that claim only when the current call site is the same qualified route, its request identity is the exact cache key, and the same versioned parser will process the payload; the cached payload does not create the claim. FMP light, Yahoo, Stooq, Alpha Vantage adjusted daily history, cache entries without an exact qualified route/parser claim, and any route not in the qualified registry return no claim and therefore produce `signal_basis_unavailable`. The sidecar copies the claim from the snapshot metadata and binds it to `signal_id + observation_hash`; its resolver accepts `verified_raw_ohlcv` only when the claim fields and qualified source-contract ID validate together.
 
 This path does not alter `Candle`, `AssetDecision`, `SignalObservation`, scoring, risk, or report rendering. RED tests compare decisions and rendered reports built from snapshots with and without the optional metadata, and spy that the scoring/risk call behavior is unchanged. If a source/parser cannot satisfy the explicit claim contract, the implementation must leave the claim absent and return `signal_basis_unavailable`; it must not infer raw basis from provider name or payload shape.
 
@@ -400,15 +432,34 @@ def resolve_signal_price_basis_status(
     pass
 ```
 
-The sidecar key is exactly `(signal_id, observation_hash)`. It carries explicit sanitized semantic provenance, the price-basis claim, source snapshot identity, and the sidecar schema version. `verified_raw_ohlcv` is emitted only when `AssetSnapshot.data_fetch_metadata.price_basis_claim` contains `price_basis="raw_ohlcv"`, `price_basis_policy_version="price_basis_v1"`, and one of the four qualified source-contract IDs from the call-graph finding. Absence, partial fields, an unqualified source contract, or ambiguous provenance emits `signal_basis_unavailable`. No code infers raw basis from a provider name, a fallback label, `market_data_kind`, or a `payload_sha256`.
+```python
+# advisor/cli.py
+# uses the existing `SQLiteCache`, `AssetDecision`, `AssetSnapshot`,
+# `SignalRunMetadata`, and `SignalObservation` types
+def _build_signal_observations(
+    decisions: Sequence[AssetDecision],
+    *,
+    snapshots_by_symbol: Mapping[str, AssetSnapshot],
+    stock_regime: str,
+    crypto_regime: str,
+    run_metadata: SignalRunMetadata,
+) -> list[SignalObservation]:
+    pass
+
+def _persist_signal_observations(
+    cache: SQLiteCache,
+    observations: Sequence[SignalObservation],
+) -> str:
+    pass
+```
+
+The sidecar key is exactly `(signal_id, observation_hash)`. It carries explicit sanitized semantic provenance, the price-basis claim, source snapshot identity, and the sidecar schema version. `verified_raw_ohlcv` is emitted only when `AssetSnapshot.data_fetch_metadata.price_basis_claim` contains `price_basis="raw_ohlcv"`, `price_basis_policy_version="price_basis_v1"`, and one of the three qualified source-contract IDs from the call-graph finding. Absence, partial fields, an unqualified source contract, or ambiguous provenance emits `signal_basis_unavailable`. No code infers raw basis from a provider name, a fallback label, `market_data_kind`, or a `payload_sha256`.
 
 The non-protected metadata path is explicit and versioned:
 
 ```python
 # advisor/data_sources.py
-def qualified_historical_price_basis_claim(
-    *, route: Literal["full", "light"]
-) -> PriceBasisClaim:
+def qualified_fmp_full_price_basis_claim() -> PriceBasisClaim:
     pass
 def qualified_binance_klines_basis_claim() -> PriceBasisClaim:
     pass
@@ -436,7 +487,7 @@ def _fetch_optional(
     pass
 ```
 
-`DataFetchMetadata.price_basis_claim` is optional and appended after existing fields. The loader passes a claim only at the FMP full/light, Binance klines, and Hyperliquid candle-snapshot call sites whose parser contracts are explicitly qualified. Yahoo, Stooq, Alpha Vantage adjusted daily history, and cache records without the claim remain unqualified. `_price_fetch_metadata` preserves the claim; it never creates one. `AssetSnapshot`, `AssetDecision`, `Candle`, `SignalObservation`, scoring, risk, and report rendering keep their existing shapes and behavior.
+`DataFetchMetadata.price_basis_claim` is optional and appended after existing fields. The loader passes a claim only at the FMP full, Binance klines, and Hyperliquid candle-snapshot call sites whose parser contracts are explicitly qualified. A qualified exact-route cache hit may receive the same call-site claim again only when its request identity equals the current cache key and the same parser-contract version will process the payload. An unqualified cache hit remains claimless even if its provider is FMP, its namespace is `prices`, or it has a fallback label. FMP light, Yahoo, Stooq, Alpha Vantage adjusted daily history, and cache records without an exact qualified route/parser claim remain unqualified. `_price_fetch_metadata` preserves a supplied claim; it never creates one. `AssetSnapshot`, `AssetDecision`, `Candle`, `SignalObservation`, scoring, risk, and report rendering keep their existing shapes and behavior.
 
 **TDD sequence:**
 
@@ -448,16 +499,30 @@ def _fetch_optional(
   - `SignalBasisPropagationTests.test_unqualified_fallback_source_is_signal_basis_unavailable`
   - `SignalBasisPropagationTests.test_basis_claim_propagates_through_live_loader_pipeline`
   - `SignalBasisPropagationTests.test_basis_metadata_does_not_change_asset_decision_report_scoring_or_risk`
+  - `SignalBasisPropagationTests.test_qualified_route_cache_hit_preserves_basis_claim`
+  - `SignalBasisPropagationTests.test_unqualified_cache_hit_does_not_gain_basis_claim`
+  - `SignalBasisPropagationTests.test_provider_name_cache_hit_does_not_qualify`
+  - `SourceContractQualificationTests.test_fmp_full_fixture_proves_provider_native_raw_ohlcv_without_adjustment`
+  - `SourceContractQualificationTests.test_binance_klines_fixture_proves_provider_native_raw_ohlcv_without_adjustment`
+  - `SourceContractQualificationTests.test_hyperliquid_candle_snapshot_fixture_proves_provider_native_raw_ohlcv_without_adjustment`
+  - `SourceContractQualificationTests.test_fmp_light_without_proof_remains_unqualified`
   - `ObservationSidecarTests.test_report_sidecar_reuses_the_same_in_memory_observations`
   - `ObservationSidecarTests.test_signal_observation_schema_and_hash_are_unchanged`
+  - `ObservationSidecarTests.test_sqlite_unavailable_does_not_prevent_valid_sidecar`
+  - `ObservationSidecarTests.test_observation_construction_failure_emits_no_sidecar`
+  - `ObservationSidecarTests.test_sqlite_failure_does_not_change_report_decision_or_observation_hash`
 - [ ] Run RED:
   `.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ObservationSidecarTests.test_sidecar_binds_basis_by_signal_id_and_observation_hash`
   Expected failure: `ImportError: cannot import name 'build_observation_sidecar' from 'advisor.evidence_schema'` or the equivalent missing-module failure before the helper exists.
-- [ ] Add the optional end-appended `DataFetchMetadata.price_basis_claim` field and the immutable `PriceBasisClaim` shape in `advisor/models.py`. Add the four explicit qualified source-contract factories and the Alpha Vantage `SPLITS` URL method in `advisor/data_sources.py`. The factories return only the fixed `price_basis_v1`/`raw_ohlcv` combinations; no factory accepts a provider name as proof by itself.
-- [ ] Thread `price_basis_claim` through `_fetch`, `_fetch_optional`, `_fetch_metadata`, and `_price_fetch_metadata` in both fresh and cache-hit paths. Pass the claim from FMP full/light, Binance klines, and Hyperliquid candle-snapshot call sites only. Leave Yahoo, Stooq, Alpha Vantage adjusted-history, and all other fallback calls claimless. The existing report fallback chain and its output remain unchanged.
-- [ ] Implement sidecar construction in `advisor/evidence_schema.py` from the list returned by the existing report observation-building path and `snapshots_by_symbol`. Adjust the private CLI persistence helper to return that exact list after its existing cache write, then call the sidecar writer with the same objects; do not reload observations from SQLite and do not alter `SignalObservation` fields, identity, or hash computation.
+- [ ] Add the optional end-appended `DataFetchMetadata.price_basis_claim` field and the immutable `PriceBasisClaim` shape in `advisor/models.py`. Add the three explicit qualified source-contract factories and the Alpha Vantage `SPLITS` URL method in `advisor/data_sources.py`. The factories return only the fixed `price_basis_v1`/`raw_ohlcv` combinations; no factory accepts a provider name as proof by itself.
+- [ ] Thread `price_basis_claim` through `_fetch`, `_fetch_optional`, `_fetch_metadata`, and `_price_fetch_metadata` in both fresh and cache-hit paths. A cache hit may reattach a claim only when the current call site supplies a registry entry whose exact route URL/request key and parser contract version match the cache key and payload parser. FMP full, Binance klines, and Hyperliquid candle-snapshot call sites are the only v1 qualified routes; FMP light, Yahoo, Stooq, Alpha Vantage adjusted-history, and all other fallback calls remain claimless. The existing report fallback chain and its output remain unchanged.
+- [ ] Implement sidecar construction in `advisor/evidence_schema.py` from the list returned by the existing report observation-building path and `snapshots_by_symbol`. In `advisor/cli.py`, `_build_signal_observations` first constructs the complete list from decisions and snapshots and returns only after every `SignalObservation` is valid and serializable; a construction/serialization exception produces no list and no sidecar. The CLI then calls `_persist_signal_observations(cache, observations)` as an operational attempt and emits the sidecar from that same in-memory list independently of its returned `written`, `duplicate_same`, or `unavailable` result and independently of a caught SQLite exception. `_persist_signal_observations` normalizes storage exceptions to its unavailable result for status reporting; it is never a gate for sidecar emission. Do not reload observations from SQLite and do not alter `SignalObservation` fields, identity, or hash computation.
 - [ ] Require the CLI to pass the same snapshot identity used by the report decision that produced `ideal_entry`, `stop`, and targets for each observation. The sidecar must bind that snapshot's explicit `DataFetchMetadata.price_basis_claim` to `(signal_id, observation_hash)` and reject a sidecar assembled from a different snapshot.
 - [ ] Implement `resolve_signal_price_basis_status` in `advisor/evidence_schema.py` so it verifies the observation key, snapshot metadata claim, policy version, raw basis literal, and qualified source-contract allowlist together. A provider-only metadata fixture and an unqualified fallback fixture must resolve to `signal_basis_unavailable`.
+- [ ] Prove each qualified route with a deterministic provider-native fixture: FMP full `historical` rows with native `date/open/high/low/close/volume`, Binance kline positional OHLCV fields, and Hyperliquid `t/o/h/l/c/v` fields. Each test must assert the parser copies raw OHLCV values without adjusted-close or corporate-action transformation before allowing its exact `*_raw_ohlcv_v1` claim. FMP light receives an explicit no-proof fixture and remains unqualified; no route is qualified merely because fields have generic OHLCV names. These contract tests use fixture payloads only and make no provider request.
+- [ ] Test cache-hit semantics using the existing `_cache_key` route/request identity: a qualified exact route/parser cache hit reattaches the call-site claim; an unqualified route cache hit has `price_basis_claim=None`; provider name `fmp`, namespace `prices`, or a fallback label alone never qualifies. No change to `advisor/cache.py` is permitted.
+- [ ] Implement the CLI observation sequence in `advisor/cli.py` only: validate the required run metadata, call `_build_signal_observations` before any cache result is considered, and keep the returned list in memory. If construction or observation serialization fails, report the existing observation-unavailable status and do not call `build_observation_sidecar`; no synthetic observation is invented. If construction succeeds, call `_persist_signal_observations`, catch/normalize `written`, `duplicate_same`, `unavailable`, and storage-error outcomes, and then call `build_observation_sidecar` with the same list regardless of that operational result. The report markdown/HTML, `AssetDecision` values, and observation hashes remain the existing authority and are not changed by either outcome.
+- [ ] Make the three SQLite/sidecar tests exercise this exact ordering: `ObservationSidecarTests.test_sqlite_unavailable_does_not_prevent_valid_sidecar` builds a valid `SignalObservation`, makes `SQLiteCache.save_signal_observations` return `status="unavailable"` or raise, and asserts the emitted sidecar contains the identical `signal_id` and `observation_hash`; `ObservationSidecarTests.test_observation_construction_failure_emits_no_sidecar` makes `_build_signal_observations` fail and asserts no sidecar writer call and no sidecar file; `ObservationSidecarTests.test_sqlite_failure_does_not_change_report_decision_or_observation_hash` compares report decision and observation hash with successful and failing SQLite persistence while asserting the in-memory observation/sidecar payload is identical.
 - [ ] Keep report authority independent: a sidecar/archive error must be surfaced to the evidence transport path and must not mutate a generated report or invoke a fallback provider. The existing report fallback behavior in `live_loader.py` remains unchanged.
 - [ ] Run the targeted sidecar tests:
   `.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ObservationSidecarTests`
@@ -495,6 +560,12 @@ def _fetch_optional(
   - `SessionCompletenessTests.test_synthetic_fill_is_rejected`
   - `SessionCompletenessTests.test_current_utc_crypto_day_candle_is_rejected`
   - `SessionCompletenessTests.test_completed_prior_utc_crypto_candle_is_accepted`
+  - `SessionCompletenessTests.test_us_eastern_dst_before_march_transition`
+  - `SessionCompletenessTests.test_us_eastern_dst_after_march_transition`
+  - `SessionCompletenessTests.test_us_eastern_dst_before_november_transition`
+  - `SessionCompletenessTests.test_us_eastern_dst_after_november_transition`
+  - `SessionCompletenessTests.test_regular_close_in_est`
+  - `SessionCompletenessTests.test_regular_close_in_edt`
 - [ ] Run RED:
   `.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ProviderAssignmentTests.test_price_provider_assignment_v1_is_deterministic`
   Expected failure: `ModuleNotFoundError: No module named 'advisor.evidence_collector'`.
@@ -507,7 +578,8 @@ def _fetch_optional(
 - [ ] Keep `etf` as an evidence-collector classification for benchmark market evidence only. The collector may archive its typed market transport, but the materializer must reject it before constructing `ForwardMarketSeries`; frozen 3B.2 receives only the existing `stock` or `crypto` asset types and never receives `asset_type="etf"`.
 - [ ] Implement daily market transport with explicit symbol, asset type, interval, date, timezone, assigned provider, the qualified versioned raw-OHLCV basis claim, source request identity, and coverage window. Use the repository’s existing symbol support lists as inputs; unsupported symbols produce the unavailable status rather than dynamic provider selection.
 - [ ] Implement Alpha Vantage `SPLITS` fixture-compatible parsing with `Decimal` from the real `split_factor` field and return `CanonicalSplitRatio(new_shares: str, old_shares: str)`. Normalize AAPL 4:1, NVDA 10:1, TSLA 5:1, IGV 5:1, and reverse split `0.25 -> 1/4`. Network tests are opt-in and never run in the deterministic default suite. The collector emits coverage-windowed transport and performs no comparison with canonical history.
-- [ ] Implement deterministic session completeness with injected `now_utc` and `zoneinfo.ZoneInfo("America/New_York")`: reject Saturday `2026-08-29`, reject US holiday `2026-09-07`, accept a completed `2026-11-27` early-close session after 13:00 ET, reject and do not archive a current regular-session candle before 16:00 ET, reject a synthetic/forward-filled row, reject crypto row date equal to the current UTC date, and accept a completed prior UTC date. These checks are local fixtures and never use network.
+- [ ] Implement deterministic session completeness through the local `us_equities_session_v1` helpers in `advisor/evidence_collector.py`: require aware UTC inputs; use the second Sunday in March at 07:00 UTC and the first Sunday in November at 06:00 UTC to select fixed EST/EDT offsets; convert the applicable 16:00 regular or 13:00 early close locally; reject weekends, the explicit observed US market-holiday set, and synthetic/forward-filled rows. Reject Saturday `2026-08-29`, reject US holiday `2026-09-07`, accept a completed `2026-11-27` early-close session after 13:00 local, reject and do not archive a current regular-session candle before 16:00 local, reject a synthetic/forward-filled row, reject crypto row date equal to the current UTC date, and accept a completed prior UTC date. These checks use only deterministic local helpers and never use network or a machine-installed timezone database.
+- [ ] Make the six boundary tests use fixed aware UTC values: `2026-03-08T06:59:00Z` is EST and `2026-03-08T07:00:00Z` is EDT; `2026-11-01T05:59:00Z` is EDT and `2026-11-01T06:00:00Z` is EST; `2026-01-05T21:00:00Z` is the 16:00 EST regular close and `2026-07-06T20:00:00Z` is the 16:00 EDT regular close. Assert the local offset/close directly without consulting host-local time settings.
 - [ ] Run targeted provider/corporate/session tests:
   `.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ProviderAssignmentTests tests.test_evidence_accumulation.CorporateActionCollectionTests tests.test_evidence_accumulation.SessionCompletenessTests`
 - [ ] Run existing data-source and live-loader regressions to prove report fallback behavior was not altered:
@@ -719,14 +791,14 @@ The existing `python -m advisor outcomes evaluate --input-path .tmp/forward-inpu
 
 ## Full-Suite Gates
 
-Full-suite execution is deferred to the future implementation session and is not run after each task. Every gate uses exactly `python -m unittest discover -s tests`. At each gate, only the two historical `test_nightly_auth_dry_run` failures may be classified separately as `PASS_WITH_BASELINE_KNOWN_FAILURES`; the baseline tests are not modified. Any additional failure is a blocker and must stop the freeze.
+Full-suite execution is deferred to the future implementation session and is not run after each task. Every gate uses exactly `.\.venv\Scripts\python.exe -m unittest discover -s tests`, the same repository virtual-environment interpreter used by the targeted tests. At each gate, only the two historical `test_nightly_auth_dry_run` failures may be classified separately as `PASS_WITH_BASELINE_KNOWN_FAILURES`; the baseline tests are not modified. Any additional failure is a blocker and must stop the freeze.
 
 - [ ] Gate A — immediately after Task 6, when core Python implementation is complete:
-  `python -m unittest discover -s tests`
+  `.\.venv\Scripts\python.exe -m unittest discover -s tests`
 - [ ] Gate B — immediately after Task 7, when workflow integration is complete:
-  `python -m unittest discover -s tests`
+  `.\.venv\Scripts\python.exe -m unittest discover -s tests`
 - [ ] Gate C — in Task 9, before the implementation freeze/review:
-  `python -m unittest discover -s tests`
+  `.\.venv\Scripts\python.exe -m unittest discover -s tests`
 
 ## Plan Self-Review Checklist
 
@@ -740,7 +812,11 @@ Before committing this plan, verify the following cross-task invariants:
 - [ ] One observation/maturation cycle makes at most one frozen evaluator call over the largest continuously eligible prefix; blocked horizons cannot be sent to or accepted from 3B.2.
 - [ ] The second archive is durably confirmed before any new operational SQLite outcome row; archive failure leaves the operational outcome count unchanged.
 - [ ] Bootstrap/archive Git operations are isolated from the caller main worktree, and the local isolation test checks `HEAD`, index, worktree bytes, and unrelated files.
-- [ ] All seven deterministic market-session properties and all three named full-suite gates are present.
+- [ ] The local `us_equities_session_v1` authority covers the seven session properties plus the four DST-boundary and two regular-close tests, with no external timezone database or network calendar requirement.
+- [ ] Observation construction returns the valid in-memory list before SQLite persistence; an unavailable/failed SQLite save still emits that list's sidecar, while construction failure emits no sidecar.
+- [ ] A cache-hit basis claim requires the exact qualified source/parser route and request identity; provider name, namespace, fallback label, and an unproven route never qualify it.
+- [ ] Every listed raw-OHLCV source contract has a provider-native fixture proof with no adjustment/transformation, and an unproven route remains claimless.
+- [ ] All three named full-suite gates use the repository virtual-environment interpreter and preserve the baseline-known-failure classification rule.
 - [ ] No protected module appears under any `Files: Modify` line, no excluded phase is scheduled, and the required forbidden-placeholder scan returns zero matches.
 
 ## Regression Checkpoint Matrix
@@ -756,7 +832,7 @@ The implementation worker runs the smallest relevant checkpoint after each task 
 | Existing report data path | `.\.venv\Scripts\python.exe -m unittest tests.test_live_loader tests.test_data_sources tests.test_cache_config_cli` | Confirm existing live fallback/report behavior remains unchanged. |
 | Workflow/automation | `.\.venv\Scripts\python.exe -m unittest tests.test_github_actions_workflow tests.test_automation_scripts` | Existing report/nightly contracts plus automation documentation. |
 | Frozen predictive subsets | `.\.venv\Scripts\python.exe -m unittest tests.test_predictive_evaluation tests.test_predictive_statistics` | Confirm no predictive contract drift while evidence gates are added. |
-| Full-suite gates A/B/C | `python -m unittest discover -s tests` | Execute only at the three named gates above, never after every task. |
+| Full-suite gates A/B/C | `.\.venv\Scripts\python.exe -m unittest discover -s tests` | Execute only at the three named gates above, never after every task. |
 
 No full suite is run in the current documentation-only session. No current task starts TDD; the commands above are the future execution sequence after explicit implementation authorization.
 
