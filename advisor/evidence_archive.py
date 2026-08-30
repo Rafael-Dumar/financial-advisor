@@ -59,6 +59,9 @@ _CONFLICT_REASON_CODES = frozenset(
         "corporate_action_revision_conflict",
     }
 )
+_RETRYABLE_PUSH_ERRORS = frozenset(
+    {"push_failed", "push_unconfirmed", "push_already_up_to_date"}
+)
 
 
 class _ArchiveError(ValueError):
@@ -168,15 +171,27 @@ def _origin_url(repo_dir: Path) -> str:
 
 
 def _remote_branch_exists(repo_dir: Path, origin: str, branch_name: str) -> bool:
+    ref_name = f"refs/heads/{branch_name}"
     result = _run_git(
         repo_dir,
         "ls-remote",
-        "--exit-code",
         origin,
-        f"refs/heads/{branch_name}",
+        ref_name,
         check=False,
     )
-    return result.returncode == 0
+    if result.returncode != 0:
+        raise _ArchiveError("remote_query_error")
+    try:
+        lines = result.stdout.decode("utf-8", "strict").splitlines()
+    except UnicodeDecodeError as exc:
+        raise _ArchiveError("remote_query_error") from exc
+    if not lines:
+        return False
+    for line in lines:
+        fields = line.split()
+        if len(fields) != 2 or fields[1] != ref_name:
+            raise _ArchiveError("remote_query_error")
+    return True
 
 
 def _assert_no_symlinks(root: Path) -> None:
@@ -1219,7 +1234,10 @@ def _push_commit(clone: Path, branch_name: str, paths: Sequence[str]) -> tuple[b
     unique_paths = sorted(set(paths))
     if not unique_paths:
         raise _ArchiveError("empty_commit")
-    _run_git(clone, "add", "--", *unique_paths)
+    try:
+        _run_git(clone, "add", "--", *unique_paths)
+    except _ArchiveError as exc:
+        raise _ArchiveError("storage_error") from exc
     committed = _run_git(
         clone,
         "commit",
@@ -1228,11 +1246,12 @@ def _push_commit(clone: Path, branch_name: str, paths: Sequence[str]) -> tuple[b
         check=False,
     )
     if committed.returncode != 0:
-        return False, "commit_failed"
+        return False, "storage_error"
     commit_sha = _git_text(clone, "rev-parse", "HEAD").strip()
     pushed = _run_git(
         clone,
         "push",
+        "--porcelain",
         "origin",
         f"HEAD:refs/heads/{branch_name}",
         check=False,
@@ -1247,6 +1266,8 @@ def _push_commit(clone: Path, branch_name: str, paths: Sequence[str]) -> tuple[b
     ).split()[0]
     if remote_sha != commit_sha:
         return False, "push_unconfirmed"
+    if any(line.startswith(b"=") for line in pushed.stdout.splitlines()):
+        return False, "push_already_up_to_date"
     return True, commit_sha
 
 
@@ -1401,10 +1422,12 @@ class EvidenceArchive:
 
                     conflicts: list[_Conflict] = []
                     new_shards: list[_Shard] = []
+                    corporate_equivalent_only = bool(incoming)
                     for shard in incoming:
                         key = (shard.evidence_type, shard.logical_identity_sha256)
                         existing_shard = existing.get(key)
                         if existing_shard is None:
+                            corporate_equivalent_only = False
                             incoming_series = _market_series_key(shard)
                             incoming_provider = _market_provider(shard)
                             provider_conflict = next(
@@ -1456,6 +1479,20 @@ class EvidenceArchive:
                                 )
                             )
                             continue
+                        if shard.evidence_type == "corporate_action":
+                            if _corporate_overlap_conflict(
+                                existing=existing_shard,
+                                incoming=shard,
+                            ):
+                                conflicts.append(
+                                    _conflict_from_pair(
+                                        existing=existing_shard,
+                                        incoming=shard,
+                                        reason_code="corporate_action_revision_conflict",
+                                    )
+                                )
+                            continue
+                        corporate_equivalent_only = False
                         if classify_idempotency(existing_shard.envelope, shard.envelope) == "duplicate_same":
                             continue
                         conflicts.append(
@@ -1500,6 +1537,8 @@ class EvidenceArchive:
                             list(files),
                         )
                         if not committed:
+                            if error_code not in _RETRYABLE_PUSH_ERRORS:
+                                raise _ArchiveError(error_code)
                             continue
                         return ArchiveResult(
                             status="conflict",
@@ -1515,6 +1554,16 @@ class EvidenceArchive:
                         )
 
                     if not new_shards:
+                        if corporate_equivalent_only and not conflicts:
+                            return ArchiveResult(
+                                status="no_op",
+                                batch_identity=batch_identity,
+                                manifest_path=None,
+                                committed_paths=(),
+                                conflict_paths=(),
+                                error_code=None,
+                                durability_confirmed=True,
+                            )
                         raise _ArchiveError("missing_historical_manifest")
                     for shard in new_shards:
                         _write_under(clone, shard.path, shard.compressed_bytes)
@@ -1525,6 +1574,8 @@ class EvidenceArchive:
                         [shard.path for shard in new_shards] + [manifest_path],
                     )
                     if not committed:
+                        if error_code not in _RETRYABLE_PUSH_ERRORS:
+                            raise _ArchiveError(error_code)
                         continue
                     return ArchiveResult(
                         status="committed",
@@ -1538,12 +1589,7 @@ class EvidenceArchive:
                         durability_confirmed=True,
                     )
             except _ArchiveError as exc:
-                if exc.error_code in {
-                    "git_error",
-                    "push_failed",
-                    "push_unconfirmed",
-                    "commit_failed",
-                }:
+                if exc.error_code in _RETRYABLE_PUSH_ERRORS:
                     continue
                 return ArchiveResult(
                     status="rejected",
@@ -1555,7 +1601,15 @@ class EvidenceArchive:
                     durability_confirmed=False,
                 )
             except (OSError, TypeError, ValueError, subprocess.SubprocessError):
-                continue
+                return ArchiveResult(
+                    status="rejected",
+                    batch_identity=batch_identity,
+                    manifest_path=None,
+                    committed_paths=(),
+                    conflict_paths=(),
+                    error_code="storage_error",
+                    durability_confirmed=False,
+                )
         return ArchiveResult(
             status="rejected",
             batch_identity=batch_identity,

@@ -1,3 +1,4 @@
+import os
 import hashlib
 import subprocess
 import tempfile
@@ -31,6 +32,7 @@ from advisor.evidence_archive import (
     bootstrap_evidence_branch,
     oldest_canonical_provider_by_symbol,
 )
+from advisor import evidence_archive as evidence_archive_module
 
 
 class CanonicalSerializationTests(unittest.TestCase):
@@ -647,6 +649,28 @@ class ArchiveGitTests(_ArchiveRepositoryMixin, unittest.TestCase):
             0,
         )
 
+    def test_remote_query_failure_is_not_reported_as_evidence_branch_missing(self):
+        unavailable_remote = self.root / "unavailable-origin.git"
+        _run_git(
+            self.caller,
+            "remote",
+            "set-url",
+            "origin",
+            str(unavailable_remote),
+        )
+
+        result = EvidenceArchive(
+            repo_dir=self.caller,
+            branch_name=self.branch_name,
+        ).archive(
+            self._write_transport([_market_envelope()])
+        )
+
+        self.assertEqual(result.status, "rejected")
+        self.assertFalse(result.durability_confirmed)
+        self.assertEqual(result.error_code, "remote_query_error")
+        self.assertNotEqual(result.status, "evidence_branch_missing")
+
     def test_archive_validates_full_batch_before_one_commit(self):
         self._bootstrap()
         before_count = self._remote_commit_count()
@@ -680,6 +704,41 @@ class ArchiveGitTests(_ArchiveRepositoryMixin, unittest.TestCase):
         self.assertEqual(self._remote_tree(), before_tree)
         self.assertFalse(any(path.startswith("evidence/manifests/") for path in self._remote_tree()))
         self.assertFalse(any(path.startswith("evidence/market-bars/") for path in self._remote_tree()))
+
+    def test_storage_failure_is_not_retried_or_reported_as_push_race_exhausted(
+        self,
+    ):
+        self._bootstrap()
+        transport = self._write_transport([_market_envelope()])
+        original_write_under = evidence_archive_module._write_under
+        original_push_commit = evidence_archive_module._push_commit
+        calls = {"write": 0, "push": 0}
+
+        def fail_storage(*args, **kwargs):
+            calls["write"] += 1
+            raise OSError("injected storage failure")
+
+        def count_push(*args, **kwargs):
+            calls["push"] += 1
+            return original_push_commit(*args, **kwargs)
+
+        evidence_archive_module._write_under = fail_storage
+        evidence_archive_module._push_commit = count_push
+        try:
+            result = EvidenceArchive(
+                repo_dir=self.caller,
+                branch_name=self.branch_name,
+            ).archive(transport)
+        finally:
+            evidence_archive_module._write_under = original_write_under
+            evidence_archive_module._push_commit = original_push_commit
+
+        self.assertEqual(result.status, "rejected")
+        self.assertFalse(result.durability_confirmed)
+        self.assertEqual(result.error_code, "storage_error")
+        self.assertNotEqual(result.error_code, "push_race_exhausted")
+        self.assertEqual(calls["write"], 1)
+        self.assertEqual(calls["push"], 0)
 
     def test_identical_batch_retry_returns_no_op_without_second_manifest(self):
         self._bootstrap()
@@ -716,6 +775,50 @@ class ArchiveGitTests(_ArchiveRepositoryMixin, unittest.TestCase):
             ],
             manifests_before,
         )
+
+    def test_same_candidate_commit_published_by_racing_writer_returns_validated_no_op(
+        self,
+    ):
+        self._bootstrap()
+        transport = self._write_transport([_market_envelope()])
+        original_push_commit = evidence_archive_module._push_commit
+        state = {"raced": False, "racing_commit_count": None}
+        fixed_date = "@1700000000 +0000"
+        previous_dates = {
+            key: os.environ.get(key)
+            for key in ("GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE")
+        }
+        os.environ["GIT_AUTHOR_DATE"] = fixed_date
+        os.environ["GIT_COMMITTER_DATE"] = fixed_date
+
+        def publish_same_candidate_first(clone, branch_name, paths):
+            if not state["raced"]:
+                state["raced"] = True
+                racing_result = EvidenceArchive(
+                    repo_dir=self.caller,
+                    branch_name=branch_name,
+                ).archive(transport)
+                self.assertEqual(racing_result.status, "committed")
+                state["racing_commit_count"] = self._remote_commit_count()
+            return original_push_commit(clone, branch_name, paths)
+
+        evidence_archive_module._push_commit = publish_same_candidate_first
+        try:
+            result = EvidenceArchive(
+                repo_dir=self.caller,
+                branch_name=self.branch_name,
+            ).archive(transport)
+        finally:
+            evidence_archive_module._push_commit = original_push_commit
+            for key, value in previous_dates.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.assertEqual(result.status, "no_op")
+        self.assertTrue(result.durability_confirmed)
+        self.assertEqual(self._remote_commit_count(), state["racing_commit_count"])
 
     def test_no_op_is_operational_only_without_historical_record(self):
         self._bootstrap()
@@ -938,6 +1041,64 @@ class GitIsolationTests(_ArchiveRepositoryMixin, unittest.TestCase):
 
 
 class CorporateArchiveConflictTests(_ArchiveRepositoryMixin, unittest.TestCase):
+    def test_same_identity_equivalent_normalized_corporate_action_is_not_generic_conflict(
+        self,
+    ):
+        self._bootstrap()
+        existing = _corporate_action_envelope()
+        self._archive([existing])
+        canonical_path = next(
+            path
+            for path in self._remote_tree()
+            if path.startswith("evidence/corporate-actions/")
+        )
+        canonical_before = self._remote_file(canonical_path)
+        commits_before = self._remote_commit_count()
+        incoming = _corporate_action_envelope(
+            events=[
+                {
+                    "effective_date": "2025-01-15",
+                    "split_factor_raw": "2",
+                    "split_ratio": {"new_shares": "2", "old_shares": "1"},
+                }
+            ],
+        )
+
+        result = self._archive([incoming])
+
+        self.assertEqual(result.status, "no_op")
+        self.assertTrue(result.durability_confirmed)
+        self.assertEqual(result.conflict_paths, ())
+        self.assertEqual(self._remote_commit_count(), commits_before)
+        self.assertEqual(self._remote_file(canonical_path), canonical_before)
+        self.assertFalse(
+            any(path.startswith("evidence/conflicts/") for path in self._remote_tree())
+        )
+
+    def test_same_identity_presence_absence_revision_uses_corporate_action_revision_conflict(
+        self,
+    ):
+        self._bootstrap()
+        existing = _corporate_action_envelope(events=[])
+        self._archive([existing])
+        incoming = _corporate_action_envelope()
+
+        result = self._archive([incoming])
+
+        self.assertEqual(result.status, "conflict")
+        self.assertFalse(result.durability_confirmed)
+        self.assertTrue(result.conflict_paths)
+        conflict = strict_json_loads_bytes(
+            decompress_single_member_gzip(
+                self._remote_file(result.conflict_paths[0]),
+                max_uncompressed_bytes=1024 * 1024,
+            )
+        )
+        self.assertEqual(
+            conflict["reason_code"],
+            "corporate_action_revision_conflict",
+        )
+
     def test_existing_canonical_overlap_revision_creates_conflict_transaction(self):
         self._bootstrap()
         existing = _corporate_action_envelope()
