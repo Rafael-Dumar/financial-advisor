@@ -4,8 +4,15 @@ import zlib
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from typing import get_args
 
 from advisor.evidence_schema import (
+    ArchiveStatus,
+    CorporateActionReasonCode,
+    CryptoPolicy,
+    HorizonStatus,
+    SignalBasisStatus,
+    SplitPolicy,
     canonical_content_sha256,
     canonical_json_bytes,
     classify_idempotency,
@@ -168,6 +175,53 @@ class CanonicalSerializationTests(unittest.TestCase):
         bad_identity["logical_identity"] = "signal-1"
         with self.assertRaises((TypeError, ValueError)):
             validate_canonical_envelope(bad_identity)
+
+
+class SharedEvidenceTypeContractTests(unittest.TestCase):
+    def test_shared_type_aliases_match_approved_plan(self):
+        self.assertEqual(
+            frozenset(get_args(ArchiveStatus)),
+            frozenset(
+                {
+                    "committed",
+                    "no_op",
+                    "conflict",
+                    "rejected",
+                    "evidence_branch_missing",
+                }
+            ),
+        )
+        self.assertEqual(
+            frozenset(get_args(HorizonStatus)),
+            frozenset(
+                {
+                    "market_data_unavailable",
+                    "pending",
+                    "conflict",
+                    "signal_basis_unavailable",
+                    "feed_unavailable",
+                    "split_in_horizon_unavailable",
+                    "verified_none",
+                    "not_applicable",
+                }
+            ),
+        )
+        self.assertEqual(
+            frozenset(get_args(CorporateActionReasonCode)),
+            frozenset({"corporate_action_revision_conflict"}),
+        )
+        self.assertEqual(
+            frozenset(get_args(SignalBasisStatus)),
+            frozenset({"verified_raw_ohlcv", "signal_basis_unavailable"}),
+        )
+        self.assertEqual(
+            frozenset(get_args(SplitPolicy)),
+            frozenset({"verified_no_split_in_signal_horizon_v1"}),
+        )
+        self.assertEqual(
+            frozenset(get_args(CryptoPolicy)),
+            frozenset({"not_applicable_crypto_raw_ohlcv_v1"}),
+        )
 
 
 class CanonicalIdempotencyTests(unittest.TestCase):

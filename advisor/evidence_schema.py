@@ -9,6 +9,32 @@ from collections.abc import Mapping
 from typing import Literal
 
 
+ArchiveStatus = Literal[
+    "committed",
+    "no_op",
+    "conflict",
+    "rejected",
+    "evidence_branch_missing",
+]
+HorizonStatus = Literal[
+    "market_data_unavailable",
+    "pending",
+    "conflict",
+    "signal_basis_unavailable",
+    "feed_unavailable",
+    "split_in_horizon_unavailable",
+    "verified_none",
+    "not_applicable",
+]
+CorporateActionReasonCode = Literal["corporate_action_revision_conflict"]
+SignalBasisStatus = Literal[
+    "verified_raw_ohlcv",
+    "signal_basis_unavailable",
+]
+SplitPolicy = Literal["verified_no_split_in_signal_horizon_v1"]
+CryptoPolicy = Literal["not_applicable_crypto_raw_ohlcv_v1"]
+
+
 _GZIP_HEADER = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff"
 _HASH_HEX_LENGTH = hashlib.sha256().digest_size * 2
 _ENVELOPE_REQUIRED_KEYS = frozenset(
