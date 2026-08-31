@@ -1054,14 +1054,11 @@ class CorporateArchiveConflictTests(_ArchiveRepositoryMixin, unittest.TestCase):
         )
         canonical_before = self._remote_file(canonical_path)
         commits_before = self._remote_commit_count()
-        incoming = _corporate_action_envelope(
-            events=[
-                {
-                    "effective_date": "2025-01-15",
-                    "split_factor_raw": "2",
-                    "split_ratio": {"new_shares": "2", "old_shares": "1"},
-                }
-            ],
+        incoming = _corporate_action_envelope()
+        incoming["transport"] = {"artifact": "different-raw-transport", "attempt": 2}
+        self.assertEqual(
+            existing["canonical_content_sha256"],
+            incoming["canonical_content_sha256"],
         )
 
         result = self._archive([incoming])
@@ -1074,6 +1071,41 @@ class CorporateArchiveConflictTests(_ArchiveRepositoryMixin, unittest.TestCase):
         self.assertFalse(
             any(path.startswith("evidence/conflicts/") for path in self._remote_tree())
         )
+
+    def test_same_identity_equivalent_events_but_different_semantic_provenance_is_generic_conflict(
+        self,
+    ):
+        self._bootstrap()
+        existing = _corporate_action_envelope()
+        self._archive([existing])
+        incoming = _corporate_action_envelope()
+        semantic_provenance = dict(incoming["semantic_provenance"])
+        semantic_provenance["status"] = "error"
+        incoming["semantic_provenance"] = semantic_provenance
+        incoming["canonical_content_sha256"] = canonical_content_sha256(
+            evidence_type="corporate_action",
+            schema_version="1.0",
+            logical_identity=incoming["logical_identity"],
+            payload=incoming["payload"],
+            semantic_provenance=semantic_provenance,
+        )
+        self.assertNotEqual(
+            existing["canonical_content_sha256"],
+            incoming["canonical_content_sha256"],
+        )
+
+        result = self._archive([incoming])
+
+        self.assertEqual(result.status, "conflict")
+        self.assertFalse(result.durability_confirmed)
+        self.assertTrue(result.conflict_paths)
+        conflict = strict_json_loads_bytes(
+            decompress_single_member_gzip(
+                self._remote_file(result.conflict_paths[0]),
+                max_uncompressed_bytes=1024 * 1024,
+            )
+        )
+        self.assertEqual(conflict["reason_code"], "divergent_payload")
 
     def test_same_identity_presence_absence_revision_uses_corporate_action_revision_conflict(
         self,

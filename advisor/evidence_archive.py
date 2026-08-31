@@ -1491,6 +1491,17 @@ class EvidenceArchive:
                                         reason_code="corporate_action_revision_conflict",
                                     )
                                 )
+                            elif classify_idempotency(
+                                existing_shard.envelope,
+                                shard.envelope,
+                            ) != "duplicate_same":
+                                conflicts.append(
+                                    _conflict_from_pair(
+                                        existing=existing_shard,
+                                        incoming=shard,
+                                        reason_code="divergent_payload",
+                                    )
+                                )
                             continue
                         corporate_equivalent_only = False
                         if classify_idempotency(existing_shard.envelope, shard.envelope) == "duplicate_same":
