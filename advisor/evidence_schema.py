@@ -3,10 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from pathlib import Path
 import struct
 import zlib
 from collections.abc import Mapping
-from typing import Literal
+from typing import Literal, Sequence
+
+from advisor.models import AssetSnapshot
+from advisor.signal_observation import SignalObservation
 
 
 ArchiveStatus = Literal[
@@ -364,3 +368,204 @@ def classify_idempotency(
     if existing_hash == incoming_hash:
         return "duplicate_same"
     return "conflict"
+
+
+def build_observation_sidecar(
+    observations: Sequence[SignalObservation],
+    *,
+    snapshots_by_symbol: Mapping[str, AssetSnapshot],
+    output_path: Path,
+) -> Path:
+    """Write the canonical observation list and its bound provenance sidecar."""
+    from dataclasses import asdict
+
+    from advisor.data_sources import is_qualified_raw_ohlcv_claim
+    from advisor.signal_observation import compute_observation_hash
+
+    if not observations:
+        raise ValueError("observation_sidecar_requires_observations")
+
+    ordered = sorted(observations, key=lambda observation: str(observation.signal_id))
+    signal_ids = [str(observation.signal_id) for observation in ordered]
+    if len(signal_ids) != len(set(signal_ids)):
+        raise ValueError("duplicate_observation_signal_id")
+
+    rows: list[dict[str, object]] = []
+    provenance_rows: list[dict[str, object]] = []
+    first = ordered[0]
+    for observation in ordered:
+        if compute_observation_hash(observation) != observation.observation_hash:
+            raise ValueError("observation_hash_mismatch")
+        if (
+            observation.schema_version != first.schema_version
+            or observation.source_sha != first.source_sha
+            or observation.run_id != first.run_id
+            or observation.report_type != first.report_type
+        ):
+            raise ValueError("observation_sidecar_batch_identity_mismatch")
+
+        snapshot = snapshots_by_symbol.get(observation.asset)
+        if snapshot is None:
+            raise ValueError("observation_snapshot_missing")
+        if snapshot.symbol != observation.asset or snapshot.asset_type != observation.asset_type:
+            raise ValueError("observation_snapshot_identity_mismatch")
+
+        row = asdict(observation)
+        row["reason_codes"] = list(observation.reason_codes)
+        row["persisted_at_utc"] = None
+        rows.append(row)
+
+        metadata = snapshot.data_fetch_metadata
+        claim = getattr(metadata, "price_basis_claim", None) if metadata else None
+        qualified = False
+        if claim is not None:
+            try:
+                qualified = is_qualified_raw_ohlcv_claim(claim)
+            except (TypeError, ValueError):
+                qualified = False
+        status: SignalBasisStatus = (
+            "verified_raw_ohlcv" if qualified else "signal_basis_unavailable"
+        )
+        claim_values = None
+        if claim is not None:
+            claim_values = {
+                "price_basis": getattr(claim, "price_basis", None),
+                "price_basis_policy_version": getattr(
+                    claim, "price_basis_policy_version", None
+                ),
+                "source_contract": getattr(claim, "source_contract", None),
+            }
+        try:
+            snapshot_input_hash = hashlib.sha256(
+                canonical_json_bytes(asdict(snapshot))
+            ).hexdigest()
+        except (TypeError, ValueError):
+            snapshot_input_hash = None
+        collection_provenance = {
+            "provider": metadata.provider if metadata else None,
+            "endpoint": metadata.endpoint if metadata else None,
+            "fetched_at": metadata.fetched_at if metadata else None,
+            "cache_fetched_at": metadata.cache_fetched_at if metadata else None,
+            "source_timestamp": metadata.source_timestamp if metadata else None,
+            "cache_age_seconds": metadata.cache_age_seconds if metadata else None,
+            "source_age_seconds": metadata.source_age_seconds if metadata else None,
+            "is_fresh": metadata.is_fresh if metadata else None,
+            "cache_hit": metadata.cache_hit if metadata else None,
+            "fallback_used": metadata.fallback_used if metadata else None,
+            "fallback_from": metadata.fallback_from if metadata else None,
+            "fallback_to": metadata.fallback_to if metadata else None,
+            "granularity": metadata.granularity if metadata else None,
+            "market_data_kind": metadata.market_data_kind if metadata else None,
+            "price_basis_claim": claim_values,
+        }
+        provenance_rows.append(
+            {
+                "signal_id": observation.signal_id,
+                "observation_hash": observation.observation_hash,
+                "signal_price_provider": metadata.provider
+                if metadata is not None
+                else observation.provider,
+                "signal_input_hash": snapshot_input_hash,
+                "signal_price_basis_status": status,
+                "signal_price_basis_observed": (
+                    claim_values["price_basis"] if claim_values else None
+                ),
+                "collection_provenance": collection_provenance,
+            }
+        )
+
+    sidecar = {
+        "schema_version": first.schema_version,
+        "source_sha": first.source_sha,
+        "run_id": first.run_id,
+        "report_type": first.report_type,
+        "observations": rows,
+        "provenance": provenance_rows,
+    }
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(deterministic_gzip(canonical_json_bytes(sidecar)))
+    return path
+
+
+def resolve_signal_price_basis_status(
+    *,
+    observation: SignalObservation,
+    sidecar: Mapping[str, object],
+) -> SignalBasisStatus:
+    """Resolve basis only from a validated ``(signal_id, observation_hash)`` binding."""
+    from dataclasses import asdict
+
+    from advisor.data_sources import is_qualified_raw_ohlcv_claim
+    from advisor.models import PriceBasisClaim
+    from advisor.signal_observation import compute_observation_hash
+
+    unavailable: SignalBasisStatus = "signal_basis_unavailable"
+    try:
+        if not isinstance(sidecar, Mapping):
+            return unavailable
+        if (
+            sidecar.get("schema_version") != observation.schema_version
+            or sidecar.get("source_sha") != observation.source_sha
+            or sidecar.get("run_id") != observation.run_id
+            or sidecar.get("report_type") != observation.report_type
+        ):
+            return unavailable
+        if compute_observation_hash(observation) != observation.observation_hash:
+            return unavailable
+
+        observation_rows = sidecar.get("observations")
+        if not isinstance(observation_rows, list):
+            return unavailable
+        matching_rows = [
+            row
+            for row in observation_rows
+            if isinstance(row, Mapping)
+            and row.get("signal_id") == observation.signal_id
+        ]
+        if len(matching_rows) != 1:
+            return unavailable
+        row = matching_rows[0]
+        if row.get("observation_hash") != observation.observation_hash:
+            return unavailable
+        expected_row = asdict(observation)
+        expected_row["reason_codes"] = list(observation.reason_codes)
+        expected_row["persisted_at_utc"] = None
+        if canonical_json_bytes(row) != canonical_json_bytes(expected_row):
+            return unavailable
+
+        provenance_rows = sidecar.get("provenance")
+        if not isinstance(provenance_rows, list):
+            return unavailable
+        matching_provenance = [
+            candidate
+            for candidate in provenance_rows
+            if isinstance(candidate, Mapping)
+            and candidate.get("signal_id") == observation.signal_id
+            and candidate.get("observation_hash") == observation.observation_hash
+        ]
+        if len(matching_provenance) != 1:
+            return unavailable
+        provenance = matching_provenance[0]
+        claim_values = provenance.get("collection_provenance")
+        claim_values = claim_values.get("price_basis_claim") if isinstance(claim_values, Mapping) else None
+        if not isinstance(claim_values, Mapping):
+            return unavailable
+        claim = PriceBasisClaim(
+            price_basis=claim_values.get("price_basis"),
+            price_basis_policy_version=claim_values.get("price_basis_policy_version"),
+            source_contract=claim_values.get("source_contract"),
+        )
+        qualified = is_qualified_raw_ohlcv_claim(claim)
+        expected_status: SignalBasisStatus = (
+            "verified_raw_ohlcv" if qualified else unavailable
+        )
+        if provenance.get("signal_price_basis_status") != expected_status:
+            return unavailable
+        if provenance.get("signal_price_basis_observed") != (
+            claim.price_basis if qualified else None
+        ):
+            return unavailable
+        return expected_status
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return unavailable

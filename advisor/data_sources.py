@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 
+from advisor.models import PriceBasisClaim
+
 
 class FmpSource:
     base_url = "https://financialmodelingprep.com"
@@ -163,9 +165,44 @@ class AlphaVantageSource:
     def news_sentiment_url(self, tickers: list[str], *, limit: int = 50) -> str:
         return f"{self.base_url}?{urlencode({'function': 'NEWS_SENTIMENT', 'tickers': ','.join(tickers), 'limit': str(limit), 'apikey': self.api_key})}"
 
+    def splits_url(self, symbol: str) -> str:
+        return f"{self.base_url}?{urlencode({'function': 'SPLITS', 'symbol': symbol, 'apikey': self.api_key})}"
+
 
 class SecEdgarSource:
     base_url = "https://data.sec.gov"
 
     def submissions_url(self, cik: str) -> str:
         return f"{self.base_url}/submissions/CIK{cik.zfill(10)}.json"
+
+
+def qualified_fmp_full_price_basis_claim() -> PriceBasisClaim:
+    return PriceBasisClaim(
+        price_basis="raw_ohlcv",
+        price_basis_policy_version="price_basis_v1",
+        source_contract="fmp.historical_price_eod.full.raw_ohlcv_v1",
+    )
+
+
+def qualified_binance_klines_basis_claim() -> PriceBasisClaim:
+    return PriceBasisClaim(
+        price_basis="raw_ohlcv",
+        price_basis_policy_version="price_basis_v1",
+        source_contract="binance.futures_klines.raw_ohlcv_v1",
+    )
+
+
+def qualified_hyperliquid_candle_snapshot_basis_claim() -> PriceBasisClaim:
+    return PriceBasisClaim(
+        price_basis="raw_ohlcv",
+        price_basis_policy_version="price_basis_v1",
+        source_contract="hyperliquid.candle_snapshot.raw_ohlcv_v1",
+    )
+
+
+def is_qualified_raw_ohlcv_claim(claim: PriceBasisClaim | None) -> bool:
+    return claim in {
+        qualified_fmp_full_price_basis_claim(),
+        qualified_binance_klines_basis_claim(),
+        qualified_hyperliquid_candle_snapshot_basis_claim(),
+    }

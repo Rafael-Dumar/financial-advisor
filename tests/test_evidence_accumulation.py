@@ -1,4 +1,5 @@
 import os
+import argparse
 import hashlib
 import subprocess
 import tempfile
@@ -6,10 +7,13 @@ import threading
 import time
 import unittest
 import zlib
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import get_args
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from advisor.evidence_schema import (
     ArchiveStatus,
@@ -18,12 +22,14 @@ from advisor.evidence_schema import (
     HorizonStatus,
     SignalBasisStatus,
     SplitPolicy,
+    build_observation_sidecar,
     canonical_content_sha256,
     canonical_json_bytes,
     classify_idempotency,
     decompress_single_member_gzip,
     deterministic_gzip,
     payload_sha256,
+    resolve_signal_price_basis_status,
     strict_json_loads_bytes,
     validate_canonical_envelope,
 )
@@ -32,7 +38,37 @@ from advisor.evidence_archive import (
     bootstrap_evidence_branch,
     oldest_canonical_provider_by_symbol,
 )
+from advisor.data_sources import (
+    BinanceSource,
+    FmpSource,
+    HyperliquidSource,
+    is_qualified_raw_ohlcv_claim,
+    qualified_binance_klines_basis_claim,
+    qualified_fmp_full_price_basis_claim,
+    qualified_hyperliquid_candle_snapshot_basis_claim,
+)
+from advisor.config import AdvisorConfig
+from advisor.data_pipeline import crypto_snapshot_from_payloads, stock_snapshot_from_payloads
+from advisor.live_loader import LiveDataLoader
+from advisor.models import (
+    AssetDecision,
+    AssetSnapshot,
+    Candle,
+    DataFetchMetadata,
+    EventInfo,
+    Fundamentals,
+    PriceBasisClaim,
+    RiskPlan,
+)
 from advisor import evidence_archive as evidence_archive_module
+from advisor import cli as cli_module
+from advisor.scoring import classify_asset, score_asset
+from advisor.signal_observation import (
+    SignalObservation,
+    SignalRunMetadata,
+    build_signal_observation,
+    compute_observation_hash,
+)
 
 
 class CanonicalSerializationTests(unittest.TestCase):
@@ -233,6 +269,670 @@ class SharedEvidenceTypeContractTests(unittest.TestCase):
             frozenset(get_args(CryptoPolicy)),
             frozenset({"not_applicable_crypto_raw_ohlcv_v1"}),
         )
+
+
+class SignalBasisPropagationTests(unittest.TestCase):
+    def test_explicit_raw_metadata_claim_qualifies(self):
+        claim = PriceBasisClaim(
+            price_basis="raw_ohlcv",
+            price_basis_policy_version="price_basis_v1",
+            source_contract="fmp.historical_price_eod.full.raw_ohlcv_v1",
+        )
+
+        self.assertTrue(is_qualified_raw_ohlcv_claim(claim))
+
+    def test_provider_name_alone_does_not_qualify(self):
+        claim = PriceBasisClaim(
+            price_basis="raw_ohlcv",
+            price_basis_policy_version="price_basis_v1",
+            source_contract="fmp",
+        )
+
+        self.assertFalse(is_qualified_raw_ohlcv_claim(claim))
+
+    def test_unqualified_fallback_source_is_signal_basis_unavailable(self):
+        snapshot = _task3_snapshot(claim=None, provider="yahoo")
+        observation = _task3_observation(snapshot)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_path = Path(temporary_directory) / "observations.json.gz"
+            build_observation_sidecar(
+                [observation],
+                snapshots_by_symbol={snapshot.symbol: snapshot},
+                output_path=output_path,
+            )
+            self.assertEqual(
+                resolve_signal_price_basis_status(
+                    observation=observation,
+                    sidecar=_read_task3_sidecar(output_path),
+                ),
+                "signal_basis_unavailable",
+            )
+
+    def test_basis_claim_propagates_through_live_loader_pipeline(self):
+        claim = qualified_fmp_full_price_basis_claim()
+        historical_payload = {
+            "historical": [
+                {
+                    "date": "2026-08-28",
+                    "open": 100.0,
+                    "high": 102.0,
+                    "low": 99.0,
+                    "close": 101.0,
+                    "volume": 1000,
+                }
+            ]
+        }
+        loader = LiveDataLoader(
+            AdvisorConfig.default(),
+            fetch_json=lambda *args, **kwargs: historical_payload,
+        )
+        payload = loader._fetch(
+            "fmp",
+            "prices",
+            loader.fmp.historical_prices_url("AAPL"),
+            price_basis_claim=claim,
+        )
+        snapshot = stock_snapshot_from_payloads(
+            symbol="AAPL",
+            theme="hardware",
+            historical_payload=payload,
+            profile_payload=[],
+            ratios_payload=[],
+            metrics_payload=[],
+            historical_metrics_payload=[],
+            growth_payload=[],
+            earnings_payload=[],
+            today="2026-08-31",
+            data_fetch_metadata=loader._last_fetch_metadata,
+        )
+        self.assertEqual(snapshot.data_fetch_metadata.price_basis_claim, claim)
+
+    def test_basis_metadata_does_not_change_asset_decision_report_scoring_or_risk(self):
+        plain = _task3_snapshot(claim=None)
+        qualified = _task3_snapshot(claim=qualified_fmp_full_price_basis_claim())
+        plain_decision = classify_asset(
+            score_asset(
+                plain,
+                stock_regime_label="bull",
+                crypto_regime_label="neutral",
+            ),
+            None,
+            effective_now_utc=datetime(2026, 8, 31, 15, 0, tzinfo=timezone.utc),
+        )
+        qualified_decision = classify_asset(
+            score_asset(
+                qualified,
+                stock_regime_label="bull",
+                crypto_regime_label="neutral",
+            ),
+            None,
+            effective_now_utc=datetime(2026, 8, 31, 15, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(plain_decision, qualified_decision)
+
+    def test_qualified_route_cache_hit_preserves_basis_claim(self):
+        claim = qualified_fmp_full_price_basis_claim()
+        payload = {"historical": [{"date": "2026-08-28", "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}]}
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            loader = LiveDataLoader(
+                AdvisorConfig.default(),
+                db_path=Path(temporary_directory) / "cache.db",
+                fetch_json=lambda *args, **kwargs: payload,
+            )
+            url = loader.fmp.historical_prices_url("AAPL")
+            loader._fetch("fmp", "prices", url, price_basis_claim=claim)
+            loader._fetch("fmp", "prices", url, price_basis_claim=claim)
+            self.assertTrue(loader._last_fetch_metadata.cache_hit)
+            self.assertEqual(loader._last_fetch_metadata.price_basis_claim, claim)
+
+    def test_unqualified_cache_hit_does_not_gain_basis_claim(self):
+        payload = {"historical": [{"date": "2026-08-28", "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}]}
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            loader = LiveDataLoader(
+                AdvisorConfig.default(),
+                db_path=Path(temporary_directory) / "cache.db",
+                fetch_json=lambda *args, **kwargs: payload,
+            )
+            url = loader.fmp.historical_prices_light_url("AAPL")
+            loader._fetch("fmp", "prices", url)
+            loader._fetch("fmp", "prices", url)
+            self.assertTrue(loader._last_fetch_metadata.cache_hit)
+            self.assertIsNone(loader._last_fetch_metadata.price_basis_claim)
+
+    def test_provider_name_cache_hit_does_not_qualify(self):
+        payload = {"historical": [{"date": "2026-08-28", "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}]}
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            loader = LiveDataLoader(
+                AdvisorConfig.default(),
+                db_path=Path(temporary_directory) / "cache.db",
+                fetch_json=lambda *args, **kwargs: payload,
+            )
+            url = loader.fmp.historical_prices_url("AAPL")
+            loader._fetch("fmp", "prices", url, fallback_from="yahoo")
+            loader._fetch("fmp", "prices", url, fallback_from="yahoo")
+            self.assertTrue(loader._last_fetch_metadata.cache_hit)
+            self.assertIsNone(loader._last_fetch_metadata.price_basis_claim)
+
+
+class SourceContractQualificationTests(unittest.TestCase):
+    def test_fmp_full_fixture_proves_provider_native_raw_ohlcv_without_adjustment(self):
+        payload = {
+            "historical": [
+                {
+                    "date": "2026-08-28",
+                    "open": 101.0,
+                    "high": 105.0,
+                    "low": 99.0,
+                    "close": 103.0,
+                    "volume": 1000,
+                    "adjustedClose": 203.0,
+                }
+            ]
+        }
+        self.assertIn(
+            "/stable/historical-price-eod/full",
+            FmpSource("demo").historical_prices_url("MSFT"),
+        )
+        snapshot = stock_snapshot_from_payloads(
+            symbol="MSFT",
+            theme="software",
+            historical_payload=payload,
+            profile_payload=[],
+            ratios_payload=[],
+            metrics_payload=[],
+            historical_metrics_payload=[],
+            growth_payload=[],
+            earnings_payload=[],
+            today="2026-08-31",
+            data_fetch_metadata=DataFetchMetadata(
+                provider="fmp",
+                endpoint="prices",
+                price_basis_claim=qualified_fmp_full_price_basis_claim(),
+            ),
+        )
+        self.assertEqual(
+            (snapshot.candles[0].open, snapshot.candles[0].high, snapshot.candles[0].low, snapshot.candles[0].close, snapshot.candles[0].volume),
+            (101.0, 105.0, 99.0, 103.0, 1000.0),
+        )
+        self.assertEqual(
+            qualified_fmp_full_price_basis_claim(),
+            PriceBasisClaim(
+                price_basis="raw_ohlcv",
+                price_basis_policy_version="price_basis_v1",
+                source_contract="fmp.historical_price_eod.full.raw_ohlcv_v1",
+            ),
+        )
+
+    def test_binance_klines_fixture_proves_provider_native_raw_ohlcv_without_adjustment(self):
+        payload = [[
+            1_756_944_000_000,
+            "101.0",
+            "105.0",
+            "99.0",
+            "103.0",
+            "1000.0",
+        ]]
+        self.assertIn("/fapi/v1/klines", BinanceSource().klines_url("BTCUSDT"))
+        snapshot = crypto_snapshot_from_payloads(
+            symbol="BTC",
+            theme="crypto",
+            klines_payload=payload,
+            market_payload={},
+            funding_payload=[],
+            open_interest_payload={},
+            taker_payload=[],
+            data_fetch_metadata=DataFetchMetadata(
+                provider="binance",
+                endpoint="prices",
+                price_basis_claim=qualified_binance_klines_basis_claim(),
+            ),
+        )
+        self.assertEqual(
+            (snapshot.candles[0].open, snapshot.candles[0].high, snapshot.candles[0].low, snapshot.candles[0].close, snapshot.candles[0].volume),
+            (101.0, 105.0, 99.0, 103.0, 1000.0),
+        )
+        self.assertEqual(
+            qualified_binance_klines_basis_claim(),
+            PriceBasisClaim(
+                price_basis="raw_ohlcv",
+                price_basis_policy_version="price_basis_v1",
+                source_contract="binance.futures_klines.raw_ohlcv_v1",
+            ),
+        )
+
+    def test_hyperliquid_candle_snapshot_fixture_proves_provider_native_raw_ohlcv_without_adjustment(self):
+        payload = [{
+            "t": 1_756_944_000_000,
+            "o": "201.0",
+            "h": "205.0",
+            "l": "199.0",
+            "c": "203.0",
+            "v": "2000.0",
+        }]
+        self.assertEqual(
+            HyperliquidSource()
+            .candle_snapshot_payload(
+                "HYPE", start_time_ms=1, end_time_ms=2
+            )["type"],
+            "candleSnapshot",
+        )
+        loader = LiveDataLoader(
+            AdvisorConfig.default(),
+            fetch_json=lambda *args, **kwargs: payload,
+        )
+        rows = loader._hyperliquid_klines("HYPE")
+        snapshot = crypto_snapshot_from_payloads(
+            symbol="HYPE",
+            theme="crypto",
+            klines_payload=rows,
+            market_payload={},
+            funding_payload=[],
+            open_interest_payload={},
+            taker_payload=[],
+            data_fetch_metadata=loader._last_fetch_metadata,
+        )
+        self.assertEqual(
+            (snapshot.candles[0].open, snapshot.candles[0].high, snapshot.candles[0].low, snapshot.candles[0].close, snapshot.candles[0].volume),
+            (201.0, 205.0, 199.0, 203.0, 2000.0),
+        )
+        self.assertEqual(
+            qualified_hyperliquid_candle_snapshot_basis_claim(),
+            PriceBasisClaim(
+                price_basis="raw_ohlcv",
+                price_basis_policy_version="price_basis_v1",
+                source_contract="hyperliquid.candle_snapshot.raw_ohlcv_v1",
+            ),
+        )
+
+    def test_fmp_light_without_proof_remains_unqualified(self):
+        payload = {
+            "historical": [
+                {
+                    "date": "2026-08-28",
+                    "open": 101.0,
+                    "high": 105.0,
+                    "low": 99.0,
+                    "close": 103.0,
+                    "volume": 1000,
+                }
+            ]
+        }
+        self.assertIn(
+            "/stable/historical-price-eod/light",
+            FmpSource("demo").historical_prices_light_url("MSFT"),
+        )
+        snapshot = stock_snapshot_from_payloads(
+            symbol="MSFT",
+            theme="software",
+            historical_payload=payload,
+            profile_payload=[],
+            ratios_payload=[],
+            metrics_payload=[],
+            historical_metrics_payload=[],
+            growth_payload=[],
+            earnings_payload=[],
+            today="2026-08-31",
+            data_fetch_metadata=DataFetchMetadata(provider="fmp", endpoint="prices"),
+        )
+        self.assertEqual(snapshot.candles[0].close, 103.0)
+        self.assertIsNone(snapshot.data_fetch_metadata.price_basis_claim)
+        self.assertFalse(
+            is_qualified_raw_ohlcv_claim(
+                PriceBasisClaim(
+                    price_basis="raw_ohlcv",
+                    price_basis_policy_version="price_basis_v1",
+                    source_contract="fmp.historical_price_eod.light.raw_ohlcv_v1",
+                )
+            )
+        )
+
+
+def _task3_snapshot(
+    symbol: str = "AAPL",
+    *,
+    claim: PriceBasisClaim | None = None,
+    asset_type: str = "stock",
+    provider: str = "fmp",
+) -> AssetSnapshot:
+    candles = [
+        Candle(
+            date=f"2026-01-{index:02d}",
+            open=100.0 + index,
+            high=101.0 + index,
+            low=99.0 + index,
+            close=100.5 + index,
+            volume=1_000_000.0,
+        )
+        for index in range(1, 31)
+    ]
+    metadata = DataFetchMetadata(
+        provider=provider,
+        endpoint="prices",
+        fetched_at="2026-08-31T15:00:00+00:00",
+        source_timestamp=candles[-1].date,
+        is_fresh=True,
+        cache_hit=False,
+        granularity="daily",
+        market_data_kind="eod_candle",
+        price_basis_claim=claim,
+    )
+    event = (
+        EventInfo(
+            days_to_earnings=None,
+            guidance_recent=None,
+            post_earnings_gap_percent=None,
+        )
+        if asset_type == "stock"
+        else None
+    )
+    return AssetSnapshot(
+        symbol=symbol,
+        asset_type=asset_type,
+        theme="hardware" if asset_type == "stock" else "crypto",
+        candles=candles,
+        fundamentals=Fundamentals(
+            pe=None,
+            peg=None,
+            historical_pe=None,
+            revenue_growth=None,
+            eps_growth=None,
+            margin_trend=None,
+            free_cash_flow_positive=None,
+            market_cap=1_000_000_000.0,
+            average_volume=1_000_000.0,
+        ),
+        event=event,
+        data_source=provider,
+        data_timestamp=candles[-1].date,
+        data_fetch_metadata=metadata,
+    )
+
+
+def _task3_decision(snapshot: AssetSnapshot) -> AssetDecision:
+    risk_plan = RiskPlan(
+        entry=130.5,
+        stop=125.0,
+        target_2r=141.5,
+        target_3r=147.0,
+        per_unit_risk=5.5,
+        risk_amount=250.0,
+        risk_fraction=0.005,
+        max_position_units=45.0,
+        max_position_value=5_872.5,
+        risk_reward_2r="2.0R",
+        alerts=[],
+    )
+    return AssetDecision(
+        symbol=snapshot.symbol,
+        asset_type=snapshot.asset_type,
+        decision="watch_buy",
+        investment_quality_score=72.0,
+        swing_trade_score=68.0,
+        risk_plan=risk_plan,
+        alerts=[],
+        limitations=[],
+        thesis="task3 fixture",
+        metrics_summary=[],
+        ideal_entry=130.5,
+        alternative_entry=None,
+        hold_suggestion="watch",
+        backtest_stats=None,
+        sample_quality=None,
+        reason_codes=["fixture"],
+        data_quality="sufficient",
+        missing_data_severity="none",
+        data_source=snapshot.data_source,
+        data_timestamp=snapshot.data_timestamp,
+        cache_age_seconds=None,
+        bucket="B",
+        market_session="regular",
+        last_price_timestamp=snapshot.data_timestamp,
+        provider=snapshot.data_fetch_metadata.provider if snapshot.data_fetch_metadata else "unknown",
+        universe_origin="watchlist",
+        data_quality_score=80,
+        decision_confidence_score=75,
+    )
+
+
+def _task3_run_metadata() -> SignalRunMetadata:
+    return SignalRunMetadata(
+        schema_version="1.0",
+        source_sha="a" * 40,
+        run_id="123456",
+        run_origin="github",
+        report_date_brt="2026-08-31",
+        report_type="main",
+        signal_timestamp_utc="2026-08-31T15:00:00Z",
+    )
+
+
+def _task3_observation(
+    snapshot: AssetSnapshot | None = None,
+    *,
+    claim: PriceBasisClaim | None = None,
+) -> SignalObservation:
+    resolved_snapshot = snapshot or _task3_snapshot(claim=claim)
+    return build_signal_observation(
+        _task3_decision(resolved_snapshot),
+        resolved_snapshot,
+        _task3_run_metadata(),
+        stock_regime="bull",
+        crypto_regime="neutral",
+    )
+
+
+def _read_task3_sidecar(path: Path) -> dict[str, object]:
+    return strict_json_loads_bytes(
+        decompress_single_member_gzip(
+            path.read_bytes(),
+            max_uncompressed_bytes=4 * 1024 * 1024,
+        )
+    )
+
+
+def _task3_scan_args(root: Path, *, db_name: str, report_name: str) -> argparse.Namespace:
+    return argparse.Namespace(
+        db=str(root / db_name),
+        fixture_dir=None,
+        output_dir=root / report_name,
+        include_discovery=False,
+        require_live=False,
+        report_type="main",
+        scan_errors=[],
+        provider_budget=None,
+        config=AdvisorConfig.default(),
+        skip_live_validation=True,
+        close_universe_source=None,
+        cache_reused_from_main=False,
+        runtime_scoring_artifact=False,
+        signal_observation_metadata=_task3_run_metadata(),
+        signal_observation_error_code="serialization_error",
+    )
+
+
+class ObservationSidecarTests(unittest.TestCase):
+    def test_sidecar_binds_basis_by_signal_id_and_observation_hash(self):
+        claim = qualified_fmp_full_price_basis_claim()
+        snapshot = _task3_snapshot(claim=claim)
+        observation = _task3_observation(snapshot)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_path = Path(temporary_directory) / "evidence" / "observations.json.gz"
+            result = build_observation_sidecar(
+                [observation],
+                snapshots_by_symbol={snapshot.symbol: snapshot},
+                output_path=output_path,
+            )
+
+            self.assertEqual(result, output_path)
+            sidecar = _read_task3_sidecar(output_path)
+            self.assertEqual(sidecar["schema_version"], "1.0")
+            self.assertEqual(sidecar["source_sha"], observation.source_sha)
+            self.assertEqual(sidecar["run_id"], observation.run_id)
+            self.assertEqual(sidecar["report_type"], observation.report_type)
+            self.assertEqual(len(sidecar["observations"]), 1)
+            self.assertEqual(
+                sidecar["observations"][0]["signal_id"], observation.signal_id
+            )
+            self.assertEqual(
+                sidecar["observations"][0]["observation_hash"],
+                observation.observation_hash,
+            )
+            provenance = sidecar["provenance"][0]
+            self.assertEqual(
+                (provenance["signal_id"], provenance["observation_hash"]),
+                (observation.signal_id, observation.observation_hash),
+            )
+            self.assertEqual(
+                resolve_signal_price_basis_status(
+                    observation=observation,
+                    sidecar=sidecar,
+                ),
+                "verified_raw_ohlcv",
+            )
+
+    def test_sidecar_rejects_unknown_observation_hash_binding(self):
+        claim = qualified_fmp_full_price_basis_claim()
+        snapshot = _task3_snapshot(claim=claim)
+        observation = _task3_observation(snapshot)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_path = Path(temporary_directory) / "observations.json.gz"
+            build_observation_sidecar(
+                [observation],
+                snapshots_by_symbol={snapshot.symbol: snapshot},
+                output_path=output_path,
+            )
+            unknown_hash_observation = replace(
+                observation,
+                observation_hash="f" * 64,
+            )
+
+            self.assertEqual(
+                resolve_signal_price_basis_status(
+                    observation=unknown_hash_observation,
+                    sidecar=_read_task3_sidecar(output_path),
+                ),
+                "signal_basis_unavailable",
+            )
+
+    def test_report_sidecar_reuses_the_same_in_memory_observations(self):
+        observation = _task3_observation(_task3_snapshot("MSFT"))
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            args = _task3_scan_args(root, db_name="report.db", report_name="reports")
+            with patch.object(
+                cli_module,
+                "_build_signal_observations",
+                return_value=[observation],
+            ), patch.object(
+                cli_module,
+                "_persist_signal_observations",
+                return_value="written",
+            ) as persist, patch.object(
+                cli_module,
+                "build_observation_sidecar",
+                create=True,
+                return_value=root / "reports" / "evidence" / "observations.json.gz",
+            ) as sidecar:
+                self.assertEqual(cli_module._scan(args), 0)
+
+            self.assertIs(persist.call_args.args[1], sidecar.call_args.args[0])
+
+    def test_signal_observation_schema_and_hash_are_unchanged(self):
+        observation = _task3_observation()
+        expected_fields = set(SignalObservation.__dataclass_fields__)
+        self.assertEqual(set(asdict(observation)), expected_fields)
+        self.assertEqual(compute_observation_hash(observation), observation.observation_hash)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_path = Path(temporary_directory) / "observations.json.gz"
+            build_observation_sidecar(
+                [observation],
+                snapshots_by_symbol={observation.asset: _task3_snapshot()},
+                output_path=output_path,
+            )
+            row = _read_task3_sidecar(output_path)["observations"][0]
+            self.assertEqual(set(row), expected_fields)
+            self.assertEqual(row["observation_hash"], observation.observation_hash)
+            self.assertIsNone(row["persisted_at_utc"])
+            self.assertEqual(row["reason_codes"], list(observation.reason_codes))
+
+    def test_sqlite_unavailable_does_not_prevent_valid_sidecar(self):
+        observation = _task3_observation(_task3_snapshot("MSFT"))
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            args = _task3_scan_args(root, db_name="unavailable.db", report_name="reports")
+            with patch.object(
+                cli_module,
+                "_build_signal_observations",
+                return_value=[observation],
+            ), patch.object(
+                cli_module.SQLiteCache,
+                "save_signal_observations",
+                return_value=SimpleNamespace(status="unavailable"),
+            ):
+                self.assertEqual(cli_module._scan(args), 0)
+
+            sidecar = _read_task3_sidecar(
+                root / "reports" / "evidence" / "observations.json.gz"
+            )
+            self.assertEqual(sidecar["observations"][0]["signal_id"], observation.signal_id)
+            self.assertEqual(
+                sidecar["observations"][0]["observation_hash"],
+                observation.observation_hash,
+            )
+
+    def test_observation_construction_failure_emits_no_sidecar(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            args = _task3_scan_args(root, db_name="construction.db", report_name="reports")
+            with patch.object(
+                cli_module,
+                "_build_signal_observations",
+                side_effect=ValueError("invalid observation"),
+            ), patch.object(
+                cli_module,
+                "build_observation_sidecar",
+                create=True,
+            ) as sidecar:
+                self.assertEqual(cli_module._scan(args), 0)
+
+            self.assertFalse(
+                (root / "reports" / "evidence" / "observations.json.gz").exists()
+            )
+            sidecar.assert_not_called()
+
+    def test_sqlite_failure_does_not_change_report_decision_or_observation_hash(self):
+        observation = _task3_observation(_task3_snapshot("MSFT"))
+        report_bytes: list[bytes] = []
+        sidecar_bytes: list[bytes] = []
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            for index, storage_failure in enumerate((False, True)):
+                args = _task3_scan_args(
+                    root,
+                    db_name=f"comparison-{index}.db",
+                    report_name=f"reports-{index}",
+                )
+                save_patch = patch.object(
+                    cli_module.SQLiteCache,
+                    "save_signal_observations",
+                    side_effect=OSError("sqlite unavailable") if storage_failure else None,
+                    return_value=SimpleNamespace(status="written"),
+                )
+                with patch.object(
+                    cli_module,
+                    "_build_signal_observations",
+                    return_value=[observation],
+                ), save_patch:
+                    self.assertEqual(cli_module._scan(args), 0)
+                report_bytes.append(
+                    (args.output_dir / "advisor-report.md").read_bytes()
+                )
+                sidecar_bytes.append(
+                    (args.output_dir / "evidence" / "observations.json.gz").read_bytes()
+                )
+
+        self.assertEqual(report_bytes[0], report_bytes[1])
+        self.assertEqual(sidecar_bytes[0], sidecar_bytes[1])
 
 
 class CanonicalIdempotencyTests(unittest.TestCase):

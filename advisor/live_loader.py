@@ -18,9 +18,23 @@ from advisor.data_pipeline import (
     hyperliquid_crypto_flow_from_payload,
     stock_snapshot_from_payloads,
 )
-from advisor.data_sources import AlphaVantageSource, BinanceSource, CoinbaseSource, CoinGeckoSource, FmpSource, HyperliquidSource, SecEdgarSource, StooqSource, YahooChartSource
+from advisor.data_sources import (
+    AlphaVantageSource,
+    BinanceSource,
+    CoinbaseSource,
+    CoinGeckoSource,
+    FmpSource,
+    HyperliquidSource,
+    SecEdgarSource,
+    StooqSource,
+    YahooChartSource,
+    is_qualified_raw_ohlcv_claim,
+    qualified_binance_klines_basis_claim,
+    qualified_fmp_full_price_basis_claim,
+    qualified_hyperliquid_candle_snapshot_basis_claim,
+)
 from advisor.http_client import fetch_json, fetch_text
-from advisor.models import AssetSnapshot, Candle, DataFetchMetadata, ProviderCapability
+from advisor.models import AssetSnapshot, Candle, DataFetchMetadata, PriceBasisClaim, ProviderCapability
 
 
 FetchJson = Callable[..., Any]
@@ -169,7 +183,12 @@ class LiveDataLoader:
         self.benchmark_status = {}
         for symbol in ["SPY", "QQQ", "SMH", "IGV", "XLV"]:
             try:
-                historical_payload = self._fetch("fmp", "prices", self.fmp.historical_prices_url(symbol))
+                historical_payload = self._fetch(
+                    "fmp",
+                    "prices",
+                    self.fmp.historical_prices_url(symbol),
+                    price_basis_claim=qualified_fmp_full_price_basis_claim(),
+                )
             except RuntimeError as error:
                 if _is_fmp_price_unavailable(error):
                     benchmarks[symbol] = []
@@ -449,7 +468,12 @@ class LiveDataLoader:
         else:
             binance_symbol = f"{symbol}USDT"
             try:
-                klines_payload = self._fetch("binance", "prices", self.binance.klines_url(binance_symbol))
+                klines_payload = self._fetch(
+                    "binance",
+                    "prices",
+                    self.binance.klines_url(binance_symbol),
+                    price_basis_claim=qualified_binance_klines_basis_claim(),
+                )
             except RuntimeError as error:
                 if _is_binance_restricted_location(error):
                     parent_call_id = self._last_audit_call_id
@@ -646,7 +670,13 @@ class LiveDataLoader:
             start_time_ms=start_time_ms,
             end_time_ms=end_time_ms,
         )
-        rows = self._fetch("hyperliquid", "prices", self.hyperliquid.info_url(), payload=payload)
+        rows = self._fetch(
+            "hyperliquid",
+            "prices",
+            self.hyperliquid.info_url(),
+            payload=payload,
+            price_basis_claim=qualified_hyperliquid_candle_snapshot_basis_claim(),
+        )
         return [
             [row["t"], row["o"], row["h"], row["l"], row["c"], row.get("v", 0)]
             for row in rows
@@ -710,7 +740,12 @@ class LiveDataLoader:
 
     def _stock_historical_payload(self, symbol: str) -> dict[str, Any]:
         try:
-            payload = self._fetch("fmp", "prices", self.fmp.historical_prices_url(symbol))
+            payload = self._fetch(
+                "fmp",
+                "prices",
+                self.fmp.historical_prices_url(symbol),
+                price_basis_claim=qualified_fmp_full_price_basis_claim(),
+            )
         except RuntimeError as error:
             parent_call_id = self._last_audit_call_id
             if _is_fmp_price_unavailable(error):
@@ -910,7 +945,15 @@ class LiveDataLoader:
         fallback_to: str | None = None,
         fallback_reason: str | None = None,
         symbol: str | None = None,
+        price_basis_claim: PriceBasisClaim | None = None,
     ) -> Any:
+        price_basis_claim = _qualified_price_basis_claim_for_route(
+            provider=provider,
+            namespace=namespace,
+            url=url,
+            payload=payload,
+            claim=price_basis_claim,
+        )
         key = _cache_key(url, payload)
         capability = _provider_capability_name(provider, namespace, url)
         call_id = self._start_audit_call(
@@ -963,6 +1006,7 @@ class LiveDataLoader:
                     cache_hit=True,
                     fallback_from=fallback_from,
                     fallback_to=fallback_to,
+                    price_basis_claim=price_basis_claim,
                 )
                 return cached
             self.cache_misses += 1
@@ -1035,6 +1079,7 @@ class LiveDataLoader:
             cache_hit=False,
             fallback_from=fallback_from,
             fallback_to=fallback_to,
+            price_basis_claim=price_basis_claim,
         )
         return fresh
 
@@ -1079,6 +1124,7 @@ class LiveDataLoader:
         fallback_to: str | None = None,
         fallback_reason: str | None = None,
         symbol: str | None = None,
+        price_basis_claim: PriceBasisClaim | None = None,
     ) -> Any:
         try:
             return self._fetch(
@@ -1092,6 +1138,7 @@ class LiveDataLoader:
                 fallback_to=fallback_to,
                 fallback_reason=fallback_reason,
                 symbol=symbol,
+                price_basis_claim=price_basis_claim,
             )
         except RuntimeError as error:
             if _is_degradable_fetch_error(error):
@@ -1150,6 +1197,49 @@ def _cache_key(url: str, payload: dict[str, Any] | None) -> str:
     if payload is None:
         return sanitized_url
     return f"{sanitized_url}|{json.dumps(payload, sort_keys=True)}"
+
+
+def _qualified_price_basis_claim_for_route(
+    *,
+    provider: str,
+    namespace: str,
+    url: str,
+    payload: dict[str, Any] | None,
+    claim: PriceBasisClaim | None,
+) -> PriceBasisClaim | None:
+    if claim is None:
+        return None
+    try:
+        if not is_qualified_raw_ohlcv_claim(claim):
+            return None
+    except (TypeError, ValueError):
+        return None
+
+    path = urlsplit(url).path
+    if (
+        provider == "fmp"
+        and namespace == "prices"
+        and path == "/stable/historical-price-eod/full"
+        and claim == qualified_fmp_full_price_basis_claim()
+    ):
+        return claim
+    if (
+        provider == "binance"
+        and namespace == "prices"
+        and path == "/fapi/v1/klines"
+        and claim == qualified_binance_klines_basis_claim()
+    ):
+        return claim
+    if (
+        provider == "hyperliquid"
+        and namespace == "prices"
+        and path == "/info"
+        and isinstance(payload, dict)
+        and payload.get("type") == "candleSnapshot"
+        and claim == qualified_hyperliquid_candle_snapshot_basis_claim()
+    ):
+        return claim
+    return None
 
 
 def _is_secret_query_name(name: str) -> bool:
@@ -1591,6 +1681,7 @@ def _fetch_metadata(
     cache_hit: bool,
     fallback_from: str | None,
     fallback_to: str | None,
+    price_basis_claim: PriceBasisClaim | None = None,
 ) -> DataFetchMetadata:
     source_timestamp = _latest_source_timestamp(payload)
     return DataFetchMetadata(
@@ -1608,6 +1699,7 @@ def _fetch_metadata(
         fallback_to=fallback_to,
         granularity="daily" if endpoint == "prices" else None,
         market_data_kind="eod_candle" if endpoint == "prices" else None,
+        price_basis_claim=price_basis_claim,
     )
 
 

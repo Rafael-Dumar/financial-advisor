@@ -1,6 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
+
+
+@dataclass(frozen=True)
+class PriceBasisClaim:
+    price_basis: Literal["raw_ohlcv"]
+    price_basis_policy_version: Literal["price_basis_v1"]
+    source_contract: str
 
 
 @dataclass(frozen=True)
@@ -52,6 +60,7 @@ class DataFetchMetadata:
     fallback_to: str | None = None
     granularity: str | None = None
     market_data_kind: str | None = None
+    price_basis_claim: PriceBasisClaim | None = None
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping, Sequence
 import re
 import sqlite3
 from dataclasses import replace
@@ -16,6 +17,7 @@ from advisor.backtest import backtest_similar_setups, summarize_backtest_setups
 from advisor.audit import run_data_audit
 from advisor.cache import SQLiteCache
 from advisor.config import AdvisorConfig
+from advisor.evidence_schema import build_observation_sidecar
 from advisor.fixtures import benchmarks_from_fixture, load_scan_fixture, snapshots_from_fixture
 from advisor.live_loader import LiveDataLoader
 from advisor.models import AssetDecision, AssetSnapshot, BacktestStats, Candle, RiskPlan
@@ -27,6 +29,7 @@ from advisor.scan_engine import derive_market_regimes, derive_relative_strength
 from advisor.scoring import classify_asset, classify_asset_with_trace, score_asset
 from advisor.signal_observation import (
     SignalRunMetadata,
+    SignalObservation,
     build_signal_observation,
     create_run_metadata,
 )
@@ -314,19 +317,37 @@ def _scan(args: argparse.Namespace) -> int:
     cache.save_latest_report(markdown, html)
     report_type = getattr(args, "report_type", None)
     if report_type in {"main", "close"}:
-        _persist_signal_observations(
-            cache,
-            decisions,
-            snapshots_by_symbol=snapshots_by_symbol,
-            stock_regime=stock_regime,
-            crypto_regime=crypto_regime,
-            run_metadata=getattr(args, "signal_observation_metadata", None),
-            unavailable_error_code=getattr(
-                args,
-                "signal_observation_error_code",
-                "source_sha_unavailable",
-            ),
-        )
+        run_metadata = getattr(args, "signal_observation_metadata", None)
+        if run_metadata is None:
+            _signal_observation_status(
+                "unavailable",
+                getattr(args, "signal_observation_error_code", "source_sha_unavailable"),
+            )
+        else:
+            try:
+                observations = _build_signal_observations(
+                    decisions,
+                    snapshots_by_symbol=snapshots_by_symbol,
+                    stock_regime=stock_regime,
+                    crypto_regime=crypto_regime,
+                    run_metadata=run_metadata,
+                )
+            except Exception:
+                _signal_observation_status("unavailable", "serialization_error")
+            else:
+                persistence_status = _persist_signal_observations(cache, observations)
+                _signal_observation_status(
+                    persistence_status,
+                    "storage_error" if persistence_status == "unavailable" else None,
+                )
+                try:
+                    build_observation_sidecar(
+                        observations,
+                        snapshots_by_symbol=snapshots_by_symbol,
+                        output_path=args.output_dir / "evidence" / "observations.json.gz",
+                    )
+                except (OSError, TypeError, ValueError):
+                    print("observation_sidecar_status=unavailable error_code=storage_error")
     else:
         report_file = str(args.output_dir / "advisor-report.md")
         cache.save_signal_journal(decisions, report_file=report_file)
@@ -341,42 +362,37 @@ def _scan(args: argparse.Namespace) -> int:
     return 0
 
 
-def _persist_signal_observations(
-    cache: SQLiteCache,
-    decisions: list[AssetDecision],
+def _build_signal_observations(
+    decisions: Sequence[AssetDecision],
     *,
-    snapshots_by_symbol: dict[str, AssetSnapshot],
+    snapshots_by_symbol: Mapping[str, AssetSnapshot],
     stock_regime: str,
     crypto_regime: str,
-    run_metadata: SignalRunMetadata | None,
-    unavailable_error_code: str,
-) -> None:
-    if run_metadata is None:
-        _signal_observation_status("unavailable", unavailable_error_code)
-        return
-    try:
-        observations = [
-            build_signal_observation(
-                decision,
-                snapshots_by_symbol[decision.symbol],
-                run_metadata,
-                stock_regime=stock_regime,
-                crypto_regime=crypto_regime,
-            )
-            for decision in decisions
-        ]
-    except Exception:
-        _signal_observation_status("unavailable", "serialization_error")
-        return
+    run_metadata: SignalRunMetadata,
+) -> list[SignalObservation]:
+    observations = [
+        build_signal_observation(
+            decision,
+            snapshots_by_symbol[decision.symbol],
+            run_metadata,
+            stock_regime=stock_regime,
+            crypto_regime=crypto_regime,
+        )
+        for decision in decisions
+    ]
+    return observations
+
+
+def _persist_signal_observations(
+    cache: SQLiteCache,
+    observations: Sequence[SignalObservation],
+) -> str:
     try:
         result = cache.save_signal_observations(observations)
     except Exception:
-        _signal_observation_status("unavailable", "storage_error")
-        return
-    if result.status == "unavailable":
-        _signal_observation_status("unavailable", "storage_error")
-        return
-    _signal_observation_status(result.status)
+        return "unavailable"
+    status = getattr(result, "status", "unavailable")
+    return "unavailable" if status == "unavailable" else str(status)
 
 
 def _signal_observation_status(status: str, error_code: str | None = None) -> None:
