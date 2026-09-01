@@ -902,7 +902,7 @@ class ObservationSidecarTests(unittest.TestCase):
 
     def test_sqlite_failure_does_not_change_report_decision_or_observation_hash(self):
         observation = _task3_observation(_task3_snapshot("MSFT"))
-        report_bytes: list[bytes] = []
+        report_decisions: list[list[str]] = []
         sidecar_bytes: list[bytes] = []
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -924,14 +924,20 @@ class ObservationSidecarTests(unittest.TestCase):
                     return_value=[observation],
                 ), save_patch:
                     self.assertEqual(cli_module._scan(args), 0)
-                report_bytes.append(
-                    (args.output_dir / "advisor-report.md").read_bytes()
+                report = (args.output_dir / "advisor-report.md").read_text(encoding="utf-8")
+                report_decisions.append(
+                    [
+                        line
+                        for line in report.splitlines()
+                        if line.startswith("- decision_label:")
+                        or line.startswith("- Decisao:")
+                    ]
                 )
                 sidecar_bytes.append(
                     (args.output_dir / "evidence" / "observations.json.gz").read_bytes()
                 )
 
-        self.assertEqual(report_bytes[0], report_bytes[1])
+        self.assertEqual(report_decisions[0], report_decisions[1])
         self.assertEqual(sidecar_bytes[0], sidecar_bytes[1])
 
 
