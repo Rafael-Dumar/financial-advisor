@@ -1,12 +1,16 @@
 # Fase 3B.3.3 — Design Spec: Canonical Evidence Accumulation
 
 **Classificação:** arquitetural
-**Status:** correção documental estreita em revisão humana; nenhuma
-implementação desta spec está iniciada.
+**Status:** `TASK1_FROZEN`; `TASK2_FROZEN`; `TASK3=BLOCKED_BY_BINDING_CONTRACT`.
+O human ruling aprovou `ADOPT APPROACH B`; esta amendment permanece design-only,
+aguardando revisão/approval humana antes de qualquer alteração do implementation
+plan ou código. Nenhuma implementação desta spec está iniciada.
 **Baseline original da decisão:** `HEAD == origin/main ==
 4b5e5cfc76ce81863a72e1c3fc984d5bbb330c2f`
-**Baseline desta revisão:** `HEAD == origin/main ==
+**Baseline da spec anterior:** `HEAD == origin/main ==
 56b78a239e7ba53e302377415282da946a9e469f`
+**Baseline desta amendment:** `HEAD ==
+33481cbdb912bb45ddd7b3d7c736f464463e633c`
 **Data:** 2026-08-27
 
 Esta spec define a arquitetura da acumulação prospectiva de evidência canônica.
@@ -27,9 +31,9 @@ O fluxo inicial será:
 ```text
 report main/close
     ↓
-canonical observation sidecar
+canonical observation evidence sidecar (O+B)
     ↓
-immutable observation archive (observation only; sem maturação)
+immutable observation evidence archive (O+B; sem maturação)
     ↓
 collector → local transport → validation
     ↓
@@ -61,7 +65,7 @@ main + advisor-evidence
 
 deve ser possível reconstruir, sem executar uma decisão antiga:
 
-- canonical observations;
+- canonical `ObservationEvidenceRecord` (observation + source binding);
 - market evidence;
 - corporate-action evidence;
 - horizon proofs;
@@ -72,6 +76,18 @@ Nenhuma decisão antiga é recalculada durante recovery. A decisão original é 
 observation arquivada; o outcome original é o outcome arquivado. A autoridade
 de `main` fornece apenas os tipos e os algoritmos congelados necessários para
 validar ou materializar esses dados.
+
+O recovery invariant desta amendment é:
+
+```text
+From main + advisor-evidence, the system can recover the exact canonical
+ObservationEvidenceRecord that was durably archived.
+```
+
+`main` sozinho não consegue reconstruir o binding histórico de um snapshot a
+partir de uma `SignalObservation` sem anchor externa. Recovery não recalcula um
+`ObservationSourceBinding` usando market data atual, provider atual ou lookup por
+symbol.
 
 | Superfície | Autoridade | Regra |
 | --- | --- | --- |
@@ -87,8 +103,9 @@ validar ou materializar esses dados.
 
 A primeira implementação cobrirá somente:
 
-1. emissão de um sidecar de observations pelos reports `main` e `close`;
-2. publicação desse sidecar como shards imutáveis;
+1. emissão de um sidecar de observation evidence (O+B) pelos reports `main` e
+   `close`;
+2. publicação desse sidecar como shards imutáveis de observation evidence;
 3. coleta diária de barras de mercado e corporate actions;
 4. prova de corporate-action por horizon;
 5. materialização de `ForwardMarketSeries` compatível com a 3B.2;
@@ -167,8 +184,11 @@ Não implementa return, MFE, MAE, stop touch, 2R, 3R ou ambiguity.
 ### 5.5 Integração fina
 
 `advisor/cli.py` apenas registra subcommands e despacha para esses componentes.
-O report deve reutilizar a lista de `SignalObservation` construída em memória
-pela autoridade existente. Markdown nunca é fonte de observation.
+O report deve construir `ObservationEvidenceRecord` atomicamente na fronteira de
+construction, usando a mesma instância do `AssetSnapshot` que alimentou a
+decision. A lista de `SignalObservation` para SQLite é derivada dos records já
+construídos; não há rejoin por symbol depois dessa fronteira. Markdown nunca é
+fonte de observation.
 
 ## 6. Identity, payload, provenance e transport
 
@@ -334,8 +354,14 @@ chave `symbol` usada para coincidir com `compute_signal_id`:
 Semanticamente, ela é `source_sha + run_id + report_type + asset`. O
 `signal_id` deve ser o hash da identidade congelada. O `payload` contém uma
 observation completa, incluindo `signal_id` e `observation_hash`, sem fields de
-outcome. Um shard representa uma observation; a ordem de rows no sidecar é
-apenas transport e é ordenada por `signal_id`.
+outcome. Um shard representa uma observation e sua proveniência de source
+binding capturada; a ordem de rows no sidecar é apenas transport e é ordenada
+por `signal_id`.
+
+O payload de `SignalObservation` permanece exatamente o contrato 3B.1. O
+`ObservationSourceBinding` é proveniência semântica adjacente ao payload,
+serializada como parte da canonical observation evidence, e não é injetado no
+schema da observation.
 
 Para evitar uma materialização parcial, o payload canônico contém exatamente os
 campos da observation 3B.1 abaixo, com `reason_codes` como array JSON e
@@ -499,9 +525,9 @@ Assim, cada horizon é independente. O payload MUST conter, no mínimo:
 Para stock/ETF, a policy é exatamente
 `verified_no_split_in_signal_horizon_v1`, o provider é `alpha_vantage` e o
 status terminal é `verified_none` ou `split_in_horizon_unavailable`.
-`verified_none` exige também `signal_price_basis_status=verified_raw_ohlcv` na
-sidecar ligada; sem isso o status do horizon é
-`signal_basis_unavailable` e não há entrega à 3B.2.
+`verified_none` exige também que a qualificação do source binding canônico ligado
+à observation resulte em `signal_price_basis_status=verified_raw_ohlcv`; sem
+isso o status do horizon é `signal_basis_unavailable` e não há entrega à 3B.2.
 
 Para crypto, a policy é `not_applicable_crypto_raw_ohlcv_v1`, o provider é
 `not_applicable`, `split_check_status=not_applicable`,
@@ -658,13 +684,17 @@ O report `main` ou `close` deve:
 
 1. executar normalmente;
 2. produzir os `AssetDecision` normalmente;
-3. construir `SignalObservation` pela autoridade existente;
-4. persistir no SQLite exatamente como hoje;
-5. exportar as mesmas observations daquele run para um sidecar.
+3. construir atomicamente um `ObservationEvidenceRecord` para cada decision,
+   pela autoridade existente e pelo snapshot exato daquela decision;
+4. somente depois de construir a lista completa, derivar as observations e
+   persistir no SQLite exatamente como hoje;
+5. exportar os mesmos records daquele run para um sidecar.
 
-O sidecar é construído diretamente da lista em memória, antes de qualquer
-releitura do DB. Ele nunca faz parse do Markdown, nunca recalcula decisão,
-nunca reconstrói uma observation posterior e nunca modifica timestamp histórico.
+O construction boundary usa o `AssetSnapshot` já associado à decision. Ele nunca
+faz parse do Markdown, nunca recalcula decisão, nunca localiza novamente um
+snapshot por `symbol`, nunca reconstrói uma observation posterior e nunca
+modifica timestamp histórico. O sidecar é construído diretamente dos records em
+memória, sem releitura do DB para descobrir a proveniência.
 
 O sidecar de transporte pode ser:
 
@@ -672,53 +702,348 @@ O sidecar de transporte pode ser:
 reports/evidence/observations.json.gz
 ```
 
-Ele contém `schema_version=1.0`, `source_sha`, `run_id`, `report_type`, a lista
-completa de rows canônicas ordenada por `signal_id` e, quando presente, um
-sidecar de proveniência ligado por `signal_id + observation_hash`.
+Ele contém `schema_version=1.0`, `source_sha`, `run_id`, `report_type` e a lista
+completa de `ObservationEvidenceRecord` canônicos ordenada por `signal_id`. Cada
+entry contém a observation e o `ObservationSourceBinding` já capturado para
+ela; não existe um sidecar de provenance que faça um segundo lookup.
 
-O sidecar de proveniência registra:
-
-- `signal_price_provider`;
-- `signal_input_hash`;
-- `signal_price_basis_status`;
-- `signal_price_basis_observed`;
-- `collection_provenance`.
-
-`signal_price_basis_status` é obrigatório para toda observation de stock/ETF;
-os demais campos podem ser omitidos somente quando seu status de ausência for
-registrado.
-
-Esses dados são metadata da observação, não parte de `SignalObservation` e não
-entram em `observation_hash`. `signal_input_hash`, quando emitido, é o
-SHA-256 do snapshot de input sanitizado efetivamente passado ao builder da
-observation; não é inferido a partir do Markdown. Se o snapshot não tiver
-representação estável disponível, o campo fica `null` com status explícito
-`unavailable`, sem inventar um hash.
-
-`signal_price_basis_status` é normativo e fica ligado à observation por
-`signal_id + observation_hash`. Para stock/ETF, a v1 aceita somente
-`verified_raw_ohlcv` e `signal_basis_unavailable`. O primeiro só pode ser
-emitido quando a proveniência do snapshot provar a base exata usada para
-calcular `ideal_entry`, `stop`, `target_2r` e `target_3r`; nome do provider,
-aparência dos candles ou `signal_price_basis_observed` isolado não constituem
-essa prova. Se a sidecar/proveniência não puder fazer essa ligação, o status é
-`signal_basis_unavailable`. Não se presume raw OHLCV.
-
-Uma basis compatível adicional exigiria policy/version explícita futura; nenhum
-valor além de `verified_raw_ohlcv` qualifica stock/ETF na v1. Para crypto, a
-regra própria continua `not_applicable_crypto_raw_ohlcv` e não pode ser usada
-para qualificar a ausência de split de stock/ETF. Nenhum campo é adicionado ou
-alterado em `SignalObservation`.
-
-O archive job explode o sidecar em um shard por observation e valida a linha
-contra `signal_id`, `observation_hash` e o schema 3B.1. A serialização JSON do
-sidecar usa arrays para `reason_codes`; a representação textual usada pela
-tabela SQLite não vira a autoridade canônica.
+O archive job explode o sidecar em um shard por observation evidence e valida a
+linha contra `signal_id`, `observation_hash`, o source binding e o schema 3B.1.
+A serialização JSON do sidecar usa arrays para `reason_codes`; a representação
+textual usada pela tabela SQLite não vira a autoridade canônica.
 
 Ativar ou desativar o archive não pode mudar bytes de report, `AssetDecision`,
 risk, sizing, report grade ou Telegram. Um erro de sidecar somente produz
 diagnóstico operacional e faz o archive job falhar; o report permanece o
 resultado válido já produzido.
+
+### 9.1 Architectural amendment — atomic observation source binding
+
+#### 9.1.1 Contradição arquitetural descoberta
+
+O contrato anterior esperava que:
+
+```text
+resolve_signal_price_basis_status(observation, sidecar)
+```
+
+conseguisse provar posteriormente que uma claim pertencia exatamente ao
+`AssetSnapshot` que originou a `SignalObservation`. Isso é impossível com a
+interface atual: `SignalObservation` não contém snapshot digest autoritativo,
+source-contract identity original, o snapshot completo de decision-time nem
+qualquer outra anchor independente suficiente.
+
+`signal_input_hash`, `snapshot_binding` e `entry_integrity_sha256` armazenados
+somente na sidecar podem provar self-consistency dos próprios bytes e das
+relações que a sidecar declara. Eles não podem autenticar a relação histórica
+`O ↔ snapshot X` se toda a sidecar for coerentemente reescrita. A regra explícita
+é:
+
+```text
+CHECKSUM SELF-CONSISTENCY != HISTORICAL SOURCE AUTHORITY.
+```
+
+Isso não é uma falha criptográfica. A solução não é HMAC, chaves, assinaturas ou
+outra camada de autenticação criptográfica. A correção é capturar a proveniência
+no mesmo passo de construction, antes que a observação seja separada do
+snapshot exato.
+
+#### 9.1.2 Contratos conceituais novos
+
+Os contratos v1 são equivalentes a:
+
+```python
+@dataclass(frozen=True)
+class ObservationSourceBinding:
+    signal_id: str
+    observation_hash: str
+    snapshot_sha256: str
+    price_basis_claim: PriceBasisClaim | None
+
+
+@dataclass(frozen=True)
+class ObservationEvidenceRecord:
+    observation: SignalObservation
+    source_binding: ObservationSourceBinding
+```
+
+`PriceBasisClaim` é o claim estruturado governado pela policy de qualificação,
+incluindo `price_basis`, `price_basis_policy_version` e `source_contract`.
+O binding captura o valor exato presente no snapshot; não o reconstrói a partir
+de provider, symbol, route ou allowlist.
+
+`snapshot_sha256` é o SHA-256 da representação JSON canônica completa e
+relevante do `AssetSnapshot` exato usado no momento de construction. A
+representação segue as canonical JSON semantics da seção 6.1 e cobre o snapshot
+completo que poderia ter participado dos report/decision inputs, incluindo
+`data_fetch_metadata`; não é uma projeção limitada a `symbol`, `asset_type`,
+latest close, provider ou claim.
+
+Não se usa `object id`, `repr`, `Python hash()`, memory address nem timestamp de
+runtime inventado para compor o digest. Conceitualmente:
+
+```text
+snapshot_sha256
+  = SHA-256(UTF-8(canonical_json(exact_asset_snapshot_representation)))
+```
+
+`snapshot_sha256` MUST ser calculado uma única vez durante a construção atômica,
+a partir do mesmo objeto `AssetSnapshot` usado para construir os decision
+inputs daquela observation. Depois disso ele é provenance capturada e carregada
+como tal; não pode ser recalculado a partir de um novo snapshot.
+
+No mesmo passo, `price_basis_claim` é capturado exatamente de:
+
+```text
+exact_snapshot.data_fetch_metadata.price_basis_claim
+```
+
+Essa claim deve ser a que o snapshot continha naquele instante. Não se escolhe
+uma claim posteriormente por provider, symbol, route lookup ou allowlist lookup.
+A allowlist continua necessária para qualificar a claim, mas não cria
+provenance.
+
+`signal_id` e `observation_hash` do binding devem coincidir exatamente com os da
+observation contida no record. Eles identificam o vínculo estrutural entre O e
+B; não transformam o binding em parte do schema 3B.1.
+
+`signal_price_basis_status` é um resultado derivado da validação da claim
+capturada; não é um campo adicional de `ObservationSourceBinding` e não
+substitui `price_basis_claim`.
+
+`advisor/signal_observation.py` permanece protegido. Não se adiciona
+`snapshot_sha256` a `SignalObservation`, não se altera seu schema, `signal_id`,
+`observation_hash` ou as canonical observation semantics da 3B.1. Source binding
+é evidence provenance adjacente, não parte da decisão histórica congelada em
+3B.1.
+
+#### 9.1.3 Construction boundary e atomic batch semantics
+
+O fluxo conceitual aprovado é:
+
+```text
+decision + exact AssetSnapshot X
+|
+v
+single construction step
+|
++--> SignalObservation O
+|
++--> ObservationSourceBinding B(X)
+     |
+     +-- immutable canonical snapshot digest
+     +-- PriceBasisClaim captured from X
+     +-- source/provenance contract
+     +-- signal_id
+     +-- observation_hash
+|
+v
+ObservationEvidenceRecord(O, B)
+|
++--> SQLite receives O only
+|
++--> sidecar receives O+B
+|
+v
+first canonical archive
+|
+v
+advisor-evidence becomes durable authority
+```
+
+A mesma instância de `AssetSnapshot` usada para construir os decision inputs
+deve ser usada para criar B. O construction boundary não pode fazer:
+
+```text
+construct observation
+→ guardar apenas observation
+→ posteriormente localizar snapshot novamente por symbol
+→ montar binding
+```
+
+O contrato conceitual da CLI deixa de ser somente:
+
+```text
+_build_signal_observations(...) -> list[SignalObservation]
+```
+
+e passa a ser:
+
+```text
+_build_signal_observation_records(...) -> list[ObservationEvidenceRecord]
+```
+
+Para cada decision, a CLI deve: (1) selecionar/usar o snapshot exato já
+associado àquela decision; (2) construir O; (3) imediatamente calcular B do
+mesmo snapshot; (4) formar `ObservationEvidenceRecord(O, B)`; e (5) somente
+então avançar para a próxima decision. Depois da lista completa:
+
+```python
+records = build...
+observations = [record.observation for record in records]
+```
+
+SQLite recebe `observations`; o sidecar recebe `records`. Nenhum rejoin
+`observation.symbol -> snapshots_by_symbol[symbol]` ocorre depois da
+construction.
+
+Todas as records devem ser construídas antes de qualquer persistence ou sidecar
+publication. Se a record N falhar, deve haver zero partial sidecar; o sistema
+não inventa B, não escolhe snapshot alternativo e não recarrega o provider.
+Falha posterior do SQLite não descarta nem altera B. Mutação posterior de
+`snapshots_by_symbol` ou de qualquer estado global de snapshot também não altera
+o record ou o sidecar já construído.
+
+#### 9.1.4 O que a captura atômica prova e não prova
+
+Na trusted deterministic report construction path, a captura atômica garante
+que:
+
+- o código normal não pode criar O com X e depois selecionar Y para provenance;
+- O e B são produzidos na mesma iteration/call context;
+- B captura digest e claim do snapshot exato X;
+- a sidecar recebe B já capturado, não um snapshot re-resolvido;
+- uma falha de SQLite não remove B;
+- estado mutável subsequente não altera B;
+- depois do canonical archive, replacement divergente para a mesma identity é
+  archive conflict, nunca rewrite.
+
+A captura atômica não fornece assinatura criptográfica contra um processo
+malicioso que reescreva todos os bytes antes do primeiro archive, não autentica
+um arbitrary unarchived dict e não cria proof recuperável a partir de
+`SignalObservation` sozinho. Isso não é requisito v1. O trust boundary v1 é:
+
+```text
+trusted deterministic report construction
+→ canonical archive confirmation
+→ append-only advisor-evidence authority
+```
+
+#### 9.1.5 Sidecar API
+
+O contrato antigo abaixo está **SUPERSEDED**:
+
+```text
+build_observation_sidecar(
+    observations,
+    snapshots_by_symbol=...,
+    ...,
+)
+```
+
+O novo contrato conceitual é:
+
+```python
+build_observation_sidecar(
+    records: Sequence[ObservationEvidenceRecord],
+    *,
+    output_path: Path,
+) -> Path
+```
+
+A sidecar builder recebe O+B, serializa e valida a coerência interna entre
+observation e binding. Ela não recebe `AssetSnapshot`, não recebe
+`snapshots_by_symbol`, não consulta provider e não consulta SQLite. Nenhum
+parâmetro equivalente pode permitir resolver snapshot posteriormente por
+symbol.
+
+#### 9.1.6 Resolver e qualificação fail-closed
+
+`resolve_signal_price_basis_status` não deve alegar autenticar uma arbitrary
+coherently rewritten pre-archive sidecar contra uma `SignalObservation` que não
+possui snapshot anchor. Sua entrada conceitual é um
+`ObservationEvidenceRecord` canônico ou uma canonical sidecar entry que
+represente esse record, não um observation solto acompanhado de provenance
+relocalizável.
+
+O resolver deve validar, fail closed:
+
+- `signal_id` e `observation_hash` do observation e do binding;
+- coerência estrutural do record;
+- formato e presença de `snapshot_sha256` quando exigidos;
+- formato de `PriceBasisClaim`;
+- allowlist e policy exatas;
+- schema/version;
+- ambiguity e duplicates.
+
+Para canonical archived evidence, `verified_raw_ohlcv` significa somente que o
+canonical observation evidence record capturou uma claim explicitamente
+qualificada de raw OHLCV do mesmo snapshot usado na construction da observation.
+Não significa cryptographic proof derivable from `SignalObservation` alone.
+
+Missing ou invalid claim resulta em `signal_basis_unavailable`. Para stock/ETF,
+`verified_raw_ohlcv` exige exatamente:
+
+```text
+price_basis == raw_ohlcv
+price_basis_policy_version == price_basis_v1
+source_contract ∈ exact qualified allowlist
+```
+
+FMP light continua unqualified. Nome de provider sozinho continua insuficiente.
+Para crypto, a policy própria continua `not_applicable_crypto_raw_ohlcv`, sem
+usar essa regra para qualificar stock/ETF.
+
+#### 9.1.7 Estados de autoridade
+
+Há três estados explícitos:
+
+| Estado | Semântica | Autoridade |
+| --- | --- | --- |
+| **IN-MEMORY CAPTURE** | `ObservationEvidenceRecord` recém-construída | trusted report construction path |
+| **UNARCHIVED SIDECAR** | artifact de transporte estruturalmente validável | ainda não é durable authority |
+| **CANONICAL ARCHIVED SIDECAR** | `EvidenceArchive` retornou `committed` com `durability_confirmed=True`, ou `no_op` canônico validado | `advisor-evidence` é durable source of truth |
+
+O sidecar não arquivado pode ser validado estruturalmente, mas não é usado como
+proof de recuperação histórica até a confirmação do archive. Depois da
+confirmação canônica, qualquer conteúdo divergente para a mesma logical
+identity é `conflict`, nunca rewrite.
+
+#### 9.1.8 Provider policy e não interferência financeira
+
+`price_provider_assignment_v1` permanece inalterada: stock/ETF usa FMP, HYPE usa
+Hyperliquid, crypto configurado restante usa Binance, e o provider mais antigo
+da série canônica continua sticky. `ObservationSourceBinding` captura o source
+contract realmente usado pelo snapshot da decision; não executa provider
+assignment.
+
+`ObservationSourceBinding` é observational evidence only. Ele não altera
+`AssetDecision`, scoring, risk, `ideal_entry`, stop, targets, report rendering,
+provider selection ou fallback behavior. A existência do binding não melhora
+recommendation score nem confidence.
+
+#### 9.1.9 Migration note: correction `33481cb`
+
+A correction commit `33481cbdb912bb45ddd7b3d7c736f464463e633c` introduziu
+`signal_input_hash`, `snapshot_binding` e `entry_integrity_sha256` numa tentativa
+de resolver o problema dentro do resolver. A review demonstrou que esses campos,
+isoladamente, são apenas self-consistency.
+
+A implementação futura deve manter somente o que continuar útil como structural
+integrity, remover ou reformular qualquer lógica que alegue independent
+historical authentication a partir desses hashes e não preservar complexidade
+apenas porque já existe. Esta spec não decide quais linhas serão removidas; isso
+pertence ao implementation plan aprovado posteriormente.
+
+#### 9.1.10 Plan implications
+
+Esta amendment não modifica o implementation plan atual. Depois de human
+review/approval desta spec, o plan deverá registrar somente estas implicações:
+
+- **Task 3:** deve ser amended para implementar a captura atômica de
+  `ObservationEvidenceRecord` e remover o binding atrasado por
+  `snapshots_by_symbol`;
+- **Task 4:** collectors permanecem inalterados por este ruling;
+- **Task 5:** materialization deve consumir o source binding canônico arquivado,
+  nunca reconstruir binding histórico a partir de providers atuais;
+- **Task 6:** a primeira confirmação de archive é a transição de transport
+  evidence para durable authority;
+- **Task 8:** testes de security/recovery podem mutar transport, mas a semântica
+  do canonical archive permanece a authority boundary.
+
+Tasks 4–9 não são redesenhadas além dessas implicações. Task 4 não é iniciada,
+e a propriedade de conflict para identity divergente do teste J pertence ao
+Task 6 de archive/maturation, não exige acoplamento direto do Task 3 ao archive.
 
 ## 10. Market evidence e calendário
 
@@ -862,7 +1187,8 @@ O estado por horizon é resolvido nesta ordem:
 2. menos de N bars completas: `pending`;
 3. conflict de corporate action relevante ao intervalo:
    `conflict`, com reason `corporate_action_revision_conflict`, sem novo proof;
-4. stock/ETF sem `signal_price_basis_status=verified_raw_ohlcv`:
+4. stock/ETF sem source binding canônico cuja claim qualifique como
+   `signal_price_basis_status=verified_raw_ohlcv`:
    `signal_basis_unavailable`, sem entrega à 3B.2;
 5. stock com bars suficientes mas sem corporate-action coverage válido:
    `feed_unavailable`;
@@ -897,8 +1223,8 @@ Para uma observation com horizons aprovados, o materializer:
 
 1. lê somente shards canônicos válidos da `advisor-evidence`, após fresh
    fetch/read confirmado do head que contém o archive de market/corporate;
-2. valida observation, bars, provider sticky, signal basis, corporate-action
-   coverage e proofs;
+2. valida observation, seu source binding canônico, bars, provider sticky,
+   signal basis, corporate-action coverage e proofs;
 3. seleciona o maior prefixo de bars cuja prova é válida;
 4. constrói um JSON local com o contrato exato da 3B.2:
 
@@ -921,7 +1247,8 @@ Para uma observation com horizons aprovados, o materializer:
 5. chama `evaluate_signal_observation` do módulo congelado para receber
    `SignalForwardEvaluation`, outcomes e `pending_horizons`;
 6. aceita somente os outcomes de stock/ETF cujos proofs correspondentes são
-   `verified_none` com `signal_price_basis_status=verified_raw_ohlcv`, ou
+   `verified_none` com source binding capturado cuja claim qualifique como
+   `signal_price_basis_status=verified_raw_ohlcv`, ou
    outcomes crypto `not_applicable`;
 7. emite proof/outcome transports para o único writer, mas esses transports
    não viram authority até a segunda transação de archive.
@@ -977,7 +1304,7 @@ Os status têm semântica distinta:
 | `split_in_horizon_unavailable` | bars existem, mas split viola policy v1 | não para v1 |
 | `feed_unavailable` | corporate-action evidence não foi comprovada | sim |
 | `market_data_unavailable` | price data está faltante ou inválida | sim |
-| `signal_basis_unavailable` | a base usada no sinal não foi provada | não até nova sidecar válida |
+| `signal_basis_unavailable` | a base usada no sinal não foi provada pelo source binding canônico | não até novo record sidecar validamente arquivado |
 | `conflict` | mesma identity tem conteúdo divergente | não sem revisão explícita |
 | `verified_none` | zero splits foi comprovado no intervalo | terminal do horizon |
 
@@ -1058,7 +1385,8 @@ testável sem depender de uma configuração manual do GitHub.
 ### 17.1 Report job
 
 O job que chama report mantém `contents: read` e recebe os provider secrets
-necessários. Ele produz report e observation sidecar, mas não publica na branch.
+necessários. Ele produz report e observation evidence sidecar (O+B), mas não
+publica na branch.
 
 ### 17.2 Archive/writer job
 
@@ -1205,8 +1533,8 @@ Exceder qualquer limite é `rejected`, não truncamento.
 A primeira implementação não pode ser aprovada sem um drill usando fixture
 canônica e um repositório Git local descartável:
 
-1. produzir observations, market bars, corporate actions, proofs e outcomes
-   sintéticos porém canônicos;
+1. produzir `ObservationEvidenceRecord`, market bars, corporate actions, proofs
+   e outcomes sintéticos porém canônicos;
 2. arquivar a fixture na branch de evidence do repositório descartável;
 3. registrar logical IDs, canonical hashes, byte hashes e counts originais;
 4. remover a SQLite temporária;
@@ -1214,7 +1542,7 @@ canônica e um repositório Git local descartável:
 6. iniciar uma materialização vazia;
 7. ler somente a fixture/store de `advisor-evidence`;
 8. validar todos os shards e manifests;
-9. reconstruir observations e market/corporate evidence;
+9. reconstruir `ObservationEvidenceRecord` e market/corporate evidence;
 10. reconstruir o conjunto de outcomes arquivados sem chamar scoring;
 11. detectar os horizons ainda pending;
 12. comparar IDs, hashes, status e counts com o registro original.
@@ -1228,6 +1556,50 @@ são índices de transação e não autoridade. O materializer varre shards,
 revalida hashes e recria qualquer índice/materialização.
 
 ## 23. Testing strategy pré-registrada
+
+### 23.1 Amendment: contrato de binding e acceptance substituída
+
+É **INVÁLIDA** a acceptance anterior que exigia:
+
+```text
+arbitrary sidecar Y
++
+recompute all local hashes
++
+resolver(observation O, sidecar Y)
+→ signal_basis_unavailable
+```
+
+Essa propriedade exigiria que O contivesse uma anchor externa que ela não
+contém. Uma sidecar Y coerentemente reescrita pode ser self-consistent sem ser
+historicamente autenticável contra O. Nenhum teste deve tratar essa
+indetectabilidade pré-archive como falha do resolver.
+
+Os testes obrigatórios que substituem essa acceptance são:
+
+- **A.** construction atômica produz O+B a partir do exact snapshot X;
+- **B.** não existe API de sidecar builder que aceite
+  `snapshots_by_symbol`;
+- **C.** um snapshot Y do mesmo symbol não pode ser substituído depois da
+  construction de O+B;
+- **D.** o `PriceBasisClaim` em B é igual ao claim exato capturado de X;
+- **E.** `snapshot_sha256` em B é igual ao digest canônico de X no momento da
+  construction;
+- **F.** mutar `snapshots_by_symbol` ou o estado global de snapshot depois da
+  construction não altera B nem o sidecar;
+- **G.** falha de SQLite não descarta nem altera B;
+- **H.** serialização do sidecar usa B pré-construído e não recalcula B a
+  partir de um snapshot;
+- **I.** serializar o mesmo O+B duas vezes produz conteúdo canônico
+  determinístico;
+- **J.** depois de O+B estar canônico no `EvidenceArchive`, tentar a mesma
+  logical identity com B diferente resulta em archive `conflict`, nunca
+  rewrite.
+
+Os testes A–I pertencem ao construction/sidecar contract do Task 3. O teste J
+é de integração do Task 6 (archive/maturation e transição de autoridade) e
+deve ser registrado explicitamente como tal no implementation plan amended,
+sem acoplar o Task 3 diretamente ao archive.
 
 O teste futuro deve cobrir estas propriedades e invariantes:
 
