@@ -370,6 +370,160 @@ def classify_idempotency(
     return "conflict"
 
 
+_SIDECAR_SNAPSHOT_BINDING_VERSION = "observation_snapshot_binding_v1"
+_SIDECAR_ENTRY_INTEGRITY_VERSION = "observation_sidecar_entry_integrity_v1"
+
+
+def _canonical_sha256(value: object) -> str:
+    return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+
+
+def _observation_provenance(observation: SignalObservation) -> Mapping[str, object]:
+    raw = observation.provenance_json.encode("utf-8")
+    parsed = strict_json_loads_bytes(raw)
+    if not isinstance(parsed, Mapping):
+        raise TypeError("observation provenance must be a mapping")
+    if canonical_json_bytes(parsed) != raw:
+        raise ValueError("observation provenance is not canonical")
+    return parsed
+
+
+def _snapshot_provenance(
+    observation: SignalObservation,
+    snapshot: AssetSnapshot,
+) -> Mapping[str, object]:
+    metadata = snapshot.data_fetch_metadata
+    if not snapshot.candles:
+        raise ValueError("observation_snapshot_candles_missing")
+
+    latest_candle = max(snapshot.candles, key=lambda candle: str(candle.date))
+
+    values: dict[str, object] = {
+        "data_source": snapshot.data_source,
+        "data_timestamp": snapshot.data_timestamp,
+        "last_price_timestamp": latest_candle.date,
+        "provider": metadata.provider if metadata is not None else observation.provider,
+        "cache_age_seconds": snapshot.cache_age_seconds,
+        "quote_status": snapshot.quote_status,
+        "quote_timestamp": snapshot.quote_timestamp,
+        "quote_source": snapshot.quote_source,
+        "quote_age_seconds": snapshot.quote_age_seconds,
+        "quote_is_intraday": snapshot.quote_is_intraday,
+    }
+    if metadata is not None:
+        values.update(
+            {
+                "fetched_at": metadata.fetched_at,
+                "cache_fetched_at": metadata.cache_fetched_at,
+                "source_timestamp": metadata.source_timestamp,
+                "source_age_seconds": metadata.source_age_seconds,
+                "cache_hit": metadata.cache_hit,
+                "fallback_used": metadata.fallback_used,
+                "fallback_from": metadata.fallback_from,
+                "fallback_to": metadata.fallback_to,
+                "granularity": metadata.granularity,
+                "market_data_kind": metadata.market_data_kind,
+            }
+        )
+    return {key: value for key, value in values.items() if value is not None}
+
+
+def _claim_values(claim: object) -> Mapping[str, object] | None:
+    if claim is None:
+        return None
+    return {
+        "price_basis": getattr(claim, "price_basis", None),
+        "price_basis_policy_version": getattr(
+            claim, "price_basis_policy_version", None
+        ),
+        "source_contract": getattr(claim, "source_contract", None),
+    }
+
+
+def _snapshot_binding(
+    observation: SignalObservation,
+    snapshot: AssetSnapshot,
+    claim_values: Mapping[str, object] | None,
+) -> Mapping[str, object]:
+    snapshot_provenance = _snapshot_provenance(observation, snapshot)
+    latest_candle = max(snapshot.candles, key=lambda candle: str(candle.date))
+    return {
+        "binding_version": _SIDECAR_SNAPSHOT_BINDING_VERSION,
+        "symbol": snapshot.symbol,
+        "asset_type": snapshot.asset_type,
+        "data_source": snapshot.data_source,
+        "data_timestamp": snapshot.data_timestamp,
+        "last_candle": {
+            "date": latest_candle.date,
+            "close": latest_candle.close,
+        },
+        "observation_provenance": dict(snapshot_provenance),
+        "price_basis_claim": claim_values,
+    }
+
+
+def _snapshot_binding_matches_observation(
+    observation: SignalObservation,
+    snapshot_binding: Mapping[str, object],
+    claim_values: Mapping[str, object] | None,
+) -> bool:
+    expected_snapshot_binding = _expected_snapshot_binding(
+        observation,
+        claim_values,
+    )
+    return canonical_json_bytes(snapshot_binding) == canonical_json_bytes(
+        expected_snapshot_binding
+    )
+
+
+def _expected_snapshot_binding(
+    observation: SignalObservation,
+    claim_values: Mapping[str, object] | None,
+) -> Mapping[str, object]:
+    observation_provenance = _observation_provenance(observation)
+    return {
+        "binding_version": _SIDECAR_SNAPSHOT_BINDING_VERSION,
+        "symbol": observation.asset,
+        "asset_type": observation.asset_type,
+        "data_source": observation.data_source,
+        "data_timestamp": observation.data_timestamp,
+        "last_candle": {
+            "date": observation.last_price_timestamp,
+            "close": observation.ideal_entry,
+        },
+        "observation_provenance": dict(observation_provenance),
+        "price_basis_claim": claim_values,
+    }
+
+
+def _signal_input_hash(
+    observation: SignalObservation,
+    snapshot_binding: Mapping[str, object],
+) -> str:
+    return _canonical_sha256(
+        {
+            "binding_version": _SIDECAR_SNAPSHOT_BINDING_VERSION,
+            "signal_id": observation.signal_id,
+            "observation_hash": observation.observation_hash,
+            "snapshot_binding": snapshot_binding,
+        }
+    )
+
+
+def _entry_integrity_sha256(entry: Mapping[str, object]) -> str:
+    protected_entry = {
+        key: value
+        for key, value in entry.items()
+        if key != "entry_integrity_sha256"
+    }
+    return _canonical_sha256(
+        {
+            "binding_version": _SIDECAR_ENTRY_INTEGRITY_VERSION,
+            "entry": protected_entry,
+        }
+    )
+
+
 def build_observation_sidecar(
     observations: Sequence[SignalObservation],
     *,
@@ -428,19 +582,19 @@ def build_observation_sidecar(
         )
         claim_values = None
         if claim is not None:
-            claim_values = {
-                "price_basis": getattr(claim, "price_basis", None),
-                "price_basis_policy_version": getattr(
-                    claim, "price_basis_policy_version", None
-                ),
-                "source_contract": getattr(claim, "source_contract", None),
-            }
-        try:
-            snapshot_input_hash = hashlib.sha256(
-                canonical_json_bytes(asdict(snapshot))
-            ).hexdigest()
-        except (TypeError, ValueError):
-            snapshot_input_hash = None
+            claim_values = _claim_values(claim)
+        snapshot_binding = _snapshot_binding(
+            observation,
+            snapshot,
+            claim_values,
+        )
+        if not _snapshot_binding_matches_observation(
+            observation,
+            snapshot_binding,
+            claim_values,
+        ):
+            status = "signal_basis_unavailable"
+        signal_input_hash = _signal_input_hash(observation, snapshot_binding)
         collection_provenance = {
             "provider": metadata.provider if metadata else None,
             "endpoint": metadata.endpoint if metadata else None,
@@ -465,13 +619,19 @@ def build_observation_sidecar(
                 "signal_price_provider": metadata.provider
                 if metadata is not None
                 else observation.provider,
-                "signal_input_hash": snapshot_input_hash,
+                "signal_input_hash": signal_input_hash,
                 "signal_price_basis_status": status,
                 "signal_price_basis_observed": (
                     claim_values["price_basis"] if claim_values else None
                 ),
                 "collection_provenance": collection_provenance,
+                "snapshot_binding": snapshot_binding,
+                "entry_integrity_version": _SIDECAR_ENTRY_INTEGRITY_VERSION,
             }
+        )
+
+        provenance_rows[-1]["entry_integrity_sha256"] = _entry_integrity_sha256(
+            provenance_rows[-1]
         )
 
     sidecar = {
@@ -547,15 +707,70 @@ def resolve_signal_price_basis_status(
         if len(matching_provenance) != 1:
             return unavailable
         provenance = matching_provenance[0]
-        claim_values = provenance.get("collection_provenance")
-        claim_values = claim_values.get("price_basis_claim") if isinstance(claim_values, Mapping) else None
-        if not isinstance(claim_values, Mapping):
+        collection_provenance = provenance.get("collection_provenance")
+        if not isinstance(collection_provenance, Mapping):
             return unavailable
-        claim = PriceBasisClaim(
-            price_basis=claim_values.get("price_basis"),
-            price_basis_policy_version=claim_values.get("price_basis_policy_version"),
-            source_contract=claim_values.get("source_contract"),
+        claim_values = collection_provenance.get("price_basis_claim")
+        if claim_values is not None and not isinstance(claim_values, Mapping):
+            return unavailable
+        normalized_claim_values = (
+            dict(claim_values) if isinstance(claim_values, Mapping) else None
         )
+        if normalized_claim_values is not None and set(normalized_claim_values) != {
+            "price_basis",
+            "price_basis_policy_version",
+            "source_contract",
+        }:
+            return unavailable
+
+        claim = PriceBasisClaim(
+            price_basis=(
+                normalized_claim_values.get("price_basis")
+                if normalized_claim_values is not None
+                else None
+            ),
+            price_basis_policy_version=(
+                normalized_claim_values.get("price_basis_policy_version")
+                if normalized_claim_values is not None
+                else None
+            ),
+            source_contract=(
+                normalized_claim_values.get("source_contract")
+                if normalized_claim_values is not None
+                else None
+            ),
+        )
+
+        snapshot_binding = provenance.get("snapshot_binding")
+        if not isinstance(snapshot_binding, Mapping):
+            return unavailable
+        expected_snapshot_binding = _expected_snapshot_binding(
+            observation,
+            normalized_claim_values,
+        )
+        if canonical_json_bytes(snapshot_binding) != canonical_json_bytes(
+            expected_snapshot_binding
+        ):
+            return unavailable
+
+        signal_input_hash = provenance.get("signal_input_hash")
+        _require_sha256_hex(signal_input_hash, field_name="signal_input_hash")
+        if signal_input_hash != _signal_input_hash(
+            observation,
+            expected_snapshot_binding,
+        ):
+            return unavailable
+
+        if provenance.get("entry_integrity_version") != _SIDECAR_ENTRY_INTEGRITY_VERSION:
+            return unavailable
+        entry_integrity_sha256 = provenance.get("entry_integrity_sha256")
+        _require_sha256_hex(
+            entry_integrity_sha256,
+            field_name="entry_integrity_sha256",
+        )
+        if entry_integrity_sha256 != _entry_integrity_sha256(provenance):
+            return unavailable
+
         qualified = is_qualified_raw_ohlcv_claim(claim)
         expected_status: SignalBasisStatus = (
             "verified_raw_ohlcv" if qualified else unavailable
