@@ -772,25 +772,398 @@ incluindo `price_basis`, `price_basis_policy_version` e `source_contract`.
 O binding captura o valor exato presente no snapshot; não o reconstrói a partir
 de provider, symbol, route ou allowlist.
 
-`snapshot_sha256` é o SHA-256 da representação JSON canônica completa e
-relevante do `AssetSnapshot` exato usado no momento de construction. A
-representação segue as canonical JSON semantics da seção 6.1 e cobre o snapshot
-completo que poderia ter participado dos report/decision inputs, incluindo
-`data_fetch_metadata`; não é uma projeção limitada a `symbol`, `asset_type`,
-latest close, provider ou claim.
+`snapshot_sha256` é exatamente o SHA-256 de
+`canonical_json_bytes(snapshot_projection_v1(exact_snapshot_X))`. A
+`snapshot_projection_v1` fechada, versionada e campo-a-campo está definida
+abaixo. Ela inclui `data_fetch_metadata` e não é uma projeção limitada a
+`symbol`, `asset_type`, latest close, provider ou claim.
 
 Não se usa `object id`, `repr`, `Python hash()`, memory address nem timestamp de
 runtime inventado para compor o digest. Conceitualmente:
 
 ```text
 snapshot_sha256
-  = SHA-256(UTF-8(canonical_json(exact_asset_snapshot_representation)))
+  = SHA-256(canonical_json_bytes(
+      snapshot_projection_v1(exact_snapshot_X)
+    ))
 ```
 
 `snapshot_sha256` MUST ser calculado uma única vez durante a construção atômica,
 a partir do mesmo objeto `AssetSnapshot` usado para construir os decision
 inputs daquela observation. Depois disso ele é provenance capturada e carregada
 como tal; não pode ser recalculado a partir de um novo snapshot.
+
+#### 9.1.2.1 `snapshot_projection_v1`
+
+`snapshot_projection_v1` é um contrato CLOSED WORLD. O objeto que entra no hash
+tem exatamente a chave fixa `projection_version` e os 34 campos atuais de
+`AssetSnapshot` enumerados na tabela abaixo. Cada campo recebe uma decisão
+explícita `INCLUDE` ou `EXCLUDE`; não existe seleção condicional por utilidade.
+Os nomes e tipos são os de `advisor.models.AssetSnapshot` no HEAD desta spec.
+
+| AssetSnapshot field | Action | Canonical representation | Rationale |
+| --- | --- | --- | --- |
+| `symbol` | `INCLUDE` | string literal | identity and decision input |
+| `asset_type` | `INCLUDE` | string literal | decision and market policy input |
+| `theme` | `INCLUDE` | string literal | scoring and benchmark context |
+| `candles` | `INCLUDE` | array of `Candle` projections, preserving order | technical decision input |
+| `fundamentals` | `INCLUDE` | `Fundamentals` projection | valuation and quality input |
+| `event` | `INCLUDE` | `EventInfo` projection or JSON `null` | earnings/event input |
+| `funding_rate` | `INCLUDE` | JSON number or `null` | crypto decision input |
+| `open_interest_change` | `INCLUDE` | JSON number or `null` | crypto decision input |
+| `cvd_proxy` | `INCLUDE` | JSON number or `null` | crypto decision input |
+| `coinbase_premium` | `INCLUDE` | JSON number or `null` | crypto decision input |
+| `liquidation_imbalance` | `INCLUDE` | JSON number or `null` | crypto decision input |
+| `missing_data` | `INCLUDE` | array of strings, preserving order | data-quality and limitation input |
+| `news_events` | `INCLUDE` | array of JSON objects with string keys, preserving order | news decision and report input |
+| `provider_capabilities` | `INCLUDE` | array of `ProviderCapability` projections, preserving order | provider availability and fallback context |
+| `earnings_status` | `INCLUDE` | string literal | report/data-quality state |
+| `guidance_status` | `INCLUDE` | string literal | report/data-quality state |
+| `macro_status` | `INCLUDE` | string literal | report/data-quality state |
+| `news_status` | `INCLUDE` | string literal | report/data-quality state |
+| `sec_filings_status` | `INCLUDE` | string literal | report/data-quality state |
+| `data_source` | `INCLUDE` | string literal | source used by the snapshot |
+| `data_timestamp` | `INCLUDE` | string or JSON `null` | source/decision timing |
+| `cache_age_seconds` | `INCLUDE` | integer or JSON `null` | affects stale classification and report |
+| `data_fetch_metadata` | `INCLUDE` | `DataFetchMetadata` projection or JSON `null` | source provenance, freshness and claim |
+| `quote_status` | `INCLUDE` | string literal | quote/report state |
+| `quote_price` | `INCLUDE` | JSON number or `null` | quote/report input |
+| `quote_timestamp` | `INCLUDE` | string or JSON `null` | quote/report timing |
+| `quote_source` | `INCLUDE` | string or JSON `null` | quote source provenance |
+| `quote_age_seconds` | `INCLUDE` | integer or JSON `null` | quote freshness/report state |
+| `quote_is_intraday` | `INCLUDE` | JSON boolean | quote basis/report state |
+| `previous_close` | `INCLUDE` | JSON number or `null` | market/quote context |
+| `daily_change` | `INCLUDE` | JSON number or `null` | market/quote context |
+| `daily_change_pct` | `INCLUDE` | JSON number or `null` | market/quote context |
+| `benchmark_provenance` | `INCLUDE` | JSON mapping projection | benchmark/report provenance |
+| `crypto_metric_provenance` | `INCLUDE` | nested JSON mapping projection | crypto source provenance |
+
+Não há campo atual de `AssetSnapshot` classificado como `EXCLUDE`. Os campos de
+cache, fetch timing, fallback e capability parecem operacionais pelo nome, mas
+no código atual são parte do estado capturado do source: `cache_age_seconds`
+participa da classificação de stale, e os demais são carregados na provenance,
+no report ou na descrição do caminho de fallback. Não há em `AssetSnapshot` ou
+`DataFetchMetadata` um campo de retry do runner, publication timestamp,
+artifact path, process ID, exception diagnostic ou outro dado exclusivamente de
+transport. Esses dados de transporte continuam fora desta projeção quando
+existirem fora do snapshot.
+
+As projeções nested são fechadas conforme as definições atuais:
+
+**`Candle`**
+
+| Field | Action | Canonical representation |
+| --- | --- | --- |
+| `date` | `INCLUDE` | string literal |
+| `open` | `INCLUDE` | JSON number from the model's `float` |
+| `high` | `INCLUDE` | JSON number from the model's `float` |
+| `low` | `INCLUDE` | JSON number from the model's `float` |
+| `close` | `INCLUDE` | JSON number from the model's `float` |
+| `volume` | `INCLUDE` | JSON number from the model's `float` |
+
+**`Fundamentals`**
+
+| Field | Action | Canonical representation |
+| --- | --- | --- |
+| `pe` | `INCLUDE` | JSON number or `null` |
+| `peg` | `INCLUDE` | JSON number or `null` |
+| `historical_pe` | `INCLUDE` | JSON number or `null` |
+| `revenue_growth` | `INCLUDE` | JSON number or `null` |
+| `eps_growth` | `INCLUDE` | JSON number or `null` |
+| `margin_trend` | `INCLUDE` | JSON number or `null` |
+| `free_cash_flow_positive` | `INCLUDE` | JSON boolean or `null` |
+| `market_cap` | `INCLUDE` | JSON number or `null` |
+| `average_volume` | `INCLUDE` | JSON number or `null` |
+| `market_cap_rank` | `INCLUDE` | JSON integer or `null` |
+
+**`EventInfo`**
+
+| Field | Action | Canonical representation |
+| --- | --- | --- |
+| `days_to_earnings` | `INCLUDE` | JSON integer or `null` |
+| `guidance_recent` | `INCLUDE` | JSON boolean or `null` |
+| `post_earnings_gap_percent` | `INCLUDE` | JSON number or `null` |
+| `last_earnings_date` | `INCLUDE` | string or `null` |
+| `next_earnings_date` | `INCLUDE` | string or `null` |
+
+**`ProviderCapability`**
+
+| Field | Action | Canonical representation |
+| --- | --- | --- |
+| `provider` | `INCLUDE` | string literal |
+| `capability` | `INCLUDE` | string literal |
+| `configured` | `INCLUDE` | JSON boolean |
+| `supported_by_plan` | `INCLUDE` | JSON boolean |
+| `implemented` | `INCLUDE` | JSON boolean |
+| `last_status` | `INCLUDE` | string literal |
+| `fallback_available` | `INCLUDE` | JSON boolean |
+
+**`DataFetchMetadata`**
+
+| Field | Action | Canonical representation |
+| --- | --- | --- |
+| `provider` | `INCLUDE` | string literal |
+| `endpoint` | `INCLUDE` | string literal |
+| `fetched_at` | `INCLUDE` | string or `null` |
+| `cache_fetched_at` | `INCLUDE` | string or `null` |
+| `source_timestamp` | `INCLUDE` | string or `null` |
+| `cache_age_seconds` | `INCLUDE` | JSON integer or `null` |
+| `source_age_seconds` | `INCLUDE` | JSON integer or `null` |
+| `is_fresh` | `INCLUDE` | JSON boolean or `null` |
+| `cache_hit` | `INCLUDE` | JSON boolean |
+| `fallback_used` | `INCLUDE` | JSON boolean |
+| `fallback_from` | `INCLUDE` | string or `null` |
+| `fallback_to` | `INCLUDE` | string or `null` |
+| `granularity` | `INCLUDE` | string or `null` |
+| `market_data_kind` | `INCLUDE` | string or `null` |
+| `price_basis_claim` | `INCLUDE` | `PriceBasisClaim` projection or JSON `null` |
+
+`DataFetchMetadata.price_basis_claim` MUST ser `INCLUDE`. A alteração de
+`price_basis`, `price_basis_policy_version` ou `source_contract` altera a
+projeção e, portanto, `snapshot_sha256`. Quando a claim estiver ausente, a
+chave `price_basis_claim` permanece presente com JSON `null`.
+
+**`PriceBasisClaim`**
+
+| Field | Action | Canonical representation |
+| --- | --- | --- |
+| `price_basis` | `INCLUDE` | underlying Literal string value |
+| `price_basis_policy_version` | `INCLUDE` | underlying Literal string value |
+| `source_contract` | `INCLUDE` | string literal |
+
+`news_events` tem o tipo atual `list[dict[str, object]]`,
+`benchmark_provenance` tem `dict[str, object]` e
+`crypto_metric_provenance` tem `dict[str, dict[str, object]]`. Suas chaves
+preservam exatamente a semântica do mapping e devem ser strings; a ordenação de
+object keys é responsabilidade de `canonical_json_bytes`. Seus valores nested
+usam somente JSON `null`, boolean, integer, finite float, string, mapping ou
+array; nenhum valor é convertido implicitamente para string. Arrays atualmente
+presentes dentro desses mappings também preservam sua ordem como parte do
+snapshot capturado.
+
+Não há `datetime`, `date` ou `Decimal` nas definições atuais de `AssetSnapshot`,
+`DataFetchMetadata`, `PriceBasisClaim` ou nos dataclasses nested acima. Datas e
+timestamps atuais são strings e permanecem strings; não há conversão
+adicional. `Literal` values são serializados como suas strings subjacentes.
+Números mantêm o tipo do modelo: campos `float` são JSON numbers, campos `int`
+são JSON integers e campos `bool` são JSON booleans. Valores não finitos são
+rejeitados por `canonical_json_bytes`; não se usa `default=str`, `repr` ou
+Python `hash()`.
+
+Optional fields sempre mantêm sua chave na projeção com JSON `null`. Arrays e
+mappings default permanecem como `[]` e `{}` quando esses forem os valores do
+snapshot. Não se usa `asdict(snapshot)`, `vars(snapshot)`, reflection sobre
+dataclass fields, `**dict` ou serialização recursiva automática do objeto
+`AssetSnapshot` para selecionar a projeção.
+
+As políticas de ordem são explícitas: `candles`, `missing_data`, `news_events`
+e `provider_capabilities` usam `ORDER IS SEMANTIC` e preservam a ordem existente
+no `AssetSnapshot`; não são ordenados genericamente durante a projeção. Os
+arrays nested dentro dos três mappings JSON também usam `ORDER IS SEMANTIC` e
+preservam a ordem fornecida. A ordenação lexicográfica de chaves de objects é
+aplicada somente pelo `canonical_json_bytes`, conforme a seção 6.1.
+
+O pseudocode normativo completo é:
+
+```python
+def json_value_v1(value):
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("non_finite_json_number")
+        return value
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value.keys()):
+            raise ValueError("non_string_json_object_key")
+        return {
+            key: json_value_v1(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [json_value_v1(item) for item in value]
+    raise ValueError("unsupported_snapshot_projection_value")
+
+
+def price_basis_claim_projection_v1(claim):
+    if claim is None:
+        return None
+    return {
+        "price_basis": claim.price_basis,
+        "price_basis_policy_version": claim.price_basis_policy_version,
+        "source_contract": claim.source_contract,
+    }
+
+
+def candle_projection_v1(candle):
+    return {
+        "date": candle.date,
+        "open": candle.open,
+        "high": candle.high,
+        "low": candle.low,
+        "close": candle.close,
+        "volume": candle.volume,
+    }
+
+
+def fundamentals_projection_v1(fundamentals):
+    return {
+        "pe": fundamentals.pe,
+        "peg": fundamentals.peg,
+        "historical_pe": fundamentals.historical_pe,
+        "revenue_growth": fundamentals.revenue_growth,
+        "eps_growth": fundamentals.eps_growth,
+        "margin_trend": fundamentals.margin_trend,
+        "free_cash_flow_positive": fundamentals.free_cash_flow_positive,
+        "market_cap": fundamentals.market_cap,
+        "average_volume": fundamentals.average_volume,
+        "market_cap_rank": fundamentals.market_cap_rank,
+    }
+
+
+def event_projection_v1(event):
+    if event is None:
+        return None
+    return {
+        "days_to_earnings": event.days_to_earnings,
+        "guidance_recent": event.guidance_recent,
+        "post_earnings_gap_percent": event.post_earnings_gap_percent,
+        "last_earnings_date": event.last_earnings_date,
+        "next_earnings_date": event.next_earnings_date,
+    }
+
+
+def provider_capability_projection_v1(capability):
+    return {
+        "provider": capability.provider,
+        "capability": capability.capability,
+        "configured": capability.configured,
+        "supported_by_plan": capability.supported_by_plan,
+        "implemented": capability.implemented,
+        "last_status": capability.last_status,
+        "fallback_available": capability.fallback_available,
+    }
+
+
+def data_fetch_metadata_projection_v1(metadata):
+    if metadata is None:
+        return None
+    return {
+        "provider": metadata.provider,
+        "endpoint": metadata.endpoint,
+        "fetched_at": metadata.fetched_at,
+        "cache_fetched_at": metadata.cache_fetched_at,
+        "source_timestamp": metadata.source_timestamp,
+        "cache_age_seconds": metadata.cache_age_seconds,
+        "source_age_seconds": metadata.source_age_seconds,
+        "is_fresh": metadata.is_fresh,
+        "cache_hit": metadata.cache_hit,
+        "fallback_used": metadata.fallback_used,
+        "fallback_from": metadata.fallback_from,
+        "fallback_to": metadata.fallback_to,
+        "granularity": metadata.granularity,
+        "market_data_kind": metadata.market_data_kind,
+        "price_basis_claim": price_basis_claim_projection_v1(
+            metadata.price_basis_claim
+        ),
+    }
+
+
+def snapshot_projection_v1(snapshot):
+    return {
+        "projection_version": "snapshot_projection_v1",
+        "symbol": snapshot.symbol,
+        "asset_type": snapshot.asset_type,
+        "theme": snapshot.theme,
+        "candles": [
+            candle_projection_v1(candle)
+            for candle in snapshot.candles
+        ],
+        "fundamentals": fundamentals_projection_v1(snapshot.fundamentals),
+        "event": event_projection_v1(snapshot.event),
+        "funding_rate": snapshot.funding_rate,
+        "open_interest_change": snapshot.open_interest_change,
+        "cvd_proxy": snapshot.cvd_proxy,
+        "coinbase_premium": snapshot.coinbase_premium,
+        "liquidation_imbalance": snapshot.liquidation_imbalance,
+        "missing_data": [value for value in snapshot.missing_data],
+        "news_events": [
+            json_value_v1(event)
+            for event in snapshot.news_events
+        ],
+        "provider_capabilities": [
+            provider_capability_projection_v1(capability)
+            for capability in snapshot.provider_capabilities
+        ],
+        "earnings_status": snapshot.earnings_status,
+        "guidance_status": snapshot.guidance_status,
+        "macro_status": snapshot.macro_status,
+        "news_status": snapshot.news_status,
+        "sec_filings_status": snapshot.sec_filings_status,
+        "data_source": snapshot.data_source,
+        "data_timestamp": snapshot.data_timestamp,
+        "cache_age_seconds": snapshot.cache_age_seconds,
+        "data_fetch_metadata": data_fetch_metadata_projection_v1(
+            snapshot.data_fetch_metadata
+        ),
+        "quote_status": snapshot.quote_status,
+        "quote_price": snapshot.quote_price,
+        "quote_timestamp": snapshot.quote_timestamp,
+        "quote_source": snapshot.quote_source,
+        "quote_age_seconds": snapshot.quote_age_seconds,
+        "quote_is_intraday": snapshot.quote_is_intraday,
+        "previous_close": snapshot.previous_close,
+        "daily_change": snapshot.daily_change,
+        "daily_change_pct": snapshot.daily_change_pct,
+        "benchmark_provenance": json_value_v1(
+            snapshot.benchmark_provenance
+        ),
+        "crypto_metric_provenance": json_value_v1(
+            snapshot.crypto_metric_provenance
+        ),
+    }
+
+
+snapshot_sha256 = sha256(
+    canonical_json_bytes(snapshot_projection_v1(exact_snapshot_X))
+).hexdigest()
+```
+
+`canonical_json_bytes` é a única implementação de canonical JSON. Ela aplica
+UTF-8, `ensure_ascii=false`, `sort_keys=true`, separadores sem whitespace,
+`allow_nan=false`, rejeição de chaves não-string e números não finitos conforme
+a seção 6.1. A projeção acima não omite nenhum campo atual e não aceita campos
+adicionais implicitamente.
+
+Portanto:
+
+```text
+snapshot_projection_v1 excludes no current AssetSnapshot fields
+```
+
+Adicionar um novo field a `AssetSnapshot` não o inclui automaticamente em
+`snapshot_projection_v1`. A v1 permanece byte-for-byte igual para os campos
+enumerados. Qualquer alteração que inclua, exclua, renomeie ou altere a
+representação de um field exige revisão explícita e uma nova projection version
+quando alterar bytes semânticos históricos, além da decisão de migration e
+compatibilidade antes de produzir evidence com a nova versão.
+
+O teste E deve montar `expected_projection` literalmente a partir desta tabela,
+sem usar somente o helper de produção como authority esperada:
+
+```text
+expected_projection = the literal snapshot_projection_v1 object defined above
+expected_sha256 = SHA256(canonical_json_bytes(expected_projection))
+record.source_binding.snapshot_sha256 == expected_sha256
+```
+
+Esse teste deve matar, no mínimo, mutations que omitam um field `INCLUDE`,
+incluam um field `EXCLUDE`, alterem `PriceBasisClaim.source_contract`,
+reordenem uma sequence semanticamente ordenada ou capturem automaticamente um
+future dataclass field. Um teste adicional deve provar o CLOSED WORLD usando um
+synthetic field no input/model sem alterar os dataclasses de produção: esse
+field não pode aparecer na projection v1. A lista de mutations é requisito do
+testing contract; sua implementação pertence ao plan posterior.
 
 No mesmo passo, `price_basis_claim` é capturado exatamente de:
 
@@ -1583,8 +1956,9 @@ Os testes obrigatórios que substituem essa acceptance são:
 - **C.** um snapshot Y do mesmo symbol não pode ser substituído depois da
   construction de O+B;
 - **D.** o `PriceBasisClaim` em B é igual ao claim exato capturado de X;
-- **E.** `snapshot_sha256` em B é igual ao digest canônico de X no momento da
-  construction;
+- **E.** `snapshot_sha256` em B é igual a
+  `SHA256(canonical_json_bytes(snapshot_projection_v1(X))).hexdigest()` no
+  momento da construction;
 - **F.** mutar `snapshots_by_symbol` ou o estado global de snapshot depois da
   construction não altera B nem o sidecar;
 - **G.** falha de SQLite não descarta nem altera B;
