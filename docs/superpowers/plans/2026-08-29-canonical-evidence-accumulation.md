@@ -13,7 +13,12 @@
 ## Global Constraints
 
 - This plan is the implementation plan for approved Phase 3B.3.3 only. It does not reopen the design, create `advisor-evidence`, create a branch, alter workflows now, call providers now, or start implementation/TDD now.
+- The approved atomic-source-binding design is frozen in the spec at `df617f9a3d07157ed396dad0f576733838ea3567`; Task 1 remains frozen and Task 2 remains frozen at `92d96f6d7be062f05e03739a002553e492d6467b`, while earlier experimental Task 3 commits are historical inputs to the amended implementation and are not treated as the contract.
 - The authoritative source is `main + advisor-evidence`. SQLite, GitHub Actions caches, runners, local workspaces, and transport files are operational surfaces and never canonical authority.
+- `SignalObservation` remains frozen. Observation provenance MUST be captured atomically as `ObservationEvidenceRecord(observation, source_binding)` from the exact `AssetSnapshot` used by the decision; no retrospective reconstruction from an observation is allowed.
+- `snapshot_projection_v1` is a closed-world, explicitly enumerated, versioned projection. A future `AssetSnapshot` field does not enter v1 automatically, and `snapshot_sha256_v1` is `SHA256(canonical_json_bytes(snapshot_projection_v1(exact_snapshot_X))).hexdigest()`.
+- An unarchived observation sidecar is transport only. Only a confirmed canonical archive result (`committed` plus durable confirmation, or validated `no_op` plus durable confirmation) promotes `ObservationEvidenceRecord` to durable authority in `advisor-evidence`.
+- Historical source binding is never rebuilt with current providers, current market data, a symbol lookup, SQLite, or a later snapshot. The captured `ObservationSourceBinding` is the only source provenance passed from construction to the sidecar.
 - Losing:
   - `data/advisor.db`;
   - all GitHub Actions caches;
@@ -61,17 +66,14 @@
 
 | File | Narrow change and consumer |
 |---|---|
-| `advisor/models.py` | Add optional, end-appended `DataFetchMetadata` fields for an explicit `PriceBasisClaim`; do not change `Candle`, `AssetSnapshot` decision fields, or any scoring input shape. |
-| `advisor/data_sources.py` | Expose versioned source/parser claims for only the explicitly qualified raw OHLCV routes and the Alpha Vantage `SPLITS` endpoint. The claim is a source-contract value, never derived from provider name alone. FMP light remains unqualified unless a separate provider-native contract is proven. |
-| `advisor/data_pipeline.py` | Preserve an explicit basis claim through `_price_fetch_metadata` into `AssetSnapshot.data_fetch_metadata` without inferring it from provider, endpoint appearance, or candle values. |
-| `advisor/live_loader.py` | Thread an optional explicit basis claim through `_fetch`/`_fetch_optional` and `_fetch_metadata`; pass claims only at qualified parser/source call sites while leaving existing report fallback behavior unchanged. |
-| `advisor/cli.py` | Build and retain the valid observation list before attempting operational SQLite persistence, write the sidecar from that same in-memory list regardless of the SQLite result, and add thin `evidence collect`, `evidence archive`, `evidence materialize`, and `evidence mature` dispatch. Existing report behavior and the frozen `outcomes evaluate` interface remain unchanged. |
+| `advisor/evidence_schema.py` | Task 1 owns the canonical primitives; amended Task 3 adds `ObservationSourceBinding`, `ObservationEvidenceRecord`, the closed-world `snapshot_projection_v1`/`snapshot_sha256_v1` helpers, records-only sidecar serialization, and record-scoped fail-closed basis validation. |
+| `advisor/cli.py` | Replace the observation-only construction boundary with atomic `ObservationEvidenceRecord` construction, derive the SQLite observation tuple from completed records, and pass records directly to the sidecar. Keep evidence command dispatch for later tasks. |
 | `.github/workflows/financial-advisor-reports.yml` | Preserve the existing report job and provider behavior, upload the observation-sidecar transport with the report output, and add the read-only-to-writer handoff required by the archive job without giving provider secrets to the writer. |
 | `docs/AUTOMATION_SETUP.md` | Document the evidence workflow, exact command boundaries, orphan-branch bootstrap operation, permissions, concurrency, fresh-read requirement, and recovery assumptions. |
 
 ### Read-only contract anchors
 
-`advisor/cache.py`, `advisor/signal_observation.py`, `advisor/signal_outcome.py`, `.github/workflows/financial-advisor-nightly-review.yml`, and the four frozen Phase 3B contract documents are inspected inputs. The permitted metadata-only changes to `advisor/models.py`, `advisor/data_pipeline.py`, `advisor/live_loader.py`, and `advisor/data_sources.py` are described above; no candle, decision, scoring, risk, or frozen-contract behavior changes. The existing live report fallback chain remains a regression surface only; it is not reused as evidence authority.
+`advisor/cache.py`, `advisor/signal_observation.py`, `advisor/signal_outcome.py`, `.github/workflows/financial-advisor-nightly-review.yml`, and the four frozen Phase 3B contract documents are inspected inputs. `advisor/models.py`, `advisor/data_sources.py`, `advisor/data_pipeline.py`, and `advisor/live_loader.py` already carry the qualified claim propagation and are regression-only inputs for amended Task 3; no change is expected in this plan. No candle, decision, scoring, risk, or frozen-contract behavior changes. The existing live report fallback chain remains a regression surface only; it is not reused as evidence authority.
 
 ### Protected modules — never list under `Files: Modify`
 
@@ -88,7 +90,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal, Mapping, Sequence
-from advisor.models import AssetSnapshot
+from advisor.models import AssetSnapshot, PriceBasisClaim
 from advisor.signal_observation import SignalObservation
 
 ArchiveStatus = Literal[
@@ -103,6 +105,18 @@ CorporateActionReasonCode = Literal["corporate_action_revision_conflict"]
 SignalBasisStatus = Literal["verified_raw_ohlcv", "signal_basis_unavailable"]
 SplitPolicy = Literal["verified_no_split_in_signal_horizon_v1"]
 CryptoPolicy = Literal["not_applicable_crypto_raw_ohlcv_v1"]
+
+@dataclass(frozen=True)
+class ObservationSourceBinding:
+    signal_id: str
+    observation_hash: str
+    snapshot_sha256: str
+    price_basis_claim: PriceBasisClaim | None
+
+@dataclass(frozen=True)
+class ObservationEvidenceRecord:
+    observation: SignalObservation
+    source_binding: ObservationSourceBinding
 
 def canonical_json_bytes(value: object) -> bytes:
     pass
@@ -124,20 +138,49 @@ def payload_sha256(payload: object) -> str:
 def validate_canonical_envelope(envelope: Mapping[str, object]) -> None:
     pass
 
+def snapshot_projection_v1(snapshot: AssetSnapshot) -> Mapping[str, object]:
+    pass
+def snapshot_sha256_v1(snapshot: AssetSnapshot) -> str:
+    pass
+
 def build_observation_sidecar(
-    observations: Sequence[SignalObservation],
+    records: Sequence[ObservationEvidenceRecord],
     *,
-    snapshots_by_symbol: Mapping[str, AssetSnapshot],
     output_path: Path,
 ) -> Path:
     pass
 
 def resolve_signal_price_basis_status(
-    *, observation: SignalObservation,
-    sidecar: Mapping[str, object],
+    *, record: ObservationEvidenceRecord,
 ) -> SignalBasisStatus:
     pass
 ```
+
+`ObservationSourceBinding` and `ObservationEvidenceRecord` are the only Task 3
+provenance containers. `snapshot_sha256_v1` is computed exactly once at the
+atomic report construction boundary; `build_observation_sidecar` accepts only
+the already-built records and never accepts an `AssetSnapshot`, a provider, a
+cache, SQLite, or `snapshots_by_symbol`. The sidecar top level is exactly
+`{"schema_version": "1.0", "source_sha": ..., "run_id": ..., "report_type": ..., "records": [...]}`.
+The four top-level metadata values are copied from the records' frozen
+observations, and all records must agree on them. Each `records` item is exactly
+`{"observation": <the frozen SignalObservation canonical object>, "source_binding": {"signal_id": ..., "observation_hash": ..., "snapshot_sha256": ..., "price_basis_claim": null or {"price_basis": ..., "price_basis_policy_version": ..., "source_contract": ...}}}`.
+There are no parallel provenance arrays and no late symbol-based rejoin.
+For every record, `source_binding.signal_id` MUST equal `observation.signal_id`
+and `source_binding.observation_hash` MUST equal `observation.observation_hash`;
+the builder and resolver fail closed on either mismatch.
+
+The binding is evidence-only. It does not alter `AssetDecision`, scoring, risk,
+`ideal_entry`, stop, targets, report rendering, provider selection, fallback
+behavior, decision confidence, or the frozen observation/hash contract.
+
+The legacy experimental sidecar fields `signal_input_hash`,
+`snapshot_binding`, and `entry_integrity_sha256` are removed from the Task 3
+serializer, parser, resolver, and tests. They remain historical implementation
+artifacts only; they are not a compatibility contract and are not retained as a
+second checksum stack after atomic capture exists. A private parser may parse a
+canonical sidecar item into `ObservationEvidenceRecord`, but no new public
+provenance API is added for that conversion.
 
 ```python
 # advisor/models.py
@@ -157,7 +200,7 @@ def is_qualified_raw_ohlcv_claim(claim: PriceBasisClaim | None) -> bool:
     pass
 ```
 
-`canonical_json_bytes` uses UTF-8, `ensure_ascii=False`, `sort_keys=True`, separators `(",", ":")`, `allow_nan=False`, rejects nonfinite/unsupported values, and emits no final newline. `strict_json_loads_bytes` is the only function that detects duplicate keys because it receives raw JSON bytes; it uses strict UTF-8, `object_pairs_hook`, and `parse_constant`. Semantic arrays are sorted by the identity-defined order before serialization. `deterministic_gzip` emits one DEFLATE-9 member with `MTIME=0`, `FLG=0`, `XFL=2`, and `OS=255`; decompression rejects trailing bytes, unused data, CRC/size mismatch, multiple members, and the configured uncompressed-size limit.
+`canonical_json_bytes` uses UTF-8, `ensure_ascii=False`, `sort_keys=True`, separators `(",", ":")`, `allow_nan=False`, rejects nonfinite/unsupported values, and emits no final newline. `strict_json_loads_bytes` is the only function that detects duplicate keys because it receives raw JSON bytes; it uses strict UTF-8, `object_pairs_hook`, and `parse_constant`. `canonical_json_bytes` sorts object keys but never reorders arrays; an owning serializer must establish any identity-defined order before calling it. `snapshot_projection_v1` preserves the explicitly declared semantic order of each snapshot sequence. `deterministic_gzip` emits one DEFLATE-9 member with `MTIME=0`, `FLG=0`, `XFL=2`, and `OS=255`; decompression rejects trailing bytes, unused data, CRC/size mismatch, multiple members, and the configured uncompressed-size limit.
 
 ```python
 # advisor/evidence_archive.py
@@ -271,9 +314,12 @@ class EvidenceMaterializer:
         pass
     def materialize(self) -> "MaterializationResult":
         pass
+    def read_observation_evidence_record(
+        self, *, signal_id: str, observation_hash: str
+    ) -> ObservationEvidenceRecord:
+        pass
     def qualify_horizon(
-        self, *, observation: SignalObservation,
-        horizon: int, signal_price_basis_status: SignalBasisStatus,
+        self, *, record: ObservationEvidenceRecord, horizon: int,
     ) -> HorizonQualification:
         pass
 
@@ -303,7 +349,11 @@ For the frozen evaluator, the only externally eligible statuses are `verified_no
 
 ## Call-Graph Finding: Explicit Signal Price Basis
 
-Inspection of the current call graph found that `Candle` contains only date and numeric OHLCV fields, while `DataFetchMetadata` contains provider, endpoint, timestamps, freshness, fallback, granularity, and `market_data_kind`, but no price-basis assertion. The report path is:
+The current HEAD already contains the non-protected qualified-claim propagation
+from the experimental Task 3 history. `Candle` contains only date and numeric
+OHLCV fields; `DataFetchMetadata` contains provider, endpoint, timestamps,
+freshness, fallback, granularity, `market_data_kind`, and the optional explicit
+`price_basis_claim`. The relevant report path is:
 
 ```text
 LiveDataLoader._fetch / _fetch_optional
@@ -311,20 +361,43 @@ LiveDataLoader._fetch / _fetch_optional
   -> stock_snapshot_from_payloads / crypto_snapshot_from_payloads
   -> _price_fetch_metadata
   -> AssetSnapshot.data_fetch_metadata
-  -> _scan decisions and snapshots_by_symbol
-  -> build_signal_observation
-  -> observation sidecar
+  -> _scan decision + exact AssetSnapshot X
+  -> _build_signal_observation_records
+       -> build_signal_observation(decision, X) = O
+       -> snapshot_sha256_v1(X) + X.data_fetch_metadata.price_basis_claim = B(X)
+       -> ObservationEvidenceRecord(O, B(X))
+  -> observations = tuple(record.observation for record in records)
+  -> SQLite receives observations; sidecar receives records
 ```
 
-The safe implementation path is therefore limited to non-protected metadata propagation. Append an optional `price_basis_claim: PriceBasisClaim | None` field to `DataFetchMetadata` at the end of the dataclass, preserve it through `_price_fetch_metadata`, and pass it explicitly through `_fetch` and `_fetch_optional`. Add source-contract factories in `data_sources.py` for the qualified parser routes only:
+The amended Task 3 does not reopen or rewrite that propagation. It changes only
+`advisor/evidence_schema.py`, `advisor/cli.py`, and the evidence tests. The
+qualified source-contract factories and loader/cache propagation remain a
+regression surface; if they are insufficient, implementation must stop with a
+scoped design conflict instead of changing a protected module or inferring
+provenance.
+
+The existing qualified parser routes are:
 
 - FMP `historical-price-eod/full` parsed through the existing raw OHLCV `historical` fields;
 - Binance `klines`;
 - Hyperliquid `candleSnapshot`.
 
-Each factory returns `PriceBasisClaim(price_basis="raw_ohlcv", price_basis_policy_version="price_basis_v1", source_contract=source_contract_id)` where `source_contract_id` is one of these exact values: `fmp.historical_price_eod.full.raw_ohlcv_v1`, `binance.futures_klines.raw_ohlcv_v1`, or `hyperliquid.candle_snapshot.raw_ohlcv_v1`. The claim is passed by the corresponding loader call site, not inferred by `_fetch_metadata`. A cache hit may reattach that claim only when the current call site is the same qualified route, its request identity is the exact cache key, and the same versioned parser will process the payload; the cached payload does not create the claim. FMP light, Yahoo, Stooq, Alpha Vantage adjusted daily history, cache entries without an exact qualified route/parser claim, and any route not in the qualified registry return no claim and therefore produce `signal_basis_unavailable`. The sidecar copies the claim from the snapshot metadata and binds it to `signal_id + observation_hash`; its resolver accepts `verified_raw_ohlcv` only when the claim fields and qualified source-contract ID validate together.
+Each factory returns `PriceBasisClaim(price_basis="raw_ohlcv", price_basis_policy_version="price_basis_v1", source_contract=source_contract_id)` where `source_contract_id` is one of these exact values: `fmp.historical_price_eod.full.raw_ohlcv_v1`, `binance.futures_klines.raw_ohlcv_v1`, or `hyperliquid.candle_snapshot.raw_ohlcv_v1`. The claim is passed by the corresponding loader call site, not inferred by `_fetch_metadata`. A cache hit may reattach that claim only when the current call site is the same qualified route, its request identity is the exact cache key, and the same versioned parser will process the payload; the cached payload does not create the claim. FMP light, Yahoo, Stooq, Alpha Vantage adjusted daily history, cache entries without an exact qualified route/parser claim, and any route not in the qualified registry return no claim and therefore produce `signal_basis_unavailable`.
 
-This path does not alter `Candle`, `AssetDecision`, `SignalObservation`, scoring, risk, or report rendering. RED tests compare decisions and rendered reports built from snapshots with and without the optional metadata, and spy that the scoring/risk call behavior is unchanged. If a source/parser cannot satisfy the explicit claim contract, the implementation must leave the claim absent and return `signal_basis_unavailable`; it must not infer raw basis from provider name or payload shape.
+Under Approach B, `_build_signal_observation_records` copies the claim from the
+same in-memory snapshot X immediately after constructing O and never asks a
+provider or a later snapshot for a claim. The sidecar copies B exactly; its
+resolver validates the record's captured claim and does not pretend to derive
+historical provenance from O alone.
+
+This path does not alter `Candle`, `AssetDecision`, `SignalObservation`,
+scoring, risk, or report rendering. RED tests compare decisions and rendered
+reports built from snapshots with and without the optional metadata, and spy
+that the scoring/risk call behavior is unchanged. If a source/parser cannot
+satisfy the explicit claim contract, the implementation must leave the claim
+absent and return `signal_basis_unavailable`; it must not infer raw basis from
+provider name or payload shape.
 
 The call-graph inspection found a safe non-protected path. If implementation discovers that the claim cannot be propagated and validated without changing a protected module or changing a frozen decision contract, stop immediately and record `DESIGN_CONFLICT`; do not infer the basis and do not introduce a hidden workaround.
 
@@ -406,44 +479,54 @@ The call-graph inspection found a safe non-protected path. If implementation dis
 
 **Acceptance:** The bootstrap root is orphan/evidence-only; missing runtime branch is a nonzero `evidence_branch_missing`; valid batches have one atomic commit; invalid batches have no canonical partials; identical retries return `no_op` without another manifest; divergence produces an independent conflict transaction; publication is bounded, fast-forward-only, and non-force.
 
-## Task 3 — Observation sidecar and signal-basis integration
+## Task 3 — Atomic observation source binding and signal-basis integration
 
-**Reviewer boundary:** A reviewer can approve or reject sidecar binding and report integration without changing the `SignalObservation` schema or the report’s existing scoring/risk behavior.
+**Reviewer boundary:** A reviewer can approve or reject construction-time source binding and sidecar integration without changing the frozen `SignalObservation` schema or report decision/scoring/risk/rendering behavior.
 
-**Files:** Modify `advisor/models.py`, `advisor/data_sources.py`, `advisor/data_pipeline.py`, `advisor/live_loader.py`, and `advisor/cli.py`; extend `tests/test_evidence_accumulation.py`. The basis helper definitions remain in `advisor/evidence_schema.py`, created in Task 1.
+**Files:** Modify only `advisor/evidence_schema.py` and `advisor/cli.py`; extend `tests/test_evidence_accumulation.py`. Inspect and regression-test the existing claim propagation in `advisor/models.py`, `advisor/data_sources.py`, `advisor/data_pipeline.py`, and `advisor/live_loader.py` without modifying those files. Do not modify `advisor/evidence_archive.py` or protected modules.
+
+The historical experimental Task 3 commits `4f063c5c500f87635f6f8fe7c3a5b56c01179518`, `0955da594db17f1fafe355ee3f518bf968f2ca11`, and `33481cbdb912bb45ddd7b3d7c736f464463e633c` are not reverted in this plan. The amended implementation replaces their superseded sidecar/binding behavior in a new correction commit and treats the frozen spec as authority.
 
 The frozen observation contract remains read-only.
 
-**Interfaces to implement in `advisor/evidence_schema.py` (and imported from that same module by every caller and RED test):**
+The old experimental path is **SUPERSEDED**: it built O, retained only `SignalObservation`, and later looked up `snapshots_by_symbol`. The approved path builds O and B in one iteration from the exact same snapshot X. The sidecar builder never receives a snapshot and never performs a symbol lookup.
+
+`snapshots_by_symbol` is allowed only as the already-associated collection used
+by the report run: the atomic builder selects its exact X once inside the same
+decision iteration. It is not passed to `build_observation_sidecar`, and no
+later lookup may rejoin an existing O to a snapshot by symbol.
+
+**Exact interfaces in `advisor/evidence_schema.py`:**
 
 ```python
-def build_observation_sidecar(
-    observations: Sequence[SignalObservation],
-    *,
-    snapshots_by_symbol: Mapping[str, AssetSnapshot],
-    output_path: Path,
-) -> Path:
+@dataclass(frozen=True)
+class ObservationSourceBinding:
+    signal_id: str
+    observation_hash: str
+    snapshot_sha256: str
+    price_basis_claim: PriceBasisClaim | None
+
+@dataclass(frozen=True)
+class ObservationEvidenceRecord:
+    observation: SignalObservation
+    source_binding: ObservationSourceBinding
+
+def snapshot_projection_v1(snapshot: AssetSnapshot) -> Mapping[str, object]:
     pass
 
-def resolve_signal_price_basis_status(
-    *, observation: SignalObservation,
-    sidecar: Mapping[str, object],
-) -> SignalBasisStatus:
+def snapshot_sha256_v1(snapshot: AssetSnapshot) -> str:
     pass
 ```
 
 ```python
-# advisor/cli.py
-# uses the existing `SQLiteCache`, `AssetDecision`, `AssetSnapshot`,
-# `SignalRunMetadata`, and `SignalObservation` types
-def _build_signal_observations(
+def _build_signal_observation_records(
     decisions: Sequence[AssetDecision],
     *,
     snapshots_by_symbol: Mapping[str, AssetSnapshot],
     stock_regime: str,
     crypto_regime: str,
     run_metadata: SignalRunMetadata,
-) -> list[SignalObservation]:
+) -> list[ObservationEvidenceRecord]:
     pass
 
 def _persist_signal_observations(
@@ -455,83 +538,587 @@ def _persist_signal_observations(
 
 The sidecar key is exactly `(signal_id, observation_hash)`. It carries explicit sanitized semantic provenance, the price-basis claim, source snapshot identity, and the sidecar schema version. `verified_raw_ohlcv` is emitted only when `AssetSnapshot.data_fetch_metadata.price_basis_claim` contains `price_basis="raw_ohlcv"`, `price_basis_policy_version="price_basis_v1"`, and one of the three qualified source-contract IDs from the call-graph finding. Absence, partial fields, an unqualified source contract, or ambiguous provenance emits `signal_basis_unavailable`. No code infers raw basis from a provider name, a fallback label, `market_data_kind`, or a `payload_sha256`.
 
-The non-protected metadata path is explicit and versioned:
+The qualified source-contract propagation already exists in the current
+experimental history and is regression-only for this amendment. Inspect that
+FMP-full, Binance-klines, and Hyperliquid-candleSnapshot routes, their exact
+cache-key checks, and the preservation through DataFetchMetadata. Do not
+modify models.py, data_sources.py, data_pipeline.py, or live_loader.py here.
+Provider name, namespace, fallback label, market_data_kind, and payload hash
+alone never qualify raw OHLCV.
+
+### Superseded tests
+
+The following tests from the experimental sidecar contract are not active
+acceptance criteria and must be removed or rewritten during the amended Task 3:
+
+- `test_same_symbol_different_snapshot_cannot_verify_basis` is rewritten as an
+  atomic-construction test; it must not claim that a resolver can authenticate a
+  coherent pre-archive rewrite from an observation alone.
+- `test_allowlisted_source_contract_tampering_invalidates_basis_binding` is
+  rewritten as a captured-record/archived-authority test; allowlist membership
+  alone is not historical provenance.
+
+The replacement is not a coherent-tamper rejection requirement for an
+unarchived sidecar. Durable divergence is tested exclusively by Task 6 after
+the first canonical archive confirmation.
+
+### TDD sequence
+
+No production edit is allowed before RED. Add these exact architectural tests:
+
+- [ ] ObservationSourceBindingTests.test_atomic_record_captures_observation_and_binding_from_same_snapshot
+- [ ] ObservationSourceBindingTests.test_sidecar_builder_accepts_records_without_snapshots_by_symbol
+- [ ] ObservationSourceBindingTests.test_binding_captures_exact_price_basis_claim
+- [ ] SnapshotProjectionTests.test_snapshot_projection_v1_matches_literal_expected_projection
+- [ ] SnapshotProjectionTests.test_snapshot_projection_v1_is_closed_world
+- [ ] ObservationSourceBindingTests.test_mutating_snapshot_state_after_record_construction_does_not_change_binding
+- [ ] ObservationSourceBindingTests.test_sqlite_failure_preserves_prebuilt_binding
+- [ ] ObservationSourceBindingTests.test_sidecar_serializes_prebuilt_binding_without_snapshot_recomputation
+- [ ] ObservationSourceBindingTests.test_same_record_serializes_deterministically
+
+### Implementation steps (2–5 minutes each)
+
+- [ ] Record RED evidence for each named Task 3 test before touching the amended production path; stop if a RED is caused by an invalid fixture or an interface mismatch.
+- [ ] Add the two frozen dataclasses and their imports without adding fields to SignalObservation; run the atomic-record and exact-claim tests in isolation.
+- [ ] Add the explicit snapshot projection helpers with the top-level and nested matrices below; run the literal-projection test before wiring the sidecar.
+- [ ] Add the closed-world test-only extended AssetSnapshot fixture and verify that its synthetic future_field is absent from the v1 projection.
+- [ ] Replace the sidecar serializer/parser/resolver boundary with records-only input; run the records-only, prebuilt-binding, and deterministic-serialization tests.
+- [ ] Replace the CLI observation construction boundary with the same-iteration O+B loop; run the mutation-after-construction and construction-failure tests.
+- [ ] Derive the SQLite observation tuple only after the complete record list exists; run the SQLite-failure preservation test.
+- [ ] Run the amended Task 3 targeted tests, then Task 1, Task 2, and frozen observation/outcome regressions before requesting the independent Task 3 review.
+
+### Closed-world snapshot projection
+
+The implementation must copy every current AssetSnapshot field explicitly. The
+hashed object has exactly projection_version=snapshot_projection_v1 plus the
+34 fields below. Every row has Action exactly INCLUDE; no field is conditional
+and no current field is EXCLUDE.
+
+| AssetSnapshot field | Action | Canonical representation | Rationale |
+| --- | --- | --- | --- |
+| `symbol` | INCLUDE | string literal | identity and decision input |
+| `asset_type` | INCLUDE | string literal | decision and market policy input |
+| `theme` | INCLUDE | string literal | scoring and benchmark context |
+| `candles` | INCLUDE | array of Candle projections, preserving order | technical decision input |
+| `fundamentals` | INCLUDE | Fundamentals projection | valuation and quality input |
+| `event` | INCLUDE | EventInfo projection or JSON `null` | earnings/event input |
+| `funding_rate` | INCLUDE | JSON number or `null` | crypto decision input |
+| `open_interest_change` | INCLUDE | JSON number or `null` | crypto decision input |
+| `cvd_proxy` | INCLUDE | JSON number or `null` | crypto decision input |
+| `coinbase_premium` | INCLUDE | JSON number or `null` | crypto decision input |
+| `liquidation_imbalance` | INCLUDE | JSON number or `null` | crypto decision input |
+| `missing_data` | INCLUDE | array of strings, preserving order | data-quality and limitation input |
+| `news_events` | INCLUDE | array of JSON objects with string keys, preserving order | news decision and report input |
+| `provider_capabilities` | INCLUDE | array of ProviderCapability projections, preserving order | provider availability and fallback context |
+| `earnings_status` | INCLUDE | string literal | report/data-quality state |
+| `guidance_status` | INCLUDE | string literal | report/data-quality state |
+| `macro_status` | INCLUDE | string literal | report/data-quality state |
+| `news_status` | INCLUDE | string literal | report/data-quality state |
+| `sec_filings_status` | INCLUDE | string literal | report/data-quality state |
+| `data_source` | INCLUDE | string literal | source used by the snapshot |
+| `data_timestamp` | INCLUDE | string or JSON `null` | source/decision timing |
+| `cache_age_seconds` | INCLUDE | integer or JSON `null` | affects stale classification and report |
+| `data_fetch_metadata` | INCLUDE | DataFetchMetadata projection or JSON `null` | source provenance, freshness and claim |
+| `quote_status` | INCLUDE | string literal | quote/report state |
+| `quote_price` | INCLUDE | JSON number or `null` | quote/report input |
+| `quote_timestamp` | INCLUDE | string or JSON `null` | quote/report timing |
+| `quote_source` | INCLUDE | string or JSON `null` | quote source provenance |
+| `quote_age_seconds` | INCLUDE | integer or JSON `null` | quote freshness/report state |
+| `quote_is_intraday` | INCLUDE | JSON boolean | quote basis/report state |
+| `previous_close` | INCLUDE | JSON number or `null` | market/quote context |
+| `daily_change` | INCLUDE | JSON number or `null` | market/quote context |
+| `daily_change_pct` | INCLUDE | JSON number or `null` | market/quote context |
+| `benchmark_provenance` | INCLUDE | JSON mapping projection | benchmark/report provenance |
+| `crypto_metric_provenance` | INCLUDE | nested JSON mapping projection | crypto source provenance |
+
+The nested matrices are closed as follows. Every row is either INCLUDE or
+EXCLUDE; all current nested fields are explicitly INCLUDE.
+
+**Candle**
+
+| Field | Action | Canonical representation |
+| --- | --- | --- |
+| `date` | INCLUDE | string literal |
+| `open` | INCLUDE | JSON number from the model's `float` |
+| `high` | INCLUDE | JSON number from the model's `float` |
+| `low` | INCLUDE | JSON number from the model's `float` |
+| `close` | INCLUDE | JSON number from the model's `float` |
+| `volume` | INCLUDE | JSON number from the model's `float` |
+
+**Fundamentals**
+
+| Field | Action | Canonical representation |
+| --- | --- | --- |
+| `pe` | INCLUDE | JSON number or `null` |
+| `peg` | INCLUDE | JSON number or `null` |
+| `historical_pe` | INCLUDE | JSON number or `null` |
+| `revenue_growth` | INCLUDE | JSON number or `null` |
+| `eps_growth` | INCLUDE | JSON number or `null` |
+| `margin_trend` | INCLUDE | JSON number or `null` |
+| `free_cash_flow_positive` | INCLUDE | JSON boolean or `null` |
+| `market_cap` | INCLUDE | JSON number or `null` |
+| `average_volume` | INCLUDE | JSON number or `null` |
+| `market_cap_rank` | INCLUDE | JSON integer or `null` |
+
+**EventInfo**
+
+| Field | Action | Canonical representation |
+| --- | --- | --- |
+| `days_to_earnings` | INCLUDE | JSON integer or `null` |
+| `guidance_recent` | INCLUDE | JSON boolean or `null` |
+| `post_earnings_gap_percent` | INCLUDE | JSON number or `null` |
+| `last_earnings_date` | INCLUDE | string or `null` |
+| `next_earnings_date` | INCLUDE | string or `null` |
+
+**ProviderCapability**
+
+| Field | Action | Canonical representation |
+| --- | --- | --- |
+| `provider` | INCLUDE | string literal |
+| `capability` | INCLUDE | string literal |
+| `configured` | INCLUDE | JSON boolean |
+| `supported_by_plan` | INCLUDE | JSON boolean |
+| `implemented` | INCLUDE | JSON boolean |
+| `last_status` | INCLUDE | string literal |
+| `fallback_available` | INCLUDE | JSON boolean |
+
+**DataFetchMetadata**
+
+| Field | Action | Canonical representation |
+| --- | --- | --- |
+| `provider` | INCLUDE | string literal |
+| `endpoint` | INCLUDE | string literal |
+| `fetched_at` | INCLUDE | string or JSON `null` |
+| `cache_fetched_at` | INCLUDE | string or JSON `null` |
+| `source_timestamp` | INCLUDE | string or JSON `null` |
+| `cache_age_seconds` | INCLUDE | JSON integer or `null` |
+| `source_age_seconds` | INCLUDE | JSON integer or `null` |
+| `is_fresh` | INCLUDE | JSON boolean or `null` |
+| `cache_hit` | INCLUDE | JSON boolean |
+| `fallback_used` | INCLUDE | JSON boolean |
+| `fallback_from` | INCLUDE | string or JSON `null` |
+| `fallback_to` | INCLUDE | string or JSON `null` |
+| `granularity` | INCLUDE | string or JSON `null` |
+| `market_data_kind` | INCLUDE | string or JSON `null` |
+| `price_basis_claim` | INCLUDE | PriceBasisClaim projection or JSON `null` |
+
+**PriceBasisClaim**
+
+| Field | Action | Canonical representation |
+| --- | --- | --- |
+| `price_basis` | INCLUDE | underlying Literal string value |
+| `price_basis_policy_version` | INCLUDE | underlying Literal string value |
+| `source_contract` | INCLUDE | string literal |
+
+`DataFetchMetadata.price_basis_claim` MUST be INCLUDE. The key is always
+present in its projection and is JSON `null` when the claim is absent. Changing
+`price_basis`, `price_basis_policy_version`, or `source_contract` changes the
+projection and therefore `snapshot_sha256_v1`. There is no current nested
+EXCLUDE field.
+
+The cache, fetch-timing, fallback, and capability names may look operational,
+but in the current model they are captured source state: `cache_age_seconds`
+participates in stale classification, while the remaining fields are carried
+into provenance, report state, or fallback-path descriptions. The current
+AssetSnapshot and DataFetchMetadata definitions contain no runner retry state,
+publication timestamp, artifact path, process ID, exception diagnostic, or
+other exclusively transport-only field. If such a field is added in the
+future, it must be named and classified in a new projection review rather than
+silently excluded by category.
+
+The mapping fields have these exact current types: `news_events` is
+`list[dict[str, object]]`, `benchmark_provenance` is `dict[str, object]`, and
+`crypto_metric_provenance` is `dict[str, dict[str, object]]`. Their keys
+preserve mapping semantics and MUST be strings; `canonical_json_bytes` provides
+deterministic object-key ordering. Their nested values are limited to JSON
+`null`, boolean, integer, finite float, string, mapping, or array, and no value
+is implicitly stringified. Arrays nested inside these mappings have
+ORDER IS SEMANTIC and preserve the supplied order.
+
+The current models contain no datetime, date, Decimal, or enum instance in
+these fields. Dates/timestamps remain strings, Literal values use their
+underlying strings, and float/int/bool retain JSON number/integer/boolean
+types. Mapping keys are strings and canonical_json_bytes alone sorts object
+keys. Arrays in candles, missing_data, news_events, provider_capabilities, and
+nested provenance arrays have ORDER IS SEMANTIC and preserve input order. No
+generic list sort, default=str, repr, Python hash(), object identity, runtime
+timestamp, asdict, vars, __dict__, dataclass reflection, or automatic
+recursive serialization is allowed. canonical_json_bytes remains the sole
+canonical JSON algorithm with UTF-8, compact separators, ensure_ascii=False,
+and allow_nan=False.
+
+The complete normative pseudocode is:
 
 ```python
-# advisor/data_sources.py
-def qualified_fmp_full_price_basis_claim() -> PriceBasisClaim:
-    pass
-def qualified_binance_klines_basis_claim() -> PriceBasisClaim:
-    pass
-def qualified_hyperliquid_candle_snapshot_basis_claim() -> PriceBasisClaim:
-    pass
+def json_value_v1(value):
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("non_finite_json_number")
+        return value
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value.keys()):
+            raise ValueError("non_string_json_object_key")
+        return {key: json_value_v1(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_value_v1(item) for item in value]
+    raise ValueError("unsupported_snapshot_projection_value")
 
-# advisor/live_loader.py
-def _fetch(
-    self, provider: str, namespace: str, url: str, *,
-    payload: dict[str, Any] | None = None,
-    parent_call_id: str | None = None, attempt_number: int = 1,
-    fallback_from: str | None = None, fallback_to: str | None = None,
-    fallback_reason: str | None = None, symbol: str | None = None,
-    price_basis_claim: PriceBasisClaim | None = None,
-) -> Any:
-    pass
-def _fetch_optional(
-    self, provider: str, namespace: str, url: str, *, default: Any,
-    payload: dict[str, Any] | None = None,
-    parent_call_id: str | None = None, attempt_number: int = 1,
-    fallback_from: str | None = None, fallback_to: str | None = None,
-    fallback_reason: str | None = None, symbol: str | None = None,
-    price_basis_claim: PriceBasisClaim | None = None,
-) -> Any:
-    pass
+def price_basis_claim_projection_v1(value):
+    if value is None:
+        return None
+    return {
+        "price_basis": value.price_basis,
+        "price_basis_policy_version": value.price_basis_policy_version,
+        "source_contract": value.source_contract,
+    }
+
+def snapshot_projection_v1(snapshot):
+    return {
+        "projection_version": "snapshot_projection_v1",
+        "symbol": snapshot.symbol,
+        "asset_type": snapshot.asset_type,
+        "theme": snapshot.theme,
+        "candles": [
+            {
+                "date": value.date,
+                "open": value.open,
+                "high": value.high,
+                "low": value.low,
+                "close": value.close,
+                "volume": value.volume,
+            }
+            for value in snapshot.candles
+        ],
+        "fundamentals": {
+            "pe": snapshot.fundamentals.pe,
+            "peg": snapshot.fundamentals.peg,
+            "historical_pe": snapshot.fundamentals.historical_pe,
+            "revenue_growth": snapshot.fundamentals.revenue_growth,
+            "eps_growth": snapshot.fundamentals.eps_growth,
+            "margin_trend": snapshot.fundamentals.margin_trend,
+            "free_cash_flow_positive": snapshot.fundamentals.free_cash_flow_positive,
+            "market_cap": snapshot.fundamentals.market_cap,
+            "average_volume": snapshot.fundamentals.average_volume,
+            "market_cap_rank": snapshot.fundamentals.market_cap_rank,
+        },
+        "event": None if snapshot.event is None else {
+            "days_to_earnings": snapshot.event.days_to_earnings,
+            "guidance_recent": snapshot.event.guidance_recent,
+            "post_earnings_gap_percent": snapshot.event.post_earnings_gap_percent,
+            "last_earnings_date": snapshot.event.last_earnings_date,
+            "next_earnings_date": snapshot.event.next_earnings_date,
+        },
+        "funding_rate": snapshot.funding_rate,
+        "open_interest_change": snapshot.open_interest_change,
+        "cvd_proxy": snapshot.cvd_proxy,
+        "coinbase_premium": snapshot.coinbase_premium,
+        "liquidation_imbalance": snapshot.liquidation_imbalance,
+        "missing_data": [value for value in snapshot.missing_data],
+        "news_events": [json_value_v1(value) for value in snapshot.news_events],
+        "provider_capabilities": [
+            {
+                "provider": value.provider,
+                "capability": value.capability,
+                "configured": value.configured,
+                "supported_by_plan": value.supported_by_plan,
+                "implemented": value.implemented,
+                "last_status": value.last_status,
+                "fallback_available": value.fallback_available,
+            }
+            for value in snapshot.provider_capabilities
+        ],
+        "earnings_status": snapshot.earnings_status,
+        "guidance_status": snapshot.guidance_status,
+        "macro_status": snapshot.macro_status,
+        "news_status": snapshot.news_status,
+        "sec_filings_status": snapshot.sec_filings_status,
+        "data_source": snapshot.data_source,
+        "data_timestamp": snapshot.data_timestamp,
+        "cache_age_seconds": snapshot.cache_age_seconds,
+        "data_fetch_metadata": (
+            None if snapshot.data_fetch_metadata is None else {
+                "provider": snapshot.data_fetch_metadata.provider,
+                "endpoint": snapshot.data_fetch_metadata.endpoint,
+                "fetched_at": snapshot.data_fetch_metadata.fetched_at,
+                "cache_fetched_at": snapshot.data_fetch_metadata.cache_fetched_at,
+                "source_timestamp": snapshot.data_fetch_metadata.source_timestamp,
+                "cache_age_seconds": snapshot.data_fetch_metadata.cache_age_seconds,
+                "source_age_seconds": snapshot.data_fetch_metadata.source_age_seconds,
+                "is_fresh": snapshot.data_fetch_metadata.is_fresh,
+                "cache_hit": snapshot.data_fetch_metadata.cache_hit,
+                "fallback_used": snapshot.data_fetch_metadata.fallback_used,
+                "fallback_from": snapshot.data_fetch_metadata.fallback_from,
+                "fallback_to": snapshot.data_fetch_metadata.fallback_to,
+                "granularity": snapshot.data_fetch_metadata.granularity,
+                "market_data_kind": snapshot.data_fetch_metadata.market_data_kind,
+                "price_basis_claim": price_basis_claim_projection_v1(
+                    snapshot.data_fetch_metadata.price_basis_claim
+                ),
+            }
+        ),
+        "quote_status": snapshot.quote_status,
+        "quote_price": snapshot.quote_price,
+        "quote_timestamp": snapshot.quote_timestamp,
+        "quote_source": snapshot.quote_source,
+        "quote_age_seconds": snapshot.quote_age_seconds,
+        "quote_is_intraday": snapshot.quote_is_intraday,
+        "previous_close": snapshot.previous_close,
+        "daily_change": snapshot.daily_change,
+        "daily_change_pct": snapshot.daily_change_pct,
+        "benchmark_provenance": json_value_v1(snapshot.benchmark_provenance),
+        "crypto_metric_provenance": json_value_v1(
+            snapshot.crypto_metric_provenance
+        ),
+    }
+
+def snapshot_sha256_v1(snapshot):
+    return hashlib.sha256(
+        canonical_json_bytes(snapshot_projection_v1(snapshot))
+    ).hexdigest()
 ```
 
-`DataFetchMetadata.price_basis_claim` is optional and appended after existing fields. The loader passes a claim only at the FMP full, Binance klines, and Hyperliquid candle-snapshot call sites whose parser contracts are explicitly qualified. A qualified exact-route cache hit may receive the same call-site claim again only when its request identity equals the current cache key and the same parser-contract version will process the payload. An unqualified cache hit remains claimless even if its provider is FMP, its namespace is `prices`, or it has a fallback label. FMP light, Yahoo, Stooq, Alpha Vantage adjusted daily history, and cache records without an exact qualified route/parser claim remain unqualified. `_price_fetch_metadata` preserves a supplied claim; it never creates one. `AssetSnapshot`, `AssetDecision`, `Candle`, `SignalObservation`, scoring, risk, and report rendering keep their existing shapes and behavior.
+The projection_version key is inside the hashed object. Adding a future
+AssetSnapshot field does not add it to v1. Any inclusion, exclusion, rename,
+or representation change requires explicit review, a new projection version
+when historical bytes change, and a migration/compatibility decision.
 
-**TDD sequence:**
+The excluded-field list is empty:
+`snapshot_projection_v1 excludes no current AssetSnapshot fields`. The nested
+Candle, Fundamentals, EventInfo, ProviderCapability, DataFetchMetadata, and
+PriceBasisClaim projections also exclude no current fields. Any future
+transport-only or runtime field must be named and classified explicitly in a
+future projection review; it is never covered by an open-ended exclusion rule.
 
-- [ ] Write these exact failing tests:
-  - `ObservationSidecarTests.test_sidecar_binds_basis_by_signal_id_and_observation_hash`
-  - `ObservationSidecarTests.test_sidecar_rejects_unknown_observation_hash_binding`
-  - `SignalBasisPropagationTests.test_explicit_raw_metadata_claim_qualifies`
-  - `SignalBasisPropagationTests.test_provider_name_alone_does_not_qualify`
-  - `SignalBasisPropagationTests.test_unqualified_fallback_source_is_signal_basis_unavailable`
-  - `SignalBasisPropagationTests.test_basis_claim_propagates_through_live_loader_pipeline`
-  - `SignalBasisPropagationTests.test_basis_metadata_does_not_change_asset_decision_report_scoring_or_risk`
-  - `SignalBasisPropagationTests.test_qualified_route_cache_hit_preserves_basis_claim`
-  - `SignalBasisPropagationTests.test_unqualified_cache_hit_does_not_gain_basis_claim`
-  - `SignalBasisPropagationTests.test_provider_name_cache_hit_does_not_qualify`
-  - `SourceContractQualificationTests.test_fmp_full_fixture_proves_provider_native_raw_ohlcv_without_adjustment`
-  - `SourceContractQualificationTests.test_binance_klines_fixture_proves_provider_native_raw_ohlcv_without_adjustment`
-  - `SourceContractQualificationTests.test_hyperliquid_candle_snapshot_fixture_proves_provider_native_raw_ohlcv_without_adjustment`
-  - `SourceContractQualificationTests.test_fmp_light_without_proof_remains_unqualified`
-  - `ObservationSidecarTests.test_report_sidecar_reuses_the_same_in_memory_observations`
-  - `ObservationSidecarTests.test_signal_observation_schema_and_hash_are_unchanged`
-  - `ObservationSidecarTests.test_sqlite_unavailable_does_not_prevent_valid_sidecar`
-  - `ObservationSidecarTests.test_observation_construction_failure_emits_no_sidecar`
-  - `ObservationSidecarTests.test_sqlite_failure_does_not_change_report_decision_or_observation_hash`
-- [ ] Run RED:
-  `.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ObservationSidecarTests.test_sidecar_binds_basis_by_signal_id_and_observation_hash`
-  Expected failure: `ImportError: cannot import name 'build_observation_sidecar' from 'advisor.evidence_schema'` or the equivalent missing-module failure before the helper exists.
-- [ ] Add the optional end-appended `DataFetchMetadata.price_basis_claim` field and the immutable `PriceBasisClaim` shape in `advisor/models.py`. Add the three explicit qualified source-contract factories and the Alpha Vantage `SPLITS` URL method in `advisor/data_sources.py`. The factories return only the fixed `price_basis_v1`/`raw_ohlcv` combinations; no factory accepts a provider name as proof by itself.
-- [ ] Thread `price_basis_claim` through `_fetch`, `_fetch_optional`, `_fetch_metadata`, and `_price_fetch_metadata` in both fresh and cache-hit paths. A cache hit may reattach a claim only when the current call site supplies a registry entry whose exact route URL/request key and parser contract version match the cache key and payload parser. FMP full, Binance klines, and Hyperliquid candle-snapshot call sites are the only v1 qualified routes; FMP light, Yahoo, Stooq, Alpha Vantage adjusted-history, and all other fallback calls remain claimless. The existing report fallback chain and its output remain unchanged.
-- [ ] Implement sidecar construction in `advisor/evidence_schema.py` from the list returned by the existing report observation-building path and `snapshots_by_symbol`. In `advisor/cli.py`, `_build_signal_observations` first constructs the complete list from decisions and snapshots and returns only after every `SignalObservation` is valid and serializable; a construction/serialization exception produces no list and no sidecar. The CLI then calls `_persist_signal_observations(cache, observations)` as an operational attempt and emits the sidecar from that same in-memory list independently of its returned `written`, `duplicate_same`, or `unavailable` result and independently of a caught SQLite exception. `_persist_signal_observations` normalizes storage exceptions to its unavailable result for status reporting; it is never a gate for sidecar emission. Do not reload observations from SQLite and do not alter `SignalObservation` fields, identity, or hash computation.
-- [ ] Require the CLI to pass the same snapshot identity used by the report decision that produced `ideal_entry`, `stop`, and targets for each observation. The sidecar must bind that snapshot's explicit `DataFetchMetadata.price_basis_claim` to `(signal_id, observation_hash)` and reject a sidecar assembled from a different snapshot.
-- [ ] Implement `resolve_signal_price_basis_status` in `advisor/evidence_schema.py` so it verifies the observation key, snapshot metadata claim, policy version, raw basis literal, and qualified source-contract allowlist together. A provider-only metadata fixture and an unqualified fallback fixture must resolve to `signal_basis_unavailable`.
-- [ ] Prove each qualified route with a deterministic provider-native fixture: FMP full `historical` rows with native `date/open/high/low/close/volume`, Binance kline positional OHLCV fields, and Hyperliquid `t/o/h/l/c/v` fields. Each test must assert the parser copies raw OHLCV values without adjusted-close or corporate-action transformation before allowing its exact `*_raw_ohlcv_v1` claim. FMP light receives an explicit no-proof fixture and remains unqualified; no route is qualified merely because fields have generic OHLCV names. These contract tests use fixture payloads only and make no provider request.
-- [ ] Test cache-hit semantics using the existing `_cache_key` route/request identity: a qualified exact route/parser cache hit reattaches the call-site claim; an unqualified route cache hit has `price_basis_claim=None`; provider name `fmp`, namespace `prices`, or a fallback label alone never qualifies. No change to `advisor/cache.py` is permitted.
-- [ ] Implement the CLI observation sequence in `advisor/cli.py` only: validate the required run metadata, call `_build_signal_observations` before any cache result is considered, and keep the returned list in memory. If construction or observation serialization fails, report the existing observation-unavailable status and do not call `build_observation_sidecar`; no synthetic observation is invented. If construction succeeds, call `_persist_signal_observations`, catch/normalize `written`, `duplicate_same`, `unavailable`, and storage-error outcomes, and then call `build_observation_sidecar` with the same list regardless of that operational result. The report markdown/HTML, `AssetDecision` values, and observation hashes remain the existing authority and are not changed by either outcome.
-- [ ] Make the three SQLite/sidecar tests exercise this exact ordering: `ObservationSidecarTests.test_sqlite_unavailable_does_not_prevent_valid_sidecar` builds a valid `SignalObservation`, makes `SQLiteCache.save_signal_observations` return `status="unavailable"` or raise, and asserts the emitted sidecar contains the identical `signal_id` and `observation_hash`; `ObservationSidecarTests.test_observation_construction_failure_emits_no_sidecar` makes `_build_signal_observations` fail and asserts no sidecar writer call and no sidecar file; `ObservationSidecarTests.test_sqlite_failure_does_not_change_report_decision_or_observation_hash` compares report decision and observation hash with successful and failing SQLite persistence while asserting the in-memory observation/sidecar payload is identical.
-- [ ] Keep report authority independent: a sidecar/archive error must be surfaced to the evidence transport path and must not mutate a generated report or invoke a fallback provider. The existing report fallback behavior in `live_loader.py` remains unchanged.
-- [ ] Run the targeted sidecar tests:
-  `.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ObservationSidecarTests`
-- [ ] Run metadata, scoring, report, and frozen observation regressions:
-  `.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.SignalBasisPropagationTests tests.test_hardening tests.test_phase2_report_provenance`
-  `.\.venv\Scripts\python.exe -m unittest tests.test_signal_observation tests.test_signal_outcome tests.test_live_loader tests.test_cache_config_cli`
-- [ ] Commit the task result as `feat: persist observation evidence sidecars` after `git diff --check` and exact scope inspection.
+Test E must instantiate the real nested model types and define a literal
+expected_projection with all 34 top-level keys, all nested fields, the three
+claim fields, explicit nulls, mapping values, and sequence order. It computes
+SHA256(canonical_json_bytes(expected_projection)) and compares that digest with
+record.source_binding.snapshot_sha256; it cannot use the production projection
+helper as its only oracle. The fixture must include two ordered candles,
+populated Fundamentals, EventInfo, DataFetchMetadata, ProviderCapability, an
+FMP claim, missing_data, nested news/benchmark mappings, and an empty crypto
+provenance mapping. It must kill omission of an INCLUDE field, addition of an
+EXCLUDE field, source_contract mutation, sequence reordering, and automatic
+future-field inclusion. A separate closed-world test adds future_field to a
+structural input and asserts it is absent.
 
-**Acceptance:** The sidecar is derived from the report’s in-memory observations, is keyed by both immutable identifiers, copies an explicit versioned basis claim from snapshot metadata, cannot bind a different hash, never changes `SignalObservation`, and marks provider-only/unqualified stock/ETF paths as `signal_basis_unavailable`. Adding the metadata claim does not change `AssetDecision`, rendered report, scoring, or risk results.
+The literal Test E oracle is:
+
+```python
+expected_projection = {
+    "projection_version": "snapshot_projection_v1",
+    "symbol": "AMD",
+    "asset_type": "stock",
+    "theme": "semiconductors",
+    "candles": [
+        {
+            "date": "2026-08-27",
+            "open": 100.0,
+            "high": 103.0,
+            "low": 99.0,
+            "close": 102.0,
+            "volume": 1000000.0,
+        },
+        {
+            "date": "2026-08-28",
+            "open": 102.0,
+            "high": 105.0,
+            "low": 101.0,
+            "close": 104.0,
+            "volume": 1200000.0,
+        },
+    ],
+    "fundamentals": {
+        "pe": 30.0,
+        "peg": 1.5,
+        "historical_pe": 28.0,
+        "revenue_growth": 0.2,
+        "eps_growth": 0.25,
+        "margin_trend": 0.1,
+        "free_cash_flow_positive": True,
+        "market_cap": 1000000000.0,
+        "average_volume": 1100000.0,
+        "market_cap_rank": 12,
+    },
+    "event": {
+        "days_to_earnings": 5,
+        "guidance_recent": False,
+        "post_earnings_gap_percent": 0.02,
+        "last_earnings_date": "2026-05-28",
+        "next_earnings_date": "2026-09-01",
+    },
+    "funding_rate": None,
+    "open_interest_change": None,
+    "cvd_proxy": None,
+    "coinbase_premium": None,
+    "liquidation_imbalance": None,
+    "missing_data": ["macro_not_collected", "news_not_collected"],
+    "news_events": [
+        {"headline": "confirmed catalyst", "news_event_type": "news"},
+        {"headline": "SEC filing", "news_event_type": "sec_filing"},
+    ],
+    "provider_capabilities": [
+        {
+            "provider": "fmp",
+            "capability": "historical_price_eod_full",
+            "configured": True,
+            "supported_by_plan": True,
+            "implemented": True,
+            "last_status": "available",
+            "fallback_available": False,
+        }
+    ],
+    "earnings_status": "available",
+    "guidance_status": "not_implemented",
+    "macro_status": "not_implemented",
+    "news_status": "available",
+    "sec_filings_status": "available",
+    "data_source": "fmp",
+    "data_timestamp": "2026-08-28T20:00:00Z",
+    "cache_age_seconds": 0,
+    "data_fetch_metadata": {
+        "provider": "fmp",
+        "endpoint": "/stable/historical-price-eod/full",
+        "fetched_at": "2026-08-28T20:00:03Z",
+        "cache_fetched_at": None,
+        "source_timestamp": "2026-08-28",
+        "cache_age_seconds": 0,
+        "source_age_seconds": 0,
+        "is_fresh": True,
+        "cache_hit": False,
+        "fallback_used": False,
+        "fallback_from": None,
+        "fallback_to": None,
+        "granularity": "1d",
+        "market_data_kind": "historical",
+        "price_basis_claim": {
+            "price_basis": "raw_ohlcv",
+            "price_basis_policy_version": "price_basis_v1",
+            "source_contract": "fmp.historical_price_eod.full.raw_ohlcv_v1",
+        },
+    },
+    "quote_status": "available",
+    "quote_price": 104.0,
+    "quote_timestamp": "2026-08-28T20:00:04Z",
+    "quote_source": "fmp",
+    "quote_age_seconds": 2,
+    "quote_is_intraday": False,
+    "previous_close": 102.0,
+    "daily_change": 2.0,
+    "daily_change_pct": 0.0196078431372549,
+    "benchmark_provenance": {
+        "sector": {
+            "symbol": "SMH",
+            "status": "available",
+            "relative_strength": 0.12,
+        }
+    },
+    "crypto_metric_provenance": {},
+}
+expected_sha256 = hashlib.sha256(
+    canonical_json_bytes(expected_projection)
+).hexdigest()
+self.assertEqual(
+    record.source_binding.snapshot_sha256,
+    expected_sha256,
+)
+```
+
+The test must also assert that reversing the two candles changes the digest
+and that replacing only the claim source_contract changes the digest. The
+closed-world test uses a local `@dataclass(frozen=True)` subclass of
+`AssetSnapshot` with one additional `future_field = "sentinel"`; it passes that
+subclass to `snapshot_projection_v1` and asserts the result is byte-identical
+to the base fixture's projection and contains no `future_field`. This test-only
+subclass changes no production model and kills `asdict`, `vars`, `__dict__`,
+dataclass-field reflection, and automatic future-field expansion.
+
+### Atomic construction and sidecar authority
+
+For every decision, the CLI uses the exact snapshot X that fed the decision
+inputs and performs this sequence before advancing:
+
+```python
+records = []
+for decision in decisions:
+    snapshot_X = snapshots_by_symbol[decision.symbol]
+    observation_O = build_signal_observation(
+        decision, snapshot_X, run_metadata,
+        stock_regime=stock_regime, crypto_regime=crypto_regime,
+    )
+    binding_B = ObservationSourceBinding(
+        signal_id=observation_O.signal_id,
+        observation_hash=observation_O.observation_hash,
+        snapshot_sha256=snapshot_sha256_v1(snapshot_X),
+        price_basis_claim=(
+            None if snapshot_X.data_fetch_metadata is None
+            else snapshot_X.data_fetch_metadata.price_basis_claim
+        ),
+    )
+    records.append(ObservationEvidenceRecord(observation_O, binding_B))
+```
+
+The function returns only after every record is structurally valid and
+serializable. If record N fails, there is no partial sidecar, synthetic
+binding, alternate snapshot, or provider reload. After the complete list:
+
+```python
+observations = tuple(record.observation for record in records)
+_persist_signal_observations(cache, observations)
+build_observation_sidecar(records, output_path=sidecar_path)
+```
+
+SQLite receives O only; the sidecar receives O+B. SQLite failure does not
+discard or mutate B. The sidecar top level is exactly schema_version,
+source_sha, run_id, report_type, and records. Each item contains only the
+complete frozen observation and source_binding with signal_id,
+observation_hash, snapshot_sha256, and price_basis_claim (JSON null or the
+complete three-field object). All top-level metadata values agree. There are
+no parallel arrays and no post-construction symbol rejoin.
+
+The legacy signal_input_hash, snapshot_binding, and entry_integrity_sha256
+fields are removed from the serializer/parser/resolver path; they are not
+compatibility fields and do not form a second checksum authority. The resolver
+accepts the typed record and validates schema/version, observation and binding
+IDs/hashes, digest format, claim shape, raw_ohlcv, price_basis_v1, and the
+exact qualified source-contract allowlist. Missing, malformed, duplicate, or
+ambiguous entries return signal_basis_unavailable. It does not reconstruct X
+from O. An unarchived sidecar is transport only; archive confirmation creates
+durable authority.
+
+**Acceptance:** Exact decision-time X produces immutable O+B; the records-only
+builder serializes prebuilt binding; snapshot_projection_v1 is explicit,
+versioned, closed-world, and deterministic; SQLite receives O only after the
+complete record list; construction failure emits no sidecar; SQLite failure
+preserves B; current providers do not reconstruct history; and the frozen
+observation, decision, scoring, risk, rendering, and fallback behavior remains
+unchanged.
+
+### Task 3 review gate
+
+- [ ] Run all amended Task 3 targeted tests, including the literal projection,
+  closed-world, atomic-record, sidecar, and SQLite-failure tests.
+- [ ] Run the frozen Task 1 canonical serialization/idempotency regression and
+  the frozen Task 2 archive/isolation/provider-reader regression.
+- [ ] Run the frozen SignalObservation and SignalForwardOutcome regressions and
+  confirm decision, scoring, risk, rendering, and fallback bytes are unchanged.
+- [ ] Use these exact frozen-regression commands at the gate:
+  `.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.CanonicalSerializationTests tests.test_evidence_accumulation.CanonicalIdempotencyTests tests.test_evidence_accumulation.SharedEvidenceTypeContractTests`
+  and
+  `.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ArchiveGitTests tests.test_evidence_accumulation.GitIsolationTests tests.test_evidence_accumulation.CorporateArchiveConflictTests tests.test_evidence_accumulation.CanonicalProviderReaderTests`
+  followed by
+  `.\.venv\Scripts\python.exe -m unittest tests.test_signal_observation tests.test_signal_outcome`.
+- [ ] Obtain an independent bounded Task 3 review. Do not mark Task 3 complete
+  or begin Task 4 while a CRITICAL or IMPORTANT finding remains.
+
+The corrected Task 3 diff is expected to be limited to `advisor/evidence_schema.py`,
+`advisor/cli.py`, and `tests/test_evidence_accumulation.py`. If the already
+present claim propagation fails regression, stop with a scoped design conflict;
+do not expand the task into `advisor/models.py`, `advisor/data_sources.py`,
+`advisor/data_pipeline.py`, or `advisor/live_loader.py` without a separately
+approved scope decision.
 
 ## Task 4 — Deterministic market/provider and corporate-action collection
 
@@ -542,6 +1129,10 @@ def _fetch_optional(
 **Interfaces to implement:** `CollectionAsset`, `PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION`, `assigned_price_provider`, `EvidenceCollector.collect_market`, `EvidenceCollector.collect_corporate_actions`, and `normalize_split_factor`. The collector writes transport only and has no Git or SQLite authority. Before collection, the read-only collector job calls `oldest_canonical_provider_by_symbol(evidence_checkout=evidence_checkout, symbols=tuple(asset.symbol for asset in assets))` for the typed asset list and passes the returned mapping to `collect_market`; a missing symbol key means the deterministic v1 mapping applies.
 
 **TDD sequence:**
+
+Task 4 does not construct, infer, or repair ObservationSourceBinding. That
+binding captures the source contract actually used by the decision snapshot in
+Task 3 and does not execute price_provider_assignment_v1.
 
 - [ ] Write these exact failing tests:
   - `ProviderAssignmentTests.test_price_provider_assignment_v1_is_deterministic`
@@ -596,7 +1187,21 @@ def _fetch_optional(
 
 The frozen observation and outcome contracts remain read-only.
 
-**Interfaces to implement:** `EvidenceMaterializer`, `HorizonQualification`, `MaterializationResult`, `qualify_horizon`, and `resolve_signal_price_basis_status` imported from `advisor.evidence_schema`. `HorizonQualification.status` is a `HorizonStatus`; its `policy` is a separate `SplitPolicy | CryptoPolicy | None`; and its `reason_code` is a separate `CorporateActionReasonCode | None`. The materializer accepts only an evidence checkout and DB target; it has no API for a transport directory.
+Task 5 reads one canonical ObservationEvidenceRecord from the freshly fetched
+evidence checkout by the exact (signal_id, observation_hash) key. It consumes
+the archived source_binding.snapshot_sha256 and the exact captured
+price_basis_claim as provenance; it never reconstructs historical binding from
+a current provider, current market data, a symbol lookup, a current snapshot,
+or SQLite. The materializer may validate the captured record, but it may not
+recompute an old snapshot digest from a future model version.
+
+**Interfaces to implement:** `EvidenceMaterializer`, `read_observation_evidence_record`, `HorizonQualification`, `MaterializationResult`, `qualify_horizon`, and `resolve_signal_price_basis_status(record=record)` imported from `advisor.evidence_schema`. `HorizonQualification.status` is a `HorizonStatus`; its `policy` is a separate `SplitPolicy | CryptoPolicy | None`; and its `reason_code` is a separate `CorporateActionReasonCode | None`. The materializer accepts only an evidence checkout and DB target; it has no API for a transport directory.
+
+If the canonical record or its source binding is missing or invalid, Task 5
+returns `signal_basis_unavailable` for the stock/ETF horizon and does not
+construct a 3B.2 input. A qualified claim is accepted only from the archived
+record's captured binding; provider-name inference and current-snapshot lookup
+are forbidden.
 
 **TDD sequence:**
 
@@ -639,6 +1244,31 @@ The frozen observation and outcome contracts remain read-only.
 
 The frozen outcome, scoring, and risk contracts remain read-only.
 
+Task 6 owns the transport-to-durable-authority transition. The first archive
+confirmation, not a local sidecar write and not an SQLite save, makes the
+observation record authoritative in advisor-evidence. The exact ownership test
+is ArchiveAuthorityTransitionTests.test_different_source_binding_for_same_observation_conflicts_after_first_archive:
+after canonical O+B(X) is confirmed, the same observation logical identity
+paired with B(Y) must be handled as an archive conflict, with the original
+canonical record preserved. This test belongs to Task 6 because it verifies the
+handoff from construction transport to durable archive authority; it is not
+duplicated as a Task 3 resolver test.
+
+Only ArchiveResult.status == committed with durability_confirmed == True, or
+ArchiveResult.status == no_op with durability_confirmed == True after the
+required fresh validation, authorizes a record as canonical durable evidence.
+A local sidecar file, an SQLite save, or an unconfirmed Git commit never
+satisfies this transition.
+
+The Task 6 test matrix includes:
+
+- [ ] ArchiveAuthorityTransitionTests.test_different_source_binding_for_same_observation_conflicts_after_first_archive
+
+This test archives O+B(X), confirms the first durable transition, then submits
+the same observation identity with B(Y) and asserts conflict plus byte-preserved
+canonical O+B(X). A local sidecar write or SQLite save alone must not satisfy
+the transition.
+
 **Interfaces to implement:** `EvidenceMaterializer.largest_continuously_eligible_horizon` and `EvidenceMaterializer.evaluate_observation_once` from the shared interface, plus the existing `SQLiteCache.save_signal_forward_outcomes_for_signal` as the operational materialization sink. `evaluate_observation_once` receives one observation, one canonical `ForwardMarketSeries`, and the externally qualified horizons; it limits the series to the largest continuously eligible prefix and calls only `advisor.signal_outcome.evaluate_signal_observation(observation, series)` at most once. The method returns the exact `SignalForwardEvaluation` from the frozen authority without reimplementing any return/MFE/MAE/barrier math.
 
 **TDD sequence:**
@@ -671,7 +1301,17 @@ The frozen outcome, scoring, and risk contracts remain read-only.
 
 **Acceptance:** Only canonical, durably archived evidence reaches frozen 3B.2; one observation/cycle makes at most one evaluator call over the largest continuously eligible prefix; evaluator output is authoritative; blocked horizons are not accepted; scoring/risk are never called; pending horizons remain pending; SQLite receives no new operational outcome before the second archive is confirmed; second-archive failure writes zero new rows; outcome storage remains append-only and frozen.
 
+Task 6 owns the first-archive transition and the durable-divergence Test J;
+Task 8 owns the broad recovery drill after SQLite, caches, transport, and
+workspaces are lost. Task 6 may prove that recovery reads the already archived
+binding, but it does not duplicate Task 8's full recovery acceptance.
+
 ## Task 7 — GitHub Actions permission boundaries and CLI dispatch
+
+Task 7 transports and archives the records-only observation sidecar produced by
+Task 3. Workflow jobs do not receive snapshots_by_symbol and never construct a
+new ObservationSourceBinding; they only hand off the prebuilt O+B artifact to
+the archive/materializer stages in the specified order.
 
 **Reviewer boundary:** A reviewer can approve or reject workflow job boundaries, secrets, concurrency, artifact handoffs, and the unchanged nightly workflow without running GitHub.
 
@@ -719,6 +1359,11 @@ The existing `python -m advisor outcomes evaluate --input-path .tmp/forward-inpu
 
 ## Task 8 — Recovery acceptance, security properties, and registered mutations
 
+Task 8 may mutate and validate unarchived transport artifacts in disposable
+copies, but those artifacts never become historical authority. Recovery and
+security acceptance remain anchored on the canonical append-only archive and
+the archived ObservationEvidenceRecord.
+
 **Reviewer boundary:** A reviewer can approve or reject rebuildability and fail-closed behavior from temporary files/repos without touching `data/advisor.db`, GitHub, provider quotas, or user branches.
 
 **Files:** Extend `tests/test_evidence_accumulation.py`; modify implementation files only when a failing security/recovery test identifies a task-scoped defect. No production scope expansion is permitted.
@@ -759,6 +1404,11 @@ The existing `python -m advisor outcomes evaluate --input-path .tmp/forward-inpu
 **Acceptance:** The complete rebuild works from `main + advisor-evidence` alone, all operational loss is survivable, legacy `signal_journal` is ignored, scoring is not called, all listed security properties fail closed, and every registered mutation is killed with `mutations_survived=0`.
 
 ## Task 9 — Documentation and final integration verification
+
+Task 9 updates operational documentation and final checks only where they
+refer to the records-only sidecar and archived source binding. It does not
+restore the superseded snapshots_by_symbol builder contract or claim resolver
+authority to an unarchived sidecar.
 
 **Reviewer boundary:** A reviewer can approve or reject the final implementation package, documentation, frozen boundaries, regression evidence, and Git scope before a later human freeze decision.
 
@@ -818,9 +1468,14 @@ Before committing this plan, verify the following cross-task invariants:
 - [ ] Every listed raw-OHLCV source contract has a provider-native fixture proof with no adjustment/transformation, and an unproven route remains claimless.
 - [ ] All three named full-suite gates use the repository virtual-environment interpreter and preserve the baseline-known-failure classification rule.
 - [ ] No protected module appears under any `Files: Modify` line, no excluded phase is scheduled, and the required forbidden-placeholder scan returns zero matches.
+- [ ] Task 3 constructs one immutable ObservationEvidenceRecord containing O+B from the exact decision-time AssetSnapshot; the superseded builder never accepts snapshots_by_symbol or performs a late symbol rejoin.
+- [ ] snapshot_projection_v1 enumerates all 34 current AssetSnapshot fields plus every nested field, includes no field implicitly, uses explicit sequence order and null keys, and derives snapshot_sha256_v1 only through canonical_json_bytes.
+- [ ] Test E uses a literal expected projection and the closed-world test kills omitted/include/excluded-field, claim, sequence-order, and future-field mutations.
+- [ ] Task 5 reads only the canonical archived O+B record and consumes its captured digest/claim; it never rebuilds historical binding from a current provider, snapshot, market-data lookup, or SQLite.
+- [ ] Task 6 owns first-archive authority transition and the exact different-source-binding conflict test J; local sidecar/SQLite writes do not make evidence durable.
+- [ ] Task 4 does not execute provider assignment for ObservationSourceBinding, and Task 8 tests transport mutations without elevating transport to authority.
 
 ## Regression Checkpoint Matrix
-
 The implementation worker runs the smallest relevant checkpoint after each task and does not run the full suite after every task.
 
 | Checkpoint | Exact command | Purpose |
