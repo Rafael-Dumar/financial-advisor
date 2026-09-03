@@ -2,6 +2,8 @@ import os
 import argparse
 import hashlib
 import inspect
+from contextlib import redirect_stdout
+from io import StringIO
 import subprocess
 import tempfile
 import threading
@@ -1210,6 +1212,7 @@ class ObservationSourceBindingTests(unittest.TestCase):
                 stock=SimpleNamespace(label="bull"),
                 crypto=SimpleNamespace(label="neutral"),
             )
+            output = StringIO()
             with patch.object(cli_module, "snapshots_from_fixture", return_value=[snapshot_x, snapshot_y]), patch.object(
                 cli_module, "benchmarks_from_fixture", return_value=[]
             ), patch.object(cli_module, "derive_market_regimes", return_value=regimes), patch.object(
@@ -1222,7 +1225,7 @@ class ObservationSourceBindingTests(unittest.TestCase):
                 cli_module, "_persist_signal_observations"
             ) as persist, patch.object(
                 cli_module, "build_observation_sidecar"
-            ) as sidecar, patch.object(cli_module, "LiveDataLoader") as live_loader:
+            ) as sidecar, patch.object(cli_module, "LiveDataLoader") as live_loader, redirect_stdout(output):
                 self.assertEqual(cli_module._scan(args), 0)
 
             self.assertTrue((root / "reports" / "advisor-report.md").exists())
@@ -1231,6 +1234,10 @@ class ObservationSourceBindingTests(unittest.TestCase):
             persist.assert_not_called()
             sidecar.assert_not_called()
             live_loader.assert_not_called()
+            self.assertIn(
+                "signal_observation_status=unavailable error_code=serialization_error",
+                output.getvalue(),
+            )
 
 
 class ObservationSidecarTests(unittest.TestCase):
