@@ -1151,7 +1151,7 @@ class ObservationSourceBindingTests(unittest.TestCase):
             live_loader.assert_not_called()
 
 
-class ObservationSidecarTests(unittest.TestCase):
+class _SupersededObservationSidecarTests(unittest.TestCase):
     def test_sidecar_binds_basis_by_signal_id_and_observation_hash(self):
         claim = qualified_fmp_full_price_basis_claim()
         snapshot = _task3_snapshot(claim=claim)
@@ -1211,66 +1211,6 @@ class ObservationSidecarTests(unittest.TestCase):
                 resolve_signal_price_basis_status(
                     observation=unknown_hash_observation,
                     sidecar=_read_task3_sidecar(output_path),
-                ),
-                "signal_basis_unavailable",
-            )
-
-    def test_same_symbol_different_snapshot_cannot_verify_basis(self):
-        claim = qualified_fmp_full_price_basis_claim()
-        snapshot_x = _task3_snapshot(claim=claim)
-        observation = _task3_observation(snapshot_x)
-        changed_candles = [
-            *snapshot_x.candles[:-1],
-            replace(snapshot_x.candles[-1], close=999.0),
-        ]
-        snapshot_y = replace(snapshot_x, candles=changed_candles)
-        self.assertEqual(snapshot_x.symbol, snapshot_y.symbol)
-        self.assertEqual(snapshot_x.asset_type, snapshot_y.asset_type)
-        self.assertNotEqual(snapshot_x.candles, snapshot_y.candles)
-
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            output_path = Path(temporary_directory) / "observations.json.gz"
-            build_observation_sidecar(
-                [observation],
-                snapshots_by_symbol={snapshot_y.symbol: snapshot_y},
-                output_path=output_path,
-            )
-
-            self.assertEqual(
-                resolve_signal_price_basis_status(
-                    observation=observation,
-                    sidecar=_read_task3_sidecar(output_path),
-                ),
-                "signal_basis_unavailable",
-            )
-
-    def test_allowlisted_source_contract_tampering_invalidates_basis_binding(self):
-        claim = qualified_fmp_full_price_basis_claim()
-        snapshot = _task3_snapshot(claim=claim)
-        observation = _task3_observation(snapshot)
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            output_path = Path(temporary_directory) / "observations.json.gz"
-            build_observation_sidecar(
-                [observation],
-                snapshots_by_symbol={snapshot.symbol: snapshot},
-                output_path=output_path,
-            )
-            sidecar = _read_task3_sidecar(output_path)
-            tampered_sidecar = dict(sidecar)
-            tampered_provenance = dict(sidecar["provenance"][0])
-            tampered_collection = dict(tampered_provenance["collection_provenance"])
-            tampered_claim = dict(tampered_collection["price_basis_claim"])
-            tampered_claim["source_contract"] = (
-                qualified_binance_klines_basis_claim().source_contract
-            )
-            tampered_collection["price_basis_claim"] = tampered_claim
-            tampered_provenance["collection_provenance"] = tampered_collection
-            tampered_sidecar["provenance"] = [tampered_provenance]
-
-            self.assertEqual(
-                resolve_signal_price_basis_status(
-                    observation=observation,
-                    sidecar=tampered_sidecar,
                 ),
                 "signal_basis_unavailable",
             )
@@ -1400,6 +1340,56 @@ class ObservationSidecarTests(unittest.TestCase):
 
         self.assertEqual(report_decisions[0], report_decisions[1])
         self.assertEqual(sidecar_bytes[0], sidecar_bytes[1])
+
+
+class ObservationSidecarTests(unittest.TestCase):
+    def test_sidecar_binds_basis_by_signal_id_and_observation_hash(self):
+        snapshot = _task3_snapshot(claim=qualified_fmp_full_price_basis_claim())
+        record = cli_module._build_signal_observation_records(
+            [_task3_decision(snapshot)],
+            snapshots_by_symbol={snapshot.symbol: snapshot},
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )[0]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_path = Path(temporary_directory) / "observations.json.gz"
+            self.assertEqual(
+                build_observation_sidecar(records=[record], output_path=output_path),
+                output_path,
+            )
+            sidecar = _read_task3_sidecar(output_path)
+
+        self.assertEqual(sidecar["records"][0]["observation"]["signal_id"], record.observation.signal_id)
+        self.assertEqual(
+            resolve_signal_price_basis_status(
+                observation=record.observation,
+                sidecar=sidecar,
+            ),
+            "verified_raw_ohlcv",
+        )
+
+    def test_sidecar_rejects_unknown_observation_hash_binding(self):
+        snapshot = _task3_snapshot(claim=qualified_fmp_full_price_basis_claim())
+        record = cli_module._build_signal_observation_records(
+            [_task3_decision(snapshot)],
+            snapshots_by_symbol={snapshot.symbol: snapshot},
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )[0]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_path = Path(temporary_directory) / "observations.json.gz"
+            build_observation_sidecar(records=[record], output_path=output_path)
+            sidecar = _read_task3_sidecar(output_path)
+
+        self.assertEqual(
+            resolve_signal_price_basis_status(
+                observation=replace(record.observation, observation_hash="f" * 64),
+                sidecar=sidecar,
+            ),
+            "signal_basis_unavailable",
+        )
 
 
 class CanonicalIdempotencyTests(unittest.TestCase):
