@@ -562,30 +562,363 @@ The replacement is not a coherent-tamper rejection requirement for an
 unarchived sidecar. Durable divergence is tested exclusively by Task 6 after
 the first canonical archive confirmation.
 
-### TDD sequence
+### Executable TDD waves
 
-No production edit is allowed before RED. Add these exact architectural tests:
+No production edit is allowed before the RED command for its wave. Each wave
+below names the tests written first, the exact command that demonstrates the
+missing behavior, the only implementation files permitted in that wave, and
+the exact GREEN command. A fixture failure, import mismatch caused by an
+incorrect test, skipped test, or unrelated regression stops the wave for
+diagnosis; it is not accepted as RED evidence.
 
-- [ ] ObservationSourceBindingTests.test_atomic_record_captures_observation_and_binding_from_same_snapshot
-- [ ] ObservationSourceBindingTests.test_sidecar_builder_accepts_records_without_snapshots_by_symbol
-- [ ] ObservationSourceBindingTests.test_binding_captures_exact_price_basis_claim
-- [ ] SnapshotProjectionTests.test_snapshot_projection_v1_matches_literal_expected_projection
-- [ ] SnapshotProjectionTests.test_snapshot_projection_v1_is_closed_world
-- [ ] ObservationSourceBindingTests.test_mutating_snapshot_state_after_record_construction_does_not_change_binding
-- [ ] ObservationSourceBindingTests.test_sqlite_failure_preserves_prebuilt_binding
-- [ ] ObservationSourceBindingTests.test_sidecar_serializes_prebuilt_binding_without_snapshot_recomputation
-- [ ] ObservationSourceBindingTests.test_same_record_serializes_deterministically
+#### Wave 3A — snapshot projection
 
-### Implementation steps (2–5 minutes each)
+**Tests written first:**
 
-- [ ] Record RED evidence for each named Task 3 test before touching the amended production path; stop if a RED is caused by an invalid fixture or an interface mismatch.
-- [ ] Add the two frozen dataclasses and their imports without adding fields to SignalObservation; run the atomic-record and exact-claim tests in isolation.
-- [ ] Add the explicit snapshot projection helpers with the top-level and nested matrices below; run the literal-projection test before wiring the sidecar.
-- [ ] Add the closed-world test-only extended AssetSnapshot fixture and verify that its synthetic future_field is absent from the v1 projection.
-- [ ] Replace the sidecar serializer/parser/resolver boundary with records-only input; run the records-only, prebuilt-binding, and deterministic-serialization tests.
-- [ ] Replace the CLI observation construction boundary with the same-iteration O+B loop; run the mutation-after-construction and construction-failure tests.
-- [ ] Derive the SQLite observation tuple only after the complete record list exists; run the SQLite-failure preservation test.
-- [ ] Run the amended Task 3 targeted tests, then Task 1, Task 2, and frozen observation/outcome regressions before requesting the independent Task 3 review.
+- `SnapshotProjectionTests.test_snapshot_projection_v1_matches_literal_expected_projection`
+- `SnapshotProjectionTests.test_snapshot_projection_v1_is_closed_world`
+
+The literal-projection test must also assert, using the same populated fixture,
+that reversing the two `candles` changes `snapshot_sha256_v1`, and that changing
+only `DataFetchMetadata.price_basis_claim.source_contract` changes the digest.
+The closed-world test uses the local `FutureAssetSnapshot` subclass and compares
+its complete projection with the literal v1 shape. These are assertions inside
+the two named tests, not a generic reflection-based fixture.
+
+**RED 3A — write the literal test first and run:**
+
+```text
+.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.SnapshotProjectionTests.test_snapshot_projection_v1_matches_literal_expected_projection
+```
+
+Expected RED is a feature-missing `ImportError`/`AttributeError` because
+`snapshot_projection_v1` and/or `snapshot_sha256_v1` is not implemented yet.
+The expected projection fixture must use real model constructors and the
+literal object required by the closed-world projection section below; invalid
+fixture data is not an acceptable cause.
+
+**Files allowed in Wave 3A:**
+
+- Modify: `advisor/evidence_schema.py`
+- Test: `tests/test_evidence_accumulation.py`
+- No `advisor/cli.py`, archive, collector, materializer, workflow, or protected-module change.
+
+**Minimal implementation:** add only `snapshot_projection_v1(snapshot)` and
+`snapshot_sha256_v1(snapshot)` plus imports/private projection helpers needed
+to implement the complete closed-world skeleton below. The implementation must
+enumerate `projection_version`, all 34 current `AssetSnapshot` fields, every
+listed nested field, explicit optional nulls, the literal claim projection,
+semantic sequence ordering, and the existing `canonical_json_bytes` helper.
+It must not use `asdict`, `vars`, `__dict__`, dataclass reflection, or generic
+recursive serialization.
+
+**GREEN 3A.1:**
+
+```text
+.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.SnapshotProjectionTests.test_snapshot_projection_v1_matches_literal_expected_projection
+```
+
+Expected result: `1 PASS`.
+
+Then write the closed-world test and run the complete wave:
+
+```text
+.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.SnapshotProjectionTests
+```
+
+Expected result: `2 PASS`, zero skips. The command must fail if a future
+dataclass field is included automatically, an INCLUDE field is omitted, a
+sequence is reordered, or a claim source contract is ignored.
+
+#### Wave 3B — atomic observation records
+
+**Tests written first:**
+
+- `ObservationSourceBindingTests.test_atomic_record_captures_observation_and_binding_from_same_snapshot`
+- `ObservationSourceBindingTests.test_binding_captures_exact_price_basis_claim`
+- `ObservationSourceBindingTests.test_mutating_snapshot_state_after_record_construction_does_not_change_binding`
+
+Test F is owned by this wave, but its final serialization assertion is gated by
+Wave 3C because the records-only sidecar API does not exist until then. Its
+construction portion is written now and must already compare the captured
+binding before and after replacing the report-run mapping entry.
+
+**RED 3B — write the atomic-record test first and run:**
+
+```text
+.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ObservationSourceBindingTests.test_atomic_record_captures_observation_and_binding_from_same_snapshot
+```
+
+Expected RED is a feature-missing `ImportError`/`AttributeError` for
+`ObservationSourceBinding`, `ObservationEvidenceRecord`, or
+`_build_signal_observation_records`; it must not be caused by an invalid
+`AssetSnapshot` or `SignalObservation` fixture.
+
+**Files allowed in Wave 3B:**
+
+- Modify: `advisor/evidence_schema.py`, `advisor/cli.py`
+- Test: `tests/test_evidence_accumulation.py`
+- No `advisor/evidence_archive.py`, collector, materializer, workflow, or protected-module change.
+
+**Minimal implementation:** add the two frozen dataclasses in
+`advisor/evidence_schema.py` without adding fields to `SignalObservation`, and
+replace the observation-only construction helper in `advisor/cli.py` with the
+following same-iteration operation:
+
+```python
+records = []
+for decision in decisions:
+    snapshot_X = snapshots_by_symbol[decision.symbol]
+    observation_O = build_signal_observation(
+        decision,
+        snapshot_X,
+        run_metadata,
+        stock_regime=stock_regime,
+        crypto_regime=crypto_regime,
+    )
+    binding_B = ObservationSourceBinding(
+        signal_id=observation_O.signal_id,
+        observation_hash=observation_O.observation_hash,
+        snapshot_sha256=snapshot_sha256_v1(snapshot_X),
+        price_basis_claim=(
+            None
+            if snapshot_X.data_fetch_metadata is None
+            else snapshot_X.data_fetch_metadata.price_basis_claim
+        ),
+    )
+    records.append(ObservationEvidenceRecord(observation_O, binding_B))
+```
+
+The helper returns only after the complete list is constructed. It never
+constructs O, discards it, and later rejoins by symbol. SQLite and sidecar
+publication remain outside this wave.
+
+**GREEN 3B:**
+
+```text
+.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ObservationSourceBindingTests.test_atomic_record_captures_observation_and_binding_from_same_snapshot tests.test_evidence_accumulation.ObservationSourceBindingTests.test_binding_captures_exact_price_basis_claim
+```
+
+Expected result: `2 PASS`, zero skips. The post-capture mutation test is run in
+the Wave 3C GREEN command after its sidecar assertion can execute.
+
+#### Wave 3C — records-only sidecar and resolver
+
+**Tests written first:**
+
+- `ObservationSourceBindingTests.test_sidecar_builder_accepts_records_without_snapshots_by_symbol`
+- `ObservationSourceBindingTests.test_mutating_snapshot_state_after_record_construction_does_not_change_binding`
+- `ObservationSourceBindingTests.test_sidecar_serializes_prebuilt_binding_without_snapshot_recomputation`
+- `ObservationSourceBindingTests.test_same_record_serializes_deterministically`
+
+**RED 3C — write the records-only API test first and run:**
+
+```text
+.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ObservationSourceBindingTests.test_sidecar_builder_accepts_records_without_snapshots_by_symbol
+```
+
+Expected RED is the old sidecar contract mismatch: the current builder still
+requires observation-only input plus `snapshots_by_symbol`, or the new
+records-only signature is missing. A `TypeError`/`ImportError` identifying that
+interface gap is valid; a malformed record fixture is not.
+
+**Files allowed in Wave 3C:**
+
+- Modify: `advisor/evidence_schema.py`, `advisor/cli.py`
+- Test: `tests/test_evidence_accumulation.py`
+- No `advisor/evidence_archive.py`, provider, SQLite, workflow, or protected-module change.
+
+**Minimal implementation:** change the active sidecar API to:
+
+```python
+build_observation_sidecar(
+    records: Sequence[ObservationEvidenceRecord],
+    *,
+    output_path: Path,
+) -> Path
+```
+
+Serialize only the prebuilt `ObservationEvidenceRecord` values in the exact
+records-only shape defined by the spec. Remove the experimental
+`signal_input_hash`, `snapshot_binding`, and `entry_integrity_sha256` fields
+from active serializer/parser/resolver behavior. The resolver validates
+schema/version, observation and binding IDs/hashes, digest format, claim shape,
+raw OHLCV, policy, allowlist, and ambiguity/duplicates; it does not receive or
+reconstruct a snapshot.
+
+The implementation of Test F must use this concrete sequence: construct a
+mutable `snapshots_by_symbol` mapping with `snapshot_x`; call
+`_build_signal_observation_records`; save the record and its binding; replace
+the mapping value with `snapshot_y` having the same symbol/asset type but a
+different candle and qualified claim; do not rebuild records; serialize the
+same record; and assert both the in-memory binding and serialized binding are
+unchanged and equal to the captured X values. No mutation of a frozen model or
+object identity is used.
+
+The implementation of Test H must patch the production lookup, not a wrapper
+that bypasses it:
+
+```python
+with patch(
+    "advisor.evidence_schema.snapshot_sha256_v1",
+    side_effect=AssertionError(
+        "snapshot_sha256_v1 must not be called by sidecar builder"
+    ),
+):
+    build_observation_sidecar(records=[record], output_path=output_path)
+```
+
+The test then parses the generated sidecar and compares its serialized
+`source_binding.snapshot_sha256` with the prebuilt record. This kills a builder
+that silently recomputes the digest from a supplied snapshot.
+
+The deterministic test serializes the identical record to two temporary paths,
+compares decompressed canonical bytes and gzip bytes, and asserts no clock,
+UUID, or path value enters the content.
+
+The two experimental coherent-tamper tests,
+`test_same_symbol_different_snapshot_cannot_verify_basis` and
+`test_allowlisted_source_contract_tampering_invalidates_basis_binding`, must be
+removed as active tests. If their historical rationale is retained in the
+test file, it must be rewritten as a captured-record/archived-authority
+assertion and must not retain the impossible pre-archive claim that a resolver
+can authenticate a coherent rewrite from O alone.
+
+**GREEN 3C:**
+
+```text
+.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ObservationSourceBindingTests
+```
+
+Expected result: `6 PASS` for the six active Wave 3B/3C tests listed above,
+zero skips. This command must include Test F and Test H; a class-level count
+that omits either test is a failure of the wave contract.
+
+#### Wave 3D — SQLite and construction-failure integration
+
+**Tests written first:**
+
+- `ObservationSourceBindingTests.test_sqlite_failure_preserves_prebuilt_binding`
+- `ObservationSourceBindingTests.test_record_construction_failure_emits_no_partial_sidecar`
+
+The second test replaces the existing broad construction-failure assertion; do
+not keep two tests with overlapping old observation-only semantics.
+
+**RED 3D — write the construction-failure test first and run:**
+
+```text
+.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ObservationSourceBindingTests.test_record_construction_failure_emits_no_partial_sidecar
+```
+
+Expected RED is the missing records construction boundary: the current
+observation-only orchestration has no owner for an all-or-nothing O+B list, or
+the test cannot observe that the old partial path is being used. A
+feature-missing `AttributeError`/`ImportError` or the specified assertion
+failure is expected; an invalid fixture is not.
+
+**Files allowed in Wave 3D:**
+
+- Modify: `advisor/evidence_schema.py`, `advisor/cli.py`
+- Test: `tests/test_evidence_accumulation.py`
+- No archive, collector, materializer, workflow, or protected-module change.
+
+**Minimal implementation and exact test mechanism:** make the CLI construct the
+full record list before either sink, then derive and persist observations only
+after construction succeeds:
+
+```python
+records = _build_signal_observation_records(...)
+observations = tuple(record.observation for record in records)
+persistence_status = _persist_signal_observations(cache, observations)
+build_observation_sidecar(records, output_path=sidecar_path)
+```
+
+For `test_record_construction_failure_emits_no_partial_sidecar`, prepare D1/X1 and
+D2/X2. First run the same record helper with D1 alone as a nominal control and
+assert one valid O+B record. Then patch the module-level
+`advisor.cli.build_signal_observation` lookup so its first call returns the
+normal D1 observation and its second call raises a deterministic
+`ValueError("invalid observation D2")`. Invoke the real report/evidence
+orchestration used by `_scan`, with `build_observation_sidecar` and
+`_persist_signal_observations` as spies. Assert the operational report remains
+valid, the signal-observation status is unavailable with the existing
+`serialization_error` code, the sidecar spy was not called, the output path
+does not exist, and persistence never received a partial `[D1]` list. Also
+assert no provider loader/fallback was called in response to the failure.
+
+For `test_sqlite_failure_preserves_prebuilt_binding`, construct all records
+successfully, save the expected binding, patch
+`SQLiteCache.save_signal_observations` to raise `OSError("sqlite unavailable")`,
+run the real report/evidence path, and assert the sidecar is still emitted with
+the exact prebuilt binding and unchanged observation hash. SQLite is an
+operational sink and never gets to mutate or replace O+B.
+
+**GREEN 3D:**
+
+```text
+.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ObservationSourceBindingTests.test_sqlite_failure_preserves_prebuilt_binding tests.test_evidence_accumulation.ObservationSourceBindingTests.test_record_construction_failure_emits_no_partial_sidecar
+```
+
+Expected result: `2 PASS`, zero skips. The construction-failure test must prove
+zero partial sidecar and zero partial SQLite persistence; the SQLite-failure
+test must prove the opposite, namely that a fully prebuilt sidecar remains
+available despite the sink error.
+
+#### Wave 3E — invariance and final Task 3 regressions
+
+**Tests written/selected first:** the complete ten-test Task 3 set from Waves
+3A–3D:
+
+- `SnapshotProjectionTests.test_snapshot_projection_v1_matches_literal_expected_projection`
+- `SnapshotProjectionTests.test_snapshot_projection_v1_is_closed_world`
+- `ObservationSourceBindingTests.test_atomic_record_captures_observation_and_binding_from_same_snapshot`
+- `ObservationSourceBindingTests.test_binding_captures_exact_price_basis_claim`
+- `ObservationSourceBindingTests.test_mutating_snapshot_state_after_record_construction_does_not_change_binding`
+- `ObservationSourceBindingTests.test_sidecar_builder_accepts_records_without_snapshots_by_symbol`
+- `ObservationSourceBindingTests.test_sidecar_serializes_prebuilt_binding_without_snapshot_recomputation`
+- `ObservationSourceBindingTests.test_same_record_serializes_deterministically`
+- `ObservationSourceBindingTests.test_sqlite_failure_preserves_prebuilt_binding`
+- `ObservationSourceBindingTests.test_record_construction_failure_emits_no_partial_sidecar`
+
+The existing claim-propagation and qualification classes
+`SignalBasisPropagationTests` and `SourceContractQualificationTests` are also
+selected before the final gate. No new architecture or production surface is
+introduced in this wave.
+
+**RED checkpoint:** run this exact command before making any final invariance
+adjustment:
+
+```text
+.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.SnapshotProjectionTests tests.test_evidence_accumulation.ObservationSourceBindingTests tests.test_evidence_accumulation.SignalBasisPropagationTests tests.test_evidence_accumulation.SourceContractQualificationTests
+```
+
+Expected RED, if the implementation is incomplete, is a named failing
+assertion or missing test-owned contract in one of the listed classes (for
+example, a report/decision byte change, fallback claim leak, or unqualified
+route becoming verified). A skipped test, a broadened fixture, or a new
+provider call is not a passing result.
+
+**Files allowed in Wave 3E:**
+
+- Test: `tests/test_evidence_accumulation.py`
+- Modify `advisor/evidence_schema.py` or `advisor/cli.py` only if a failing Wave 3E invariant directly identifies a Task 3 defect; no new file or architecture.
+- No archive, collector, materializer, workflow, or protected-module change.
+
+**GREEN command and expected result:**
+
+```text
+.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.SnapshotProjectionTests tests.test_evidence_accumulation.ObservationSourceBindingTests tests.test_evidence_accumulation.SignalBasisPropagationTests tests.test_evidence_accumulation.SourceContractQualificationTests
+```
+
+Expected result after the preceding waves: `22 PASS` for the ten new atomic /
+projection/integration tests plus the existing twelve Task 3
+propagation/qualification tests, zero skips. The implementation worker must
+report the actual count and stop on any count mismatch or regression before
+requesting review.
+
+The final Task 3 gate then runs the exact Task 1, Task 2, and frozen commands
+listed in the review gate below. No Task 4 command or implementation is part
+of Wave 3E.
 
 ### Closed-world snapshot projection
 
@@ -1099,7 +1432,10 @@ unchanged.
 ### Task 3 review gate
 
 - [ ] Run all amended Task 3 targeted tests, including the literal projection,
-  closed-world, atomic-record, sidecar, and SQLite-failure tests.
+  closed-world, atomic-record, sidecar, post-capture mutation,
+  anti-recomputation, SQLite-failure, and construction-failure tests:
+  `.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.SnapshotProjectionTests tests.test_evidence_accumulation.ObservationSourceBindingTests tests.test_evidence_accumulation.SignalBasisPropagationTests tests.test_evidence_accumulation.SourceContractQualificationTests`
+  Expected result: 22 PASS, zero skips, subject to reporting the actual count.
 - [ ] Run the frozen Task 1 canonical serialization/idempotency regression and
   the frozen Task 2 archive/isolation/provider-reader regression.
 - [ ] Run the frozen SignalObservation and SignalForwardOutcome regressions and
@@ -1264,16 +1600,84 @@ The Task 6 test matrix includes:
 
 - [ ] ArchiveAuthorityTransitionTests.test_different_source_binding_for_same_observation_conflicts_after_first_archive
 
-This test archives O+B(X), confirms the first durable transition, then submits
-the same observation identity with B(Y) and asserts conflict plus byte-preserved
-canonical O+B(X). A local sidecar write or SQLite save alone must not satisfy
-the transition.
+### Task 6 Test J — real archive authority transition
+
+**Test written first:**
+
+`ArchiveAuthorityTransitionTests.test_different_source_binding_for_same_observation_conflicts_after_first_archive`.
+
+**RED command:**
+
+```text
+.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ArchiveAuthorityTransitionTests.test_different_source_binding_for_same_observation_conflicts_after_first_archive
+```
+
+Expected RED is a missing Task 6 authority-transition implementation or an
+assertion failure showing that the second source binding is not compared by the
+real archive. A fake `EvidenceArchive`, a patched `archive()` return value, or
+a test that only writes a local sidecar is not valid RED evidence.
+
+**Files allowed for Test J:**
+
+- Test: `tests/test_evidence_accumulation.py`
+- Modify during Task 6 only: `advisor/evidence_materializer.py`,
+  `advisor/cli.py` within their Task 6 integration surfaces
+- Do not modify `advisor/evidence_archive.py`; use the already implemented
+  Task 2 archive contract.
+
+**Required real-repository mechanism:** use one
+`tempfile.TemporaryDirectory` with this layout:
+
+```text
+<temporary-root>/
+  origin.git/       # git init --bare
+  caller/           # disposable main checkout
+  archive-work/     # disposable archive/materializer work area
+```
+
+Initialize `origin.git`, create and push a `main` branch from `caller`, and
+invoke the real `bootstrap_evidence_branch(repo_dir=caller,
+branch_name="advisor-evidence")` against the local bare remote. Build a valid
+O+B(X) transport fixture and call the real
+`EvidenceArchive(repo_dir=caller).archive(transport_dir)`; do not monkeypatch
+`EvidenceArchive.archive`. Assert:
+
+1. the first result has `status == "committed"` and
+   `durability_confirmed is True`;
+2. a fresh checkout/read of `advisor-evidence` contains the canonical O+B(X)
+   bytes, and those bytes are saved for comparison;
+3. a second transport fixture uses the same observation logical identity but a
+   different source binding B(Y), then calls the real `EvidenceArchive.archive`
+   again;
+4. the second result has `status == "conflict"` and
+   `durability_confirmed is False`;
+5. the original canonical O+B(X) bytes remain byte-for-byte identical;
+6. B(Y) is absent from the normal canonical namespace and appears only in the
+   conflict/audit transaction permitted by Task 2;
+7. a local sidecar write and an SQLite save, if included as setup, do not count
+   as the first durable transition;
+8. a wrapper spy around the real subprocess runner records no `--force`,
+   `--force-with-lease`, `merge`, `rebase`, or `pull --rebase` command.
+
+The test uses only local repositories and temporary paths; it makes no provider
+or network call. The conflict transaction may be present, but it must not
+replace or rewrite the canonical O+B(X) record.
+
+**GREEN command:**
+
+```text
+.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.ArchiveAuthorityTransitionTests.test_different_source_binding_for_same_observation_conflicts_after_first_archive
+```
+
+Expected result: `1 PASS`, zero skips. This exact test belongs only to Task 6;
+Task 3 must not pre-implement the archive conflict assertion.
 
 **Interfaces to implement:** `EvidenceMaterializer.largest_continuously_eligible_horizon` and `EvidenceMaterializer.evaluate_observation_once` from the shared interface, plus the existing `SQLiteCache.save_signal_forward_outcomes_for_signal` as the operational materialization sink. `evaluate_observation_once` receives one observation, one canonical `ForwardMarketSeries`, and the externally qualified horizons; it limits the series to the largest continuously eligible prefix and calls only `advisor.signal_outcome.evaluate_signal_observation(observation, series)` at most once. The method returns the exact `SignalForwardEvaluation` from the frozen authority without reimplementing any return/MFE/MAE/barrier math.
 
 **TDD sequence:**
 
   - [ ] Write these exact failing tests:
+    - `ArchiveAuthorityTransitionTests.test_different_source_binding_for_same_observation_conflicts_after_first_archive`
     - `ArchiveDurabilityTests.test_local_transport_cannot_satisfy_maturation_before_first_archive`
     - `ArchiveDurabilityTests.test_push_confirmation_and_fresh_read_are_required_before_maturation`
     - `OutcomeMaturationTests.test_maturation_calls_frozen_evaluator_at_most_once_per_observation_cycle`
@@ -1439,6 +1843,21 @@ authority to an unarchived sidecar.
 
 **Acceptance:** Documentation matches executable permission and recovery contracts; evidence and frozen regression subsets pass; the full-suite result is either clean or exactly the pre-existing two-test baseline classification; new failures block completion; protected modules and excluded phases remain untouched.
 
+## Plan correction record
+
+This documentation-only correction makes the amended Task 3 and Task 6 work
+executable without changing the approved architecture or implementation scope.
+The five actionable review findings are addressed by the explicit Waves 3A–3E,
+the concrete post-capture and anti-recomputation test mechanisms, the owned
+construction-failure test, and the real local-Git Test J above.
+
+The review statement that a formal coverage matrix must be persisted in this
+plan is classified as `REVIEW_FINDING_NOT_APPLICABLE`. The writing-plans
+self-review requires checking that each specification requirement has an owner;
+it does not require a duplicated table in the plan. The owner checks remain in
+the self-review checklist below, and no table is added solely for that
+statement.
+
 ## Full-Suite Gates
 
 Full-suite execution is deferred to the future implementation session and is not run after each task. Every gate uses exactly `.\.venv\Scripts\python.exe -m unittest discover -s tests`, the same repository virtual-environment interpreter used by the targeted tests. At each gate, only the two historical `test_nightly_auth_dry_run` failures may be classified separately as `PASS_WITH_BASELINE_KNOWN_FAILURES`; the baseline tests are not modified. Any additional failure is a blocker and must stop the freeze.
@@ -1471,8 +1890,11 @@ Before committing this plan, verify the following cross-task invariants:
 - [ ] Task 3 constructs one immutable ObservationEvidenceRecord containing O+B from the exact decision-time AssetSnapshot; the superseded builder never accepts snapshots_by_symbol or performs a late symbol rejoin.
 - [ ] snapshot_projection_v1 enumerates all 34 current AssetSnapshot fields plus every nested field, includes no field implicitly, uses explicit sequence order and null keys, and derives snapshot_sha256_v1 only through canonical_json_bytes.
 - [ ] Test E uses a literal expected projection and the closed-world test kills omitted/include/excluded-field, claim, sequence-order, and future-field mutations.
+- [ ] Task 3 is split into executable Waves 3A, 3B, 3C, 3D, and 3E; every wave names its tests-first RED command, expected cause, allowed files, minimal implementation, GREEN command, and expected count.
+- [ ] Test F replaces a mutable snapshots_by_symbol mapping after record construction and serializes the same record; Test H patches advisor.evidence_schema.snapshot_sha256_v1 and proves the sidecar builder never recomputes it.
+- [ ] Task 3 construction failure has a nominal D1 control, a deterministic D2 failure, zero partial persistence, zero sidecar output, and no provider fallback; its owner and RED/GREEN commands are explicit.
 - [ ] Task 5 reads only the canonical archived O+B record and consumes its captured digest/claim; it never rebuilds historical binding from a current provider, snapshot, market-data lookup, or SQLite.
-- [ ] Task 6 owns first-archive authority transition and the exact different-source-binding conflict test J; local sidecar/SQLite writes do not make evidence durable.
+- [ ] Task 6 owns first-archive authority transition and Test J uses real EvidenceArchive calls against a temporary bare remote, preserves O+B(X), and rejects B(Y); local sidecar/SQLite writes do not make evidence durable.
 - [ ] Task 4 does not execute provider assignment for ObservationSourceBinding, and Task 8 tests transport mutations without elevating transport to authority.
 
 ## Regression Checkpoint Matrix
