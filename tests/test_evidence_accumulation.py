@@ -298,11 +298,17 @@ class SignalBasisPropagationTests(unittest.TestCase):
     def test_unqualified_fallback_source_is_signal_basis_unavailable(self):
         snapshot = _task3_snapshot(claim=None, provider="yahoo")
         observation = _task3_observation(snapshot)
+        record = cli_module._build_signal_observation_records(
+            [_task3_decision(snapshot)],
+            snapshots_by_symbol={snapshot.symbol: snapshot},
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )[0]
         with tempfile.TemporaryDirectory() as temporary_directory:
             output_path = Path(temporary_directory) / "observations.json.gz"
             build_observation_sidecar(
-                [observation],
-                snapshots_by_symbol={snapshot.symbol: snapshot},
+                [record],
                 output_path=output_path,
             )
             self.assertEqual(
@@ -978,6 +984,90 @@ class ObservationSourceBindingTests(unittest.TestCase):
 
         self.assertEqual(record.source_binding, captured_binding)
         self.assertNotEqual(snapshot_sha256_v1(snapshot_y), captured_binding.snapshot_sha256)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_path = Path(temporary_directory) / "observations.json.gz"
+            build_observation_sidecar(records=[record], output_path=output_path)
+            serialized_binding = _read_task3_sidecar(output_path)["records"][0][
+                "source_binding"
+            ]
+
+        self.assertEqual(serialized_binding["snapshot_sha256"], captured_binding.snapshot_sha256)
+        self.assertEqual(
+            serialized_binding["price_basis_claim"]["source_contract"],
+            captured_binding.price_basis_claim.source_contract,
+        )
+
+    def test_sidecar_builder_accepts_records_without_snapshots_by_symbol(self):
+        snapshot = _task3_projection_snapshot()
+        record = cli_module._build_signal_observation_records(
+            [_task3_decision(snapshot)],
+            snapshots_by_symbol={snapshot.symbol: snapshot},
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )[0]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_path = Path(temporary_directory) / "observations.json.gz"
+            self.assertEqual(
+                build_observation_sidecar(records=[record], output_path=output_path),
+                output_path,
+            )
+            sidecar = _read_task3_sidecar(output_path)
+
+        self.assertEqual(
+            set(sidecar), {"schema_version", "source_sha", "run_id", "report_type", "records"}
+        )
+        self.assertEqual(len(sidecar["records"]), 1)
+        self.assertEqual(sidecar["records"][0]["source_binding"]["signal_id"], record.observation.signal_id)
+
+    def test_sidecar_serializes_prebuilt_binding_without_snapshot_recomputation(self):
+        snapshot = _task3_projection_snapshot()
+        record = cli_module._build_signal_observation_records(
+            [_task3_decision(snapshot)],
+            snapshots_by_symbol={snapshot.symbol: snapshot},
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )[0]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_path = Path(temporary_directory) / "observations.json.gz"
+            with patch(
+                "advisor.evidence_schema.snapshot_sha256_v1",
+                side_effect=AssertionError("snapshot_sha256_v1 must not be called by sidecar builder"),
+            ):
+                build_observation_sidecar(records=[record], output_path=output_path)
+            sidecar = _read_task3_sidecar(output_path)
+
+        self.assertEqual(
+            sidecar["records"][0]["source_binding"]["snapshot_sha256"],
+            record.source_binding.snapshot_sha256,
+        )
+
+    def test_same_record_serializes_deterministically(self):
+        snapshot = _task3_projection_snapshot()
+        record = cli_module._build_signal_observation_records(
+            [_task3_decision(snapshot)],
+            snapshots_by_symbol={snapshot.symbol: snapshot},
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )[0]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            first_path = root / "first.json.gz"
+            second_path = root / "second.json.gz"
+            build_observation_sidecar(records=[record], output_path=first_path)
+            build_observation_sidecar(records=[record], output_path=second_path)
+
+            self.assertEqual(first_path.read_bytes(), second_path.read_bytes())
+            self.assertEqual(
+                decompress_single_member_gzip(
+                    first_path.read_bytes(), max_uncompressed_bytes=4 * 1024 * 1024
+                ),
+                decompress_single_member_gzip(
+                    second_path.read_bytes(), max_uncompressed_bytes=4 * 1024 * 1024
+                ),
+            )
 
 
 class ObservationSidecarTests(unittest.TestCase):

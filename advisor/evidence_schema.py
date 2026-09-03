@@ -671,7 +671,143 @@ def _entry_integrity_sha256(entry: Mapping[str, object]) -> str:
     )
 
 
+def _observation_sidecar_row(observation: SignalObservation) -> dict[str, object]:
+    from dataclasses import asdict
+
+    row = asdict(observation)
+    row["reason_codes"] = list(observation.reason_codes)
+    row["persisted_at_utc"] = None
+    return row
+
+
+def _source_binding_row(binding: ObservationSourceBinding) -> dict[str, object]:
+    return {
+        "signal_id": binding.signal_id,
+        "observation_hash": binding.observation_hash,
+        "snapshot_sha256": binding.snapshot_sha256,
+        "price_basis_claim": _price_basis_claim_projection_v1(
+            binding.price_basis_claim
+        ),
+    }
+
+
 def build_observation_sidecar(
+    records: Sequence[ObservationEvidenceRecord],
+    *,
+    output_path: Path,
+) -> Path:
+    """Write prebuilt observation/source-binding records without snapshot lookup."""
+    from advisor.signal_observation import compute_observation_hash
+
+    if not records:
+        raise ValueError("observation_sidecar_requires_records")
+    first = records[0].observation
+    serialized_records: list[dict[str, object]] = []
+    identities: set[tuple[str, str]] = set()
+    for record in records:
+        observation = record.observation
+        binding = record.source_binding
+        identity = (observation.signal_id, observation.observation_hash)
+        if identity in identities:
+            raise ValueError("duplicate_observation_signal_id")
+        identities.add(identity)
+        if compute_observation_hash(observation) != observation.observation_hash:
+            raise ValueError("observation_hash_mismatch")
+        if (
+            observation.schema_version != first.schema_version
+            or observation.source_sha != first.source_sha
+            or observation.run_id != first.run_id
+            or observation.report_type != first.report_type
+        ):
+            raise ValueError("observation_sidecar_batch_identity_mismatch")
+        if binding.signal_id != observation.signal_id:
+            raise ValueError("source_binding_signal_id_mismatch")
+        if binding.observation_hash != observation.observation_hash:
+            raise ValueError("source_binding_observation_hash_mismatch")
+        _require_sha256_hex(binding.snapshot_sha256, field_name="snapshot_sha256")
+        serialized_records.append(
+            {
+                "observation": _observation_sidecar_row(observation),
+                "source_binding": _source_binding_row(binding),
+            }
+        )
+    sidecar = {
+        "schema_version": first.schema_version,
+        "source_sha": first.source_sha,
+        "run_id": first.run_id,
+        "report_type": first.report_type,
+        "records": serialized_records,
+    }
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(deterministic_gzip(canonical_json_bytes(sidecar)))
+    return path
+
+
+def resolve_signal_price_basis_status(
+    *,
+    observation: SignalObservation,
+    sidecar: Mapping[str, object],
+) -> SignalBasisStatus:
+    """Resolve a basis claim from one validated serialized atomic record."""
+    from advisor.data_sources import is_qualified_raw_ohlcv_claim
+    from advisor.signal_observation import compute_observation_hash
+
+    unavailable: SignalBasisStatus = "signal_basis_unavailable"
+    try:
+        if not isinstance(sidecar, Mapping) or set(sidecar) != {
+            "schema_version", "source_sha", "run_id", "report_type", "records"
+        }:
+            return unavailable
+        if (
+            sidecar["schema_version"] != observation.schema_version
+            or sidecar["source_sha"] != observation.source_sha
+            or sidecar["run_id"] != observation.run_id
+            or sidecar["report_type"] != observation.report_type
+            or compute_observation_hash(observation) != observation.observation_hash
+        ):
+            return unavailable
+        records = sidecar["records"]
+        if not isinstance(records, list):
+            return unavailable
+        matching_records = [
+            record for record in records
+            if isinstance(record, Mapping)
+            and isinstance(record.get("source_binding"), Mapping)
+            and record["source_binding"].get("signal_id") == observation.signal_id
+            and record["source_binding"].get("observation_hash") == observation.observation_hash
+        ]
+        if len(matching_records) != 1:
+            return unavailable
+        record = matching_records[0]
+        if set(record) != {"observation", "source_binding"}:
+            return unavailable
+        if canonical_json_bytes(record["observation"]) != canonical_json_bytes(
+            _observation_sidecar_row(observation)
+        ):
+            return unavailable
+        binding = record["source_binding"]
+        if set(binding) != {
+            "signal_id", "observation_hash", "snapshot_sha256", "price_basis_claim"
+        }:
+            return unavailable
+        _require_sha256_hex(binding["snapshot_sha256"], field_name="snapshot_sha256")
+        claim_values = binding["price_basis_claim"]
+        if not isinstance(claim_values, Mapping) or set(claim_values) != {
+            "price_basis", "price_basis_policy_version", "source_contract"
+        }:
+            return unavailable
+        claim = PriceBasisClaim(
+            price_basis=claim_values["price_basis"],
+            price_basis_policy_version=claim_values["price_basis_policy_version"],
+            source_contract=claim_values["source_contract"],
+        )
+        return "verified_raw_ohlcv" if is_qualified_raw_ohlcv_claim(claim) else unavailable
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return unavailable
+
+
+def _build_observation_sidecar_legacy(
     observations: Sequence[SignalObservation],
     *,
     snapshots_by_symbol: Mapping[str, AssetSnapshot],
@@ -795,7 +931,7 @@ def build_observation_sidecar(
     return path
 
 
-def resolve_signal_price_basis_status(
+def _resolve_signal_price_basis_status_legacy(
     *,
     observation: SignalObservation,
     sidecar: Mapping[str, object],
