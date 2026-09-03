@@ -701,10 +701,14 @@ def build_observation_sidecar(
 
     if not records:
         raise ValueError("observation_sidecar_requires_records")
-    first = records[0].observation
+    ordered_records = sorted(
+        records,
+        key=lambda record: record.observation.signal_id,
+    )
+    first = ordered_records[0].observation
     serialized_records: list[dict[str, object]] = []
     identities: set[tuple[str, str]] = set()
-    for record in records:
+    for record in ordered_records:
         observation = record.observation
         binding = record.source_binding
         identity = (observation.signal_id, observation.observation_hash)

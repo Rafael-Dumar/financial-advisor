@@ -960,6 +960,64 @@ class ObservationSourceBindingTests(unittest.TestCase):
             snapshot.data_fetch_metadata.price_basis_claim,
         )
 
+    def test_sidecar_orders_multiple_records_by_signal_id(self):
+        snapshot_high = _task3_snapshot(
+            symbol="ZZZ",
+            claim=qualified_fmp_full_price_basis_claim(),
+        )
+        snapshot_low = _task3_snapshot(
+            symbol="AAA",
+            claim=qualified_fmp_full_price_basis_claim(),
+        )
+        records = cli_module._build_signal_observation_records(
+            [_task3_decision(snapshot_high), _task3_decision(snapshot_low)],
+            snapshots_by_symbol={
+                snapshot_high.symbol: snapshot_high,
+                snapshot_low.symbol: snapshot_low,
+            },
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )
+        record_high, record_low = records
+        self.assertGreater(
+            record_high.observation.signal_id,
+            record_low.observation.signal_id,
+        )
+        expected_signal_ids = sorted(
+            [
+                record_high.observation.signal_id,
+                record_low.observation.signal_id,
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            high_first_path = root / "high-first.json.gz"
+            low_first_path = root / "low-first.json.gz"
+            build_observation_sidecar(
+                records=[record_high, record_low],
+                output_path=high_first_path,
+            )
+            build_observation_sidecar(
+                records=[record_low, record_high],
+                output_path=low_first_path,
+            )
+            high_first_payload = _read_task3_sidecar(high_first_path)
+            low_first_payload = _read_task3_sidecar(low_first_path)
+            high_first_bytes = high_first_path.read_bytes()
+            low_first_bytes = low_first_path.read_bytes()
+
+        self.assertEqual(
+            [
+                entry["observation"]["signal_id"]
+                for entry in high_first_payload["records"]
+            ],
+            expected_signal_ids,
+        )
+        self.assertEqual(high_first_payload, low_first_payload)
+        self.assertEqual(high_first_bytes, low_first_bytes)
+
     def test_mutating_snapshot_state_after_record_construction_does_not_change_binding(self):
         snapshot_x = _task3_projection_snapshot()
         snapshots_by_symbol = {snapshot_x.symbol: snapshot_x}
