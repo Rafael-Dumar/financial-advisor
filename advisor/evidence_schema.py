@@ -9,7 +9,7 @@ import zlib
 from collections.abc import Mapping
 from typing import Literal, Sequence
 
-from advisor.models import AssetSnapshot
+from advisor.models import AssetSnapshot, PriceBasisClaim
 from advisor.signal_observation import SignalObservation
 
 
@@ -376,6 +376,138 @@ _SIDECAR_ENTRY_INTEGRITY_VERSION = "observation_sidecar_entry_integrity_v1"
 
 def _canonical_sha256(value: object) -> str:
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+
+
+def _snapshot_json_value_v1(value: object) -> object:
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("non_finite_json_number")
+        return value
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise ValueError("non_string_json_object_key")
+        return {key: _snapshot_json_value_v1(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_snapshot_json_value_v1(item) for item in value]
+    raise ValueError("unsupported_snapshot_projection_value")
+
+
+def _price_basis_claim_projection_v1(
+    value: PriceBasisClaim | None,
+) -> Mapping[str, object] | None:
+    if value is None:
+        return None
+    return {
+        "price_basis": value.price_basis,
+        "price_basis_policy_version": value.price_basis_policy_version,
+        "source_contract": value.source_contract,
+    }
+
+
+def snapshot_projection_v1(snapshot: AssetSnapshot) -> Mapping[str, object]:
+    return {
+        "projection_version": "snapshot_projection_v1",
+        "symbol": snapshot.symbol,
+        "asset_type": snapshot.asset_type,
+        "theme": snapshot.theme,
+        "candles": [
+            {
+                "date": value.date,
+                "open": value.open,
+                "high": value.high,
+                "low": value.low,
+                "close": value.close,
+                "volume": value.volume,
+            }
+            for value in snapshot.candles
+        ],
+        "fundamentals": {
+            "pe": snapshot.fundamentals.pe,
+            "peg": snapshot.fundamentals.peg,
+            "historical_pe": snapshot.fundamentals.historical_pe,
+            "revenue_growth": snapshot.fundamentals.revenue_growth,
+            "eps_growth": snapshot.fundamentals.eps_growth,
+            "margin_trend": snapshot.fundamentals.margin_trend,
+            "free_cash_flow_positive": snapshot.fundamentals.free_cash_flow_positive,
+            "market_cap": snapshot.fundamentals.market_cap,
+            "average_volume": snapshot.fundamentals.average_volume,
+            "market_cap_rank": snapshot.fundamentals.market_cap_rank,
+        },
+        "event": None if snapshot.event is None else {
+            "days_to_earnings": snapshot.event.days_to_earnings,
+            "guidance_recent": snapshot.event.guidance_recent,
+            "post_earnings_gap_percent": snapshot.event.post_earnings_gap_percent,
+            "last_earnings_date": snapshot.event.last_earnings_date,
+            "next_earnings_date": snapshot.event.next_earnings_date,
+        },
+        "funding_rate": snapshot.funding_rate,
+        "open_interest_change": snapshot.open_interest_change,
+        "cvd_proxy": snapshot.cvd_proxy,
+        "coinbase_premium": snapshot.coinbase_premium,
+        "liquidation_imbalance": snapshot.liquidation_imbalance,
+        "missing_data": [value for value in snapshot.missing_data],
+        "news_events": [_snapshot_json_value_v1(value) for value in snapshot.news_events],
+        "provider_capabilities": [
+            {
+                "provider": value.provider,
+                "capability": value.capability,
+                "configured": value.configured,
+                "supported_by_plan": value.supported_by_plan,
+                "implemented": value.implemented,
+                "last_status": value.last_status,
+                "fallback_available": value.fallback_available,
+            }
+            for value in snapshot.provider_capabilities
+        ],
+        "earnings_status": snapshot.earnings_status,
+        "guidance_status": snapshot.guidance_status,
+        "macro_status": snapshot.macro_status,
+        "news_status": snapshot.news_status,
+        "sec_filings_status": snapshot.sec_filings_status,
+        "data_source": snapshot.data_source,
+        "data_timestamp": snapshot.data_timestamp,
+        "cache_age_seconds": snapshot.cache_age_seconds,
+        "data_fetch_metadata": (
+            None if snapshot.data_fetch_metadata is None else {
+                "provider": snapshot.data_fetch_metadata.provider,
+                "endpoint": snapshot.data_fetch_metadata.endpoint,
+                "fetched_at": snapshot.data_fetch_metadata.fetched_at,
+                "cache_fetched_at": snapshot.data_fetch_metadata.cache_fetched_at,
+                "source_timestamp": snapshot.data_fetch_metadata.source_timestamp,
+                "cache_age_seconds": snapshot.data_fetch_metadata.cache_age_seconds,
+                "source_age_seconds": snapshot.data_fetch_metadata.source_age_seconds,
+                "is_fresh": snapshot.data_fetch_metadata.is_fresh,
+                "cache_hit": snapshot.data_fetch_metadata.cache_hit,
+                "fallback_used": snapshot.data_fetch_metadata.fallback_used,
+                "fallback_from": snapshot.data_fetch_metadata.fallback_from,
+                "fallback_to": snapshot.data_fetch_metadata.fallback_to,
+                "granularity": snapshot.data_fetch_metadata.granularity,
+                "market_data_kind": snapshot.data_fetch_metadata.market_data_kind,
+                "price_basis_claim": _price_basis_claim_projection_v1(
+                    snapshot.data_fetch_metadata.price_basis_claim
+                ),
+            }
+        ),
+        "quote_status": snapshot.quote_status,
+        "quote_price": snapshot.quote_price,
+        "quote_timestamp": snapshot.quote_timestamp,
+        "quote_source": snapshot.quote_source,
+        "quote_age_seconds": snapshot.quote_age_seconds,
+        "quote_is_intraday": snapshot.quote_is_intraday,
+        "previous_close": snapshot.previous_close,
+        "daily_change": snapshot.daily_change,
+        "daily_change_pct": snapshot.daily_change_pct,
+        "benchmark_provenance": _snapshot_json_value_v1(snapshot.benchmark_provenance),
+        "crypto_metric_provenance": _snapshot_json_value_v1(
+            snapshot.crypto_metric_provenance
+        ),
+    }
+
+
+def snapshot_sha256_v1(snapshot: AssetSnapshot) -> str:
+    return hashlib.sha256(canonical_json_bytes(snapshot_projection_v1(snapshot))).hexdigest()
 
 
 def _observation_provenance(observation: SignalObservation) -> Mapping[str, object]:

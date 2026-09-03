@@ -7,7 +7,7 @@ import threading
 import time
 import unittest
 import zlib
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -30,6 +30,8 @@ from advisor.evidence_schema import (
     deterministic_gzip,
     payload_sha256,
     resolve_signal_price_basis_status,
+    snapshot_projection_v1,
+    snapshot_sha256_v1,
     strict_json_loads_bytes,
     validate_canonical_envelope,
 )
@@ -58,6 +60,7 @@ from advisor.models import (
     EventInfo,
     Fundamentals,
     PriceBasisClaim,
+    ProviderCapability,
     RiskPlan,
 )
 from advisor import evidence_archive as evidence_archive_module
@@ -748,6 +751,162 @@ def _task3_scan_args(root: Path, *, db_name: str, report_name: str) -> argparse.
         signal_observation_metadata=_task3_run_metadata(),
         signal_observation_error_code="serialization_error",
     )
+
+
+def _task3_projection_snapshot() -> AssetSnapshot:
+    return AssetSnapshot(
+        symbol="AMD",
+        asset_type="stock",
+        theme="semiconductors",
+        candles=[
+            Candle("2026-08-27", 100.0, 103.0, 99.0, 102.0, 1_000_000.0),
+            Candle("2026-08-28", 102.0, 105.0, 101.0, 104.0, 1_200_000.0),
+        ],
+        fundamentals=Fundamentals(
+            pe=30.0,
+            peg=1.5,
+            historical_pe=28.0,
+            revenue_growth=0.2,
+            eps_growth=0.25,
+            margin_trend=0.1,
+            free_cash_flow_positive=True,
+            market_cap=1_000_000_000.0,
+            average_volume=1_100_000.0,
+            market_cap_rank=12,
+        ),
+        event=EventInfo(5, False, 0.02, "2026-05-28", "2026-09-01"),
+        missing_data=["macro_not_collected", "news_not_collected"],
+        news_events=[
+            {"headline": "confirmed catalyst", "news_event_type": "news"},
+            {"headline": "SEC filing", "news_event_type": "sec_filing"},
+        ],
+        provider_capabilities=[
+            ProviderCapability(
+                "fmp", "historical_price_eod_full", True, True, True,
+                "available", False,
+            )
+        ],
+        earnings_status="available",
+        guidance_status="not_implemented",
+        macro_status="not_implemented",
+        news_status="available",
+        sec_filings_status="available",
+        data_source="fmp",
+        data_timestamp="2026-08-28T20:00:00Z",
+        cache_age_seconds=0,
+        data_fetch_metadata=DataFetchMetadata(
+            provider="fmp",
+            endpoint="/stable/historical-price-eod/full",
+            fetched_at="2026-08-28T20:00:03Z",
+            source_timestamp="2026-08-28",
+            cache_age_seconds=0,
+            source_age_seconds=0,
+            is_fresh=True,
+            cache_hit=False,
+            fallback_used=False,
+            granularity="1d",
+            market_data_kind="historical",
+            price_basis_claim=qualified_fmp_full_price_basis_claim(),
+        ),
+        quote_status="available",
+        quote_price=104.0,
+        quote_timestamp="2026-08-28T20:00:04Z",
+        quote_source="fmp",
+        quote_age_seconds=2,
+        quote_is_intraday=False,
+        previous_close=102.0,
+        daily_change=2.0,
+        daily_change_pct=0.0196078431372549,
+        benchmark_provenance={
+            "sector": {"symbol": "SMH", "status": "available", "relative_strength": 0.12}
+        },
+        crypto_metric_provenance={},
+    )
+
+
+def _task3_literal_projection() -> dict[str, object]:
+    return {
+        "projection_version": "snapshot_projection_v1",
+        "symbol": "AMD", "asset_type": "stock", "theme": "semiconductors",
+        "candles": [
+            {"date": "2026-08-27", "open": 100.0, "high": 103.0, "low": 99.0, "close": 102.0, "volume": 1_000_000.0},
+            {"date": "2026-08-28", "open": 102.0, "high": 105.0, "low": 101.0, "close": 104.0, "volume": 1_200_000.0},
+        ],
+        "fundamentals": {"pe": 30.0, "peg": 1.5, "historical_pe": 28.0, "revenue_growth": 0.2, "eps_growth": 0.25, "margin_trend": 0.1, "free_cash_flow_positive": True, "market_cap": 1_000_000_000.0, "average_volume": 1_100_000.0, "market_cap_rank": 12},
+        "event": {"days_to_earnings": 5, "guidance_recent": False, "post_earnings_gap_percent": 0.02, "last_earnings_date": "2026-05-28", "next_earnings_date": "2026-09-01"},
+        "funding_rate": None, "open_interest_change": None, "cvd_proxy": None,
+        "coinbase_premium": None, "liquidation_imbalance": None,
+        "missing_data": ["macro_not_collected", "news_not_collected"],
+        "news_events": [
+            {"headline": "confirmed catalyst", "news_event_type": "news"},
+            {"headline": "SEC filing", "news_event_type": "sec_filing"},
+        ],
+        "provider_capabilities": [{"provider": "fmp", "capability": "historical_price_eod_full", "configured": True, "supported_by_plan": True, "implemented": True, "last_status": "available", "fallback_available": False}],
+        "earnings_status": "available", "guidance_status": "not_implemented",
+        "macro_status": "not_implemented", "news_status": "available",
+        "sec_filings_status": "available", "data_source": "fmp",
+        "data_timestamp": "2026-08-28T20:00:00Z", "cache_age_seconds": 0,
+        "data_fetch_metadata": {
+            "provider": "fmp", "endpoint": "/stable/historical-price-eod/full",
+            "fetched_at": "2026-08-28T20:00:03Z", "cache_fetched_at": None,
+            "source_timestamp": "2026-08-28", "cache_age_seconds": 0,
+            "source_age_seconds": 0, "is_fresh": True, "cache_hit": False,
+            "fallback_used": False, "fallback_from": None, "fallback_to": None,
+            "granularity": "1d", "market_data_kind": "historical",
+            "price_basis_claim": {"price_basis": "raw_ohlcv", "price_basis_policy_version": "price_basis_v1", "source_contract": "fmp.historical_price_eod.full.raw_ohlcv_v1"},
+        },
+        "quote_status": "available", "quote_price": 104.0,
+        "quote_timestamp": "2026-08-28T20:00:04Z", "quote_source": "fmp",
+        "quote_age_seconds": 2, "quote_is_intraday": False,
+        "previous_close": 102.0, "daily_change": 2.0,
+        "daily_change_pct": 0.0196078431372549,
+        "benchmark_provenance": {"sector": {"symbol": "SMH", "status": "available", "relative_strength": 0.12}},
+        "crypto_metric_provenance": {},
+    }
+
+
+class SnapshotProjectionTests(unittest.TestCase):
+    def test_snapshot_projection_v1_matches_literal_expected_projection(self):
+        snapshot = _task3_projection_snapshot()
+        expected_projection = _task3_literal_projection()
+
+        self.assertEqual(snapshot_projection_v1(snapshot), expected_projection)
+        self.assertEqual(
+            snapshot_sha256_v1(snapshot),
+            hashlib.sha256(canonical_json_bytes(expected_projection)).hexdigest(),
+        )
+        self.assertNotEqual(
+            snapshot_sha256_v1(replace(snapshot, candles=list(reversed(snapshot.candles)))),
+            snapshot_sha256_v1(snapshot),
+        )
+        changed_claim = replace(
+            snapshot.data_fetch_metadata.price_basis_claim,
+            source_contract=qualified_binance_klines_basis_claim().source_contract,
+        )
+        self.assertNotEqual(
+            snapshot_sha256_v1(replace(snapshot, data_fetch_metadata=replace(snapshot.data_fetch_metadata, price_basis_claim=changed_claim))),
+            snapshot_sha256_v1(snapshot),
+        )
+
+    def test_snapshot_projection_v1_is_closed_world(self):
+        @dataclass(frozen=True)
+        class FutureAssetSnapshot(AssetSnapshot):
+            future_field: str = "sentinel"
+
+        snapshot = _task3_projection_snapshot()
+        future_snapshot = FutureAssetSnapshot(
+            **{
+                name: getattr(snapshot, name)
+                for name in AssetSnapshot.__dataclass_fields__
+            }
+        )
+
+        self.assertEqual(snapshot_projection_v1(future_snapshot), _task3_literal_projection())
+        self.assertEqual(
+            canonical_json_bytes(snapshot_projection_v1(future_snapshot)),
+            canonical_json_bytes(snapshot_projection_v1(snapshot)),
+        )
+        self.assertNotIn("future_field", snapshot_projection_v1(future_snapshot))
 
 
 class ObservationSidecarTests(unittest.TestCase):
