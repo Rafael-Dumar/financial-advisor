@@ -20,6 +20,8 @@ from advisor.evidence_schema import (
     CorporateActionReasonCode,
     CryptoPolicy,
     HorizonStatus,
+    ObservationEvidenceRecord,
+    ObservationSourceBinding,
     SignalBasisStatus,
     SplitPolicy,
     build_observation_sidecar,
@@ -907,6 +909,75 @@ class SnapshotProjectionTests(unittest.TestCase):
             canonical_json_bytes(snapshot_projection_v1(snapshot)),
         )
         self.assertNotIn("future_field", snapshot_projection_v1(future_snapshot))
+
+
+class ObservationSourceBindingTests(unittest.TestCase):
+    def test_atomic_record_captures_observation_and_binding_from_same_snapshot(self):
+        snapshot = _task3_projection_snapshot()
+        decision = _task3_decision(snapshot)
+
+        records = cli_module._build_signal_observation_records(
+            [decision],
+            snapshots_by_symbol={snapshot.symbol: snapshot},
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )
+
+        self.assertEqual(len(records), 1)
+        record = records[0]
+        self.assertIsInstance(record, ObservationEvidenceRecord)
+        self.assertIsInstance(record.source_binding, ObservationSourceBinding)
+        self.assertEqual(record.observation.signal_id, record.source_binding.signal_id)
+        self.assertEqual(
+            record.observation.observation_hash,
+            record.source_binding.observation_hash,
+        )
+        self.assertEqual(
+            record.source_binding.snapshot_sha256,
+            hashlib.sha256(canonical_json_bytes(_task3_literal_projection())).hexdigest(),
+        )
+
+    def test_binding_captures_exact_price_basis_claim(self):
+        snapshot = _task3_projection_snapshot()
+
+        record = cli_module._build_signal_observation_records(
+            [_task3_decision(snapshot)],
+            snapshots_by_symbol={snapshot.symbol: snapshot},
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )[0]
+
+        self.assertEqual(
+            record.source_binding.price_basis_claim,
+            snapshot.data_fetch_metadata.price_basis_claim,
+        )
+
+    def test_mutating_snapshot_state_after_record_construction_does_not_change_binding(self):
+        snapshot_x = _task3_projection_snapshot()
+        snapshots_by_symbol = {snapshot_x.symbol: snapshot_x}
+        record = cli_module._build_signal_observation_records(
+            [_task3_decision(snapshot_x)],
+            snapshots_by_symbol=snapshots_by_symbol,
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )[0]
+        captured_binding = record.source_binding
+        snapshot_y = replace(
+            snapshot_x,
+            candles=[*snapshot_x.candles[:-1], replace(snapshot_x.candles[-1], close=999.0)],
+            data_fetch_metadata=replace(
+                snapshot_x.data_fetch_metadata,
+                price_basis_claim=qualified_binance_klines_basis_claim(),
+            ),
+        )
+
+        snapshots_by_symbol[snapshot_x.symbol] = snapshot_y
+
+        self.assertEqual(record.source_binding, captured_binding)
+        self.assertNotEqual(snapshot_sha256_v1(snapshot_y), captured_binding.snapshot_sha256)
 
 
 class ObservationSidecarTests(unittest.TestCase):

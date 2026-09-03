@@ -7,6 +7,7 @@ from pathlib import Path
 import struct
 import zlib
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Literal, Sequence
 
 from advisor.models import AssetSnapshot, PriceBasisClaim
@@ -37,6 +38,20 @@ SignalBasisStatus = Literal[
 ]
 SplitPolicy = Literal["verified_no_split_in_signal_horizon_v1"]
 CryptoPolicy = Literal["not_applicable_crypto_raw_ohlcv_v1"]
+
+
+@dataclass(frozen=True)
+class ObservationSourceBinding:
+    signal_id: str
+    observation_hash: str
+    snapshot_sha256: str
+    price_basis_claim: PriceBasisClaim | None
+
+
+@dataclass(frozen=True)
+class ObservationEvidenceRecord:
+    observation: SignalObservation
+    source_binding: ObservationSourceBinding
 
 
 _GZIP_HEADER = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff"

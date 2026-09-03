@@ -17,7 +17,12 @@ from advisor.backtest import backtest_similar_setups, summarize_backtest_setups
 from advisor.audit import run_data_audit
 from advisor.cache import SQLiteCache
 from advisor.config import AdvisorConfig
-from advisor.evidence_schema import build_observation_sidecar
+from advisor.evidence_schema import (
+    ObservationEvidenceRecord,
+    ObservationSourceBinding,
+    build_observation_sidecar,
+    snapshot_sha256_v1,
+)
 from advisor.fixtures import benchmarks_from_fixture, load_scan_fixture, snapshots_from_fixture
 from advisor.live_loader import LiveDataLoader
 from advisor.models import AssetDecision, AssetSnapshot, BacktestStats, Candle, RiskPlan
@@ -381,6 +386,38 @@ def _build_signal_observations(
         for decision in decisions
     ]
     return observations
+
+
+def _build_signal_observation_records(
+    decisions: Sequence[AssetDecision],
+    *,
+    snapshots_by_symbol: Mapping[str, AssetSnapshot],
+    stock_regime: str,
+    crypto_regime: str,
+    run_metadata: SignalRunMetadata,
+) -> list[ObservationEvidenceRecord]:
+    records: list[ObservationEvidenceRecord] = []
+    for decision in decisions:
+        snapshot_x = snapshots_by_symbol[decision.symbol]
+        observation = build_signal_observation(
+            decision,
+            snapshot_x,
+            run_metadata,
+            stock_regime=stock_regime,
+            crypto_regime=crypto_regime,
+        )
+        binding = ObservationSourceBinding(
+            signal_id=observation.signal_id,
+            observation_hash=observation.observation_hash,
+            snapshot_sha256=snapshot_sha256_v1(snapshot_x),
+            price_basis_claim=(
+                None
+                if snapshot_x.data_fetch_metadata is None
+                else snapshot_x.data_fetch_metadata.price_basis_claim
+            ),
+        )
+        records.append(ObservationEvidenceRecord(observation, binding))
+    return records
 
 
 def _persist_signal_observations(
