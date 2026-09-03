@@ -1069,6 +1069,87 @@ class ObservationSourceBindingTests(unittest.TestCase):
                 ),
             )
 
+    def test_sqlite_failure_preserves_prebuilt_binding(self):
+        snapshot = _task3_projection_snapshot()
+        record = cli_module._build_signal_observation_records(
+            [_task3_decision(snapshot)],
+            snapshots_by_symbol={snapshot.symbol: snapshot},
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )[0]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            args = _task3_scan_args(root, db_name="sqlite.db", report_name="reports")
+            with patch.object(
+                cli_module,
+                "_build_signal_observation_records",
+                return_value=[record],
+            ), patch.object(
+                cli_module.SQLiteCache,
+                "save_signal_observations",
+                side_effect=OSError("sqlite unavailable"),
+            ):
+                self.assertEqual(cli_module._scan(args), 0)
+            sidecar = _read_task3_sidecar(
+                root / "reports" / "evidence" / "observations.json.gz"
+            )
+
+        binding = sidecar["records"][0]["source_binding"]
+        self.assertEqual(binding["snapshot_sha256"], record.source_binding.snapshot_sha256)
+        self.assertEqual(binding["observation_hash"], record.observation.observation_hash)
+
+    def test_record_construction_failure_emits_no_partial_sidecar(self):
+        snapshot_x = _task3_snapshot("D1", claim=qualified_fmp_full_price_basis_claim())
+        snapshot_y = replace(snapshot_x, symbol="D2")
+        decision_x = _task3_decision(snapshot_x)
+        decision_y = _task3_decision(snapshot_y)
+        nominal_records = cli_module._build_signal_observation_records(
+            [decision_x],
+            snapshots_by_symbol={snapshot_x.symbol: snapshot_x},
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )
+        self.assertEqual(len(nominal_records), 1)
+        normal_observation = nominal_records[0].observation
+        calls = {"count": 0}
+
+        def fail_second_observation(*args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return normal_observation
+            raise ValueError("invalid observation D2")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            args = _task3_scan_args(root, db_name="construction.db", report_name="reports")
+            regimes = SimpleNamespace(
+                stock=SimpleNamespace(label="bull"),
+                crypto=SimpleNamespace(label="neutral"),
+            )
+            with patch.object(cli_module, "snapshots_from_fixture", return_value=[snapshot_x, snapshot_y]), patch.object(
+                cli_module, "benchmarks_from_fixture", return_value=[]
+            ), patch.object(cli_module, "derive_market_regimes", return_value=regimes), patch.object(
+                cli_module, "build_signal_observation", side_effect=fail_second_observation
+            ), patch.object(
+                cli_module,
+                "_build_signal_observation_records",
+                wraps=cli_module._build_signal_observation_records,
+            ) as record_builder, patch.object(
+                cli_module, "_persist_signal_observations"
+            ) as persist, patch.object(
+                cli_module, "build_observation_sidecar"
+            ) as sidecar, patch.object(cli_module, "LiveDataLoader") as live_loader:
+                self.assertEqual(cli_module._scan(args), 0)
+
+            self.assertTrue((root / "reports" / "advisor-report.md").exists())
+            self.assertFalse((root / "reports" / "evidence" / "observations.json.gz").exists())
+            record_builder.assert_called_once()
+            persist.assert_not_called()
+            sidecar.assert_not_called()
+            live_loader.assert_not_called()
+
 
 class ObservationSidecarTests(unittest.TestCase):
     def test_sidecar_binds_basis_by_signal_id_and_observation_hash(self):

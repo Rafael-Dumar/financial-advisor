@@ -330,7 +330,7 @@ def _scan(args: argparse.Namespace) -> int:
             )
         else:
             try:
-                observations = _build_signal_observations(
+                records = _build_signal_observation_records(
                     decisions,
                     snapshots_by_symbol=snapshots_by_symbol,
                     stock_regime=stock_regime,
@@ -340,6 +340,7 @@ def _scan(args: argparse.Namespace) -> int:
             except Exception:
                 _signal_observation_status("unavailable", "serialization_error")
             else:
+                observations = tuple(record.observation for record in records)
                 persistence_status = _persist_signal_observations(cache, observations)
                 _signal_observation_status(
                     persistence_status,
@@ -347,8 +348,7 @@ def _scan(args: argparse.Namespace) -> int:
                 )
                 try:
                     build_observation_sidecar(
-                        observations,
-                        snapshots_by_symbol=snapshots_by_symbol,
+                        records,
                         output_path=args.output_dir / "evidence" / "observations.json.gz",
                     )
                 except (OSError, TypeError, ValueError):
