@@ -1,6 +1,7 @@
 import os
 import argparse
 import hashlib
+import inspect
 import subprocess
 import tempfile
 import threading
@@ -297,7 +298,6 @@ class SignalBasisPropagationTests(unittest.TestCase):
 
     def test_unqualified_fallback_source_is_signal_basis_unavailable(self):
         snapshot = _task3_snapshot(claim=None, provider="yahoo")
-        observation = _task3_observation(snapshot)
         record = cli_module._build_signal_observation_records(
             [_task3_decision(snapshot)],
             snapshots_by_symbol={snapshot.symbol: snapshot},
@@ -305,19 +305,10 @@ class SignalBasisPropagationTests(unittest.TestCase):
             crypto_regime="neutral",
             run_metadata=_task3_run_metadata(),
         )[0]
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            output_path = Path(temporary_directory) / "observations.json.gz"
-            build_observation_sidecar(
-                [record],
-                output_path=output_path,
-            )
-            self.assertEqual(
-                resolve_signal_price_basis_status(
-                    observation=observation,
-                    sidecar=_read_task3_sidecar(output_path),
-                ),
-                "signal_basis_unavailable",
-            )
+        self.assertEqual(
+            resolve_signal_price_basis_status(record=record),
+            "signal_basis_unavailable",
+        )
 
     def test_basis_claim_propagates_through_live_loader_pipeline(self):
         claim = qualified_fmp_full_price_basis_claim()
@@ -960,6 +951,39 @@ class ObservationSourceBindingTests(unittest.TestCase):
             snapshot.data_fetch_metadata.price_basis_claim,
         )
 
+    def test_resolver_accepts_only_observation_evidence_record(self):
+        qualified_snapshot = _task3_snapshot(
+            claim=qualified_fmp_full_price_basis_claim(),
+        )
+        qualified_record = cli_module._build_signal_observation_records(
+            [_task3_decision(qualified_snapshot)],
+            snapshots_by_symbol={qualified_snapshot.symbol: qualified_snapshot},
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )[0]
+        self.assertEqual(
+            resolve_signal_price_basis_status(record=qualified_record),
+            "verified_raw_ohlcv",
+        )
+
+        unqualified_snapshot = _task3_snapshot()
+        unqualified_record = cli_module._build_signal_observation_records(
+            [_task3_decision(unqualified_snapshot)],
+            snapshots_by_symbol={unqualified_snapshot.symbol: unqualified_snapshot},
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )[0]
+        self.assertEqual(
+            resolve_signal_price_basis_status(record=unqualified_record),
+            "signal_basis_unavailable",
+        )
+
+        parameters = inspect.signature(resolve_signal_price_basis_status).parameters
+        self.assertEqual(list(parameters), ["record"])
+        self.assertEqual(parameters["record"].kind, inspect.Parameter.KEYWORD_ONLY)
+
     def test_sidecar_orders_multiple_records_by_signal_id(self):
         snapshot_high = _task3_snapshot(
             symbol="ZZZ",
@@ -1230,13 +1254,12 @@ class ObservationSidecarTests(unittest.TestCase):
         self.assertEqual(sidecar["records"][0]["observation"]["signal_id"], record.observation.signal_id)
         self.assertEqual(
             resolve_signal_price_basis_status(
-                observation=record.observation,
-                sidecar=sidecar,
+                record=record,
             ),
             "verified_raw_ohlcv",
         )
 
-    def test_sidecar_rejects_unknown_observation_hash_binding(self):
+    def test_resolver_rejects_unknown_observation_hash_binding(self):
         snapshot = _task3_snapshot(claim=qualified_fmp_full_price_basis_claim())
         record = cli_module._build_signal_observation_records(
             [_task3_decision(snapshot)],
@@ -1245,15 +1268,12 @@ class ObservationSidecarTests(unittest.TestCase):
             crypto_regime="neutral",
             run_metadata=_task3_run_metadata(),
         )[0]
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            output_path = Path(temporary_directory) / "observations.json.gz"
-            build_observation_sidecar(records=[record], output_path=output_path)
-            sidecar = _read_task3_sidecar(output_path)
-
         self.assertEqual(
             resolve_signal_price_basis_status(
-                observation=replace(record.observation, observation_hash="f" * 64),
-                sidecar=sidecar,
+                record=replace(
+                    record,
+                    observation=replace(record.observation, observation_hash="f" * 64),
+                ),
             ),
             "signal_basis_unavailable",
         )
