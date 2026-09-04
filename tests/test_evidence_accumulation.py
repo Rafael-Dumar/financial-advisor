@@ -1,7 +1,8 @@
-import os
 import argparse
 import hashlib
 import inspect
+import json
+import os
 from contextlib import redirect_stdout
 from io import StringIO
 import subprocess
@@ -11,7 +12,7 @@ import time
 import unittest
 import zlib
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import date, datetime, time as datetime_time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import get_args
@@ -54,6 +55,20 @@ from advisor.data_sources import (
     qualified_fmp_full_price_basis_claim,
     qualified_hyperliquid_candle_snapshot_basis_claim,
 )
+from advisor.evidence_collector import (
+    PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION,
+    CanonicalSplitRatio,
+    CollectionAsset,
+    EvidenceCollector,
+    assigned_price_provider,
+    normalize_split_factor,
+    us_early_close_dates,
+    us_eastern_local,
+    us_eastern_offset_for_utc,
+    us_equity_session_close,
+    validate_crypto_candle,
+    validate_us_equity_candle,
+)
 from advisor.config import AdvisorConfig
 from advisor.data_pipeline import crypto_snapshot_from_payloads, stock_snapshot_from_payloads
 from advisor.live_loader import LiveDataLoader
@@ -77,6 +92,217 @@ from advisor.signal_observation import (
     build_signal_observation,
     compute_observation_hash,
 )
+
+
+def _task4_utc(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _task4_transport_records(path: Path) -> list[dict[str, object]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return payload["records"]
+
+
+class ProviderAssignmentTests(unittest.TestCase):
+    def test_price_provider_assignment_v1_is_deterministic(self):
+        self.assertEqual(PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION, "price_provider_assignment_v1")
+        self.assertEqual(assigned_price_provider(asset=CollectionAsset("aapl", "stock"), existing_provider=None), "fmp")
+        self.assertEqual(assigned_price_provider(asset=CollectionAsset("IGV", "etf"), existing_provider=None), "fmp")
+        self.assertEqual(assigned_price_provider(asset=CollectionAsset("hype", "crypto"), existing_provider=None), "hyperliquid")
+        self.assertEqual(assigned_price_provider(asset=CollectionAsset("BTC", "crypto"), existing_provider=None), "binance")
+
+    def test_oldest_canonical_provider_is_sticky_for_existing_series(self):
+        asset = CollectionAsset("HYPE", "crypto")
+        self.assertEqual(assigned_price_provider(asset=asset, existing_provider="binance"), "binance")
+        self.assertEqual(assigned_price_provider(asset=CollectionAsset("AAPL", "stock"), existing_provider="fmp"), "fmp")
+
+    def test_unknown_or_unsupported_symbol_is_market_data_unavailable(self):
+        calls: list[dict[str, object]] = []
+
+        def fetch_json(**kwargs):
+            calls.append(kwargs)
+            return {}
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = EvidenceCollector(
+                fetch_json=fetch_json,
+                transport_root=Path(temporary_directory),
+                now_utc=_task4_utc("2026-09-08T21:00:00Z"),
+            ).collect_market(
+                assets=[CollectionAsset("UNKNOWN", "crypto"), CollectionAsset("AAPL", "fund")],
+                existing_provider_by_symbol={},
+            )
+            records = _task4_transport_records(path)
+
+        self.assertEqual([record["status"] for record in records], ["market_data_unavailable", "market_data_unavailable"])
+        self.assertEqual(calls, [])
+
+    def test_assigned_provider_unavailable_does_not_fallback(self):
+        calls: list[str] = []
+
+        def fetch_json(**kwargs):
+            calls.append(kwargs["provider"])
+            raise OSError("assigned provider unavailable")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = EvidenceCollector(
+                fetch_json=fetch_json,
+                transport_root=Path(temporary_directory),
+                now_utc=_task4_utc("2026-09-08T21:00:00Z"),
+            ).collect_market(
+                assets=[CollectionAsset("HYPE", "crypto")],
+                existing_provider_by_symbol={},
+            )
+            records = _task4_transport_records(path)
+
+        self.assertEqual(calls, ["hyperliquid"])
+        self.assertEqual(records[0]["status"], "market_data_unavailable")
+
+    def test_fmp_unavailable_does_not_call_yahoo_as_evidence_fallback(self):
+        calls: list[dict[str, object]] = []
+
+        def fetch_json(**kwargs):
+            calls.append(kwargs)
+            raise OSError("fmp unavailable")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch(
+                "advisor.evidence_collector.AdvisorConfig.default",
+                return_value=AdvisorConfig(stock_watchlist=["AAPL"], fmp_api_key="fmp-key"),
+            ):
+                path = EvidenceCollector(
+                    fetch_json=fetch_json,
+                    transport_root=Path(temporary_directory),
+                    now_utc=_task4_utc("2026-09-08T21:00:00Z"),
+                ).collect_market(
+                    assets=[CollectionAsset("AAPL", "stock")],
+                    existing_provider_by_symbol={},
+                )
+            records = _task4_transport_records(path)
+
+        self.assertEqual([call["provider"] for call in calls], ["fmp"])
+        self.assertIn("apikey=fmp-key", calls[0]["url"])
+        self.assertNotIn("yahoo", json.dumps(calls))
+        self.assertEqual(records[0]["status"], "market_data_unavailable")
+
+
+class CorporateActionCollectionTests(unittest.TestCase):
+    def test_alpha_vantage_splits_fixture_normalizes_decimal_split_factor(self):
+        payload = {"symbol": "AAPL", "data": [{"effective_date": "2020-08-31", "split_factor": "4.0000"}]}
+        calls: list[dict[str, object]] = []
+
+        def fetch_json(**kwargs):
+            calls.append(kwargs)
+            return payload
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch(
+                "advisor.evidence_collector.AdvisorConfig.default",
+                return_value=AdvisorConfig(alphavantage_api_key="alpha-key"),
+                ):
+                path = EvidenceCollector(
+                    fetch_json=fetch_json,
+                    transport_root=Path(temporary_directory),
+                ).collect_corporate_actions(
+                    assets=[CollectionAsset("AAPL", "stock")],
+                    coverage_windows={"AAPL": (date(2020, 1, 1), date(2020, 12, 31))},
+                )
+            record = _task4_transport_records(path)[0]
+
+        self.assertEqual(record["source_request"]["function"], "SPLITS")
+        self.assertIn("apikey=alpha-key", calls[0]["url"])
+        self.assertEqual(record["normalized_events"][0]["split_ratio"], {"new_shares": "4", "old_shares": "1"})
+
+    def test_aapl_nvda_tsla_and_igv_split_fixtures_are_supported(self):
+        payloads = {
+            "AAPL": "4.0000",
+            "NVDA": "10.0000",
+            "TSLA": "5.0000",
+            "IGV": "5.0000",
+        }
+
+        def fetch_json(**kwargs):
+            symbol = kwargs["symbol"]
+            return {"symbol": symbol, "data": [{"effective_date": "2024-06-10", "split_factor": payloads[symbol]}]}
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = EvidenceCollector(fetch_json=fetch_json, transport_root=Path(temporary_directory)).collect_corporate_actions(
+                assets=[CollectionAsset(symbol, "etf" if symbol == "IGV" else "stock") for symbol in payloads],
+                coverage_windows={symbol: (date(2020, 1, 1), date(2026, 1, 1)) for symbol in payloads},
+            )
+            records = {record["symbol"]: record for record in _task4_transport_records(path)}
+
+        self.assertEqual(records["AAPL"]["normalized_events"][0]["split_ratio"], {"new_shares": "4", "old_shares": "1"})
+        self.assertEqual(records["NVDA"]["normalized_events"][0]["split_ratio"], {"new_shares": "10", "old_shares": "1"})
+        self.assertEqual(records["TSLA"]["normalized_events"][0]["split_ratio"], {"new_shares": "5", "old_shares": "1"})
+        self.assertEqual(records["IGV"]["normalized_events"][0]["split_ratio"], {"new_shares": "5", "old_shares": "1"})
+
+    def test_reverse_split_point_two_five_normalizes_to_one_over_four(self):
+        self.assertEqual(normalize_split_factor(split_factor="0.25"), CanonicalSplitRatio(new_shares="1", old_shares="4"))
+        self.assertEqual(normalize_split_factor(split_factor=Decimal("0.2500")), CanonicalSplitRatio(new_shares="1", old_shares="4"))
+
+    def test_collector_emits_windowed_transport_without_history_comparison(self):
+        calls: list[dict[str, object]] = []
+
+        def fetch_json(**kwargs):
+            calls.append(kwargs)
+            return {"symbol": "AAPL", "data": []}
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = EvidenceCollector(fetch_json=fetch_json, transport_root=Path(temporary_directory)).collect_corporate_actions(
+                assets=[CollectionAsset("AAPL", "stock")],
+                coverage_windows={"AAPL": (date(2020, 1, 1), date(2026, 9, 1))},
+            )
+            record = _task4_transport_records(path)[0]
+
+        self.assertEqual([call["provider"] for call in calls], ["alpha_vantage"])
+        self.assertEqual(record["coverage_window"], {"start_date": "2020-01-01", "end_date": "2026-09-01"})
+        self.assertEqual(record["normalized_events"], [])
+        self.assertNotIn("canonical_history", record)
+
+
+class SessionCompletenessTests(unittest.TestCase):
+    def test_weekend_stock_date_is_rejected(self):
+        self.assertEqual(validate_us_equity_candle(market_date=date(2026, 8, 29), now_utc=_task4_utc("2026-08-31T21:00:00Z"), synthetic=False), "rejected")
+
+    def test_us_market_holiday_is_rejected(self):
+        self.assertEqual(validate_us_equity_candle(market_date=date(2026, 9, 7), now_utc=_task4_utc("2026-09-08T21:00:00Z"), synthetic=False), "rejected")
+
+    def test_valid_early_close_session_is_accepted(self):
+        self.assertIn(date(2026, 11, 27), us_early_close_dates(2026))
+        self.assertEqual(validate_us_equity_candle(market_date=date(2026, 11, 27), now_utc=_task4_utc("2026-11-27T18:01:00Z"), synthetic=False), "accepted")
+
+    def test_current_incomplete_us_session_candle_is_not_archived(self):
+        self.assertEqual(validate_us_equity_candle(market_date=date(2026, 9, 8), now_utc=_task4_utc("2026-09-08T19:59:00Z"), synthetic=False), "rejected")
+
+    def test_synthetic_fill_is_rejected(self):
+        self.assertEqual(validate_us_equity_candle(market_date=date(2026, 9, 4), now_utc=_task4_utc("2026-09-08T21:00:00Z"), synthetic=True), "rejected")
+
+    def test_current_utc_crypto_day_candle_is_rejected(self):
+        self.assertEqual(validate_crypto_candle(market_date=date(2026, 9, 8), now_utc=_task4_utc("2026-09-08T21:00:00Z"), synthetic=False), "rejected")
+
+    def test_completed_prior_utc_crypto_candle_is_accepted(self):
+        self.assertEqual(validate_crypto_candle(market_date=date(2026, 9, 7), now_utc=_task4_utc("2026-09-08T00:00:00Z"), synthetic=False), "accepted")
+
+    def test_us_eastern_dst_before_march_transition(self):
+        self.assertEqual(us_eastern_offset_for_utc(_task4_utc("2026-03-08T06:59:00Z")), timedelta(hours=-5))
+
+    def test_us_eastern_dst_after_march_transition(self):
+        self.assertEqual(us_eastern_offset_for_utc(_task4_utc("2026-03-08T07:00:00Z")), timedelta(hours=-4))
+
+    def test_us_eastern_dst_before_november_transition(self):
+        self.assertEqual(us_eastern_offset_for_utc(_task4_utc("2026-11-01T05:59:00Z")), timedelta(hours=-4))
+
+    def test_us_eastern_dst_after_november_transition(self):
+        self.assertEqual(us_eastern_offset_for_utc(_task4_utc("2026-11-01T06:00:00Z")), timedelta(hours=-5))
+
+    def test_regular_close_in_est(self):
+        self.assertEqual(us_eastern_local(_task4_utc("2026-01-05T21:00:00Z")).time(), datetime_time(16, 0))
+        self.assertEqual(us_equity_session_close(date(2026, 1, 5)), datetime_time(16, 0))
+
+    def test_regular_close_in_edt(self):
+        self.assertEqual(us_eastern_local(_task4_utc("2026-07-06T20:00:00Z")).time(), datetime_time(16, 0))
+        self.assertEqual(us_equity_session_close(date(2026, 7, 6)), datetime_time(16, 0))
 
 
 class CanonicalSerializationTests(unittest.TestCase):
