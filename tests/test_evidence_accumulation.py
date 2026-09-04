@@ -142,7 +142,7 @@ class ProviderAssignmentTests(unittest.TestCase):
 
         def fetch_json(**kwargs):
             calls.append(kwargs["provider"])
-            raise OSError("assigned provider unavailable")
+            raise RuntimeError("assigned provider unavailable")
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = EvidenceCollector(

@@ -120,7 +120,7 @@ class EvidenceCollector:
                 payload, source_request, claim = self._fetch_market_payload(
                     symbol=symbol, provider=provider
                 )
-            except (OSError, ValueError, TypeError):
+            except (OSError, RuntimeError, ValueError, TypeError):
                 record["status"] = "market_data_unavailable"
                 records.append(record)
                 continue
@@ -190,7 +190,7 @@ class EvidenceCollector:
                     function="SPLITS",
                 )
                 normalized_events = _normalized_split_events(payload)
-            except (OSError, ValueError, TypeError):
+            except (OSError, RuntimeError, ValueError, TypeError):
                 record["status"] = "feed_unavailable"
                 records.append(record)
                 continue
