@@ -305,6 +305,16 @@ class SessionCompletenessTests(unittest.TestCase):
     def test_us_market_holiday_is_rejected(self):
         self.assertEqual(validate_us_equity_candle(market_date=date(2026, 9, 7), now_utc=_task4_utc("2026-09-08T21:00:00Z"), synthetic=False), "rejected")
 
+    def test_cross_year_observed_new_year_is_rejected(self):
+        self.assertEqual(
+            validate_us_equity_candle(
+                market_date=date(2021, 12, 31),
+                now_utc=_task4_utc("2022-01-03T21:00:00Z"),
+                synthetic=False,
+            ),
+            "rejected",
+        )
+
     def test_valid_early_close_session_is_accepted(self):
         self.assertIn(date(2026, 11, 27), us_early_close_dates(2026))
         self.assertEqual(validate_us_equity_candle(market_date=date(2026, 11, 27), now_utc=_task4_utc("2026-11-27T18:01:00Z"), synthetic=False), "accepted")

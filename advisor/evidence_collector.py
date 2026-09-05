@@ -296,20 +296,22 @@ def us_eastern_local(utc_datetime: datetime) -> datetime:
 
 
 def us_market_holidays(year: int) -> frozenset[date]:
-    return frozenset(
-        {
-            _observed_fixed_holiday(date(year, 1, 1)),
-            _nth_weekday(year, 1, weekday=0, occurrence=3),
-            _nth_weekday(year, 2, weekday=0, occurrence=3),
-            _western_easter(year) - timedelta(days=2),
-            _last_weekday(year, 5, weekday=0),
-            _observed_fixed_holiday(date(year, 6, 19)),
-            _observed_fixed_holiday(date(year, 7, 4)),
-            _nth_weekday(year, 9, weekday=0, occurrence=1),
-            _nth_weekday(year, 11, weekday=3, occurrence=4),
-            _observed_fixed_holiday(date(year, 12, 25)),
-        }
-    )
+    holidays = {
+        _observed_fixed_holiday(date(year, 1, 1)),
+        _nth_weekday(year, 1, weekday=0, occurrence=3),
+        _nth_weekday(year, 2, weekday=0, occurrence=3),
+        _western_easter(year) - timedelta(days=2),
+        _last_weekday(year, 5, weekday=0),
+        _observed_fixed_holiday(date(year, 6, 19)),
+        _observed_fixed_holiday(date(year, 7, 4)),
+        _nth_weekday(year, 9, weekday=0, occurrence=1),
+        _nth_weekday(year, 11, weekday=3, occurrence=4),
+        _observed_fixed_holiday(date(year, 12, 25)),
+    }
+    next_new_year = _observed_fixed_holiday(date(year + 1, 1, 1))
+    if next_new_year.year == year:
+        holidays.add(next_new_year)
+    return frozenset(holidays)
 
 
 def us_early_close_dates(year: int) -> frozenset[date]:
