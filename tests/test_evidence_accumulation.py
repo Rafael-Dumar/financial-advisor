@@ -224,6 +224,40 @@ class ProviderAssignmentTests(unittest.TestCase):
 
 
 class CorporateActionCollectionTests(unittest.TestCase):
+    def test_corporate_provider_runtime_error_is_feed_unavailable(self):
+        def fetch_json(**kwargs):
+            raise RuntimeError("provider unavailable")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = EvidenceCollector(
+                fetch_json=fetch_json,
+                transport_root=Path(temporary_directory),
+            ).collect_corporate_actions(
+                assets=[CollectionAsset("AAPL", "stock")],
+                coverage_windows={"AAPL": (date(2020, 1, 1), date(2026, 12, 31))},
+            )
+            record = _task4_transport_records(path)[0]
+
+        self.assertEqual(record["status"], "feed_unavailable")
+
+    def test_corporate_normalization_runtime_error_is_not_feed_unavailable(self):
+        def fetch_json(**kwargs):
+            return {"symbol": "AAPL", "data": []}
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch(
+                "advisor.evidence_collector._normalized_split_events",
+                side_effect=RuntimeError("normalization defect"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "normalization defect"):
+                    EvidenceCollector(
+                        fetch_json=fetch_json,
+                        transport_root=Path(temporary_directory),
+                    ).collect_corporate_actions(
+                        assets=[CollectionAsset("AAPL", "stock")],
+                        coverage_windows={"AAPL": (date(2020, 1, 1), date(2026, 12, 31))},
+                    )
+
     def test_alpha_vantage_splits_fixture_normalizes_decimal_split_factor(self):
         payload = {"symbol": "AAPL", "data": [{"effective_date": "2020-08-31", "split_factor": "4.0000"}]}
         calls: list[dict[str, object]] = []

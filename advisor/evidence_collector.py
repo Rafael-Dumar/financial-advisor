@@ -189,8 +189,13 @@ class EvidenceCollector:
                     url=AlphaVantageSource(self._config.alphavantage_api_key).splits_url(symbol),
                     function="SPLITS",
                 )
-                normalized_events = _normalized_split_events(payload)
             except (OSError, RuntimeError, ValueError, TypeError):
+                record["status"] = "feed_unavailable"
+                records.append(record)
+                continue
+            try:
+                normalized_events = _normalized_split_events(payload)
+            except (ValueError, TypeError):
                 record["status"] = "feed_unavailable"
                 records.append(record)
                 continue
