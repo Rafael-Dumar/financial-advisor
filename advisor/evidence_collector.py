@@ -432,7 +432,7 @@ def _parse_bar(
                 float(row["high"]),
                 float(row["low"]),
                 float(row["close"]),
-                float(row.get("volume", 0)),
+                float(row["volume"]),
             )
             synthetic = bool(row.get("synthetic") or row.get("forward_filled"))
         elif provider == "binance":

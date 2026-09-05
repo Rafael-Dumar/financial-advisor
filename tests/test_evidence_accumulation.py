@@ -158,6 +158,43 @@ class ProviderAssignmentTests(unittest.TestCase):
         self.assertEqual(calls, ["hyperliquid"])
         self.assertEqual(records[0]["status"], "market_data_unavailable")
 
+    def test_incomplete_market_ohlcv_is_unavailable(self):
+        calls: list[dict[str, object]] = []
+
+        def fetch_json(**kwargs):
+            calls.append(kwargs)
+            return {
+                "historical": [
+                    {
+                        "date": "2026-09-08",
+                        "open": 100.0,
+                        "high": 102.0,
+                        "low": 99.0,
+                        "close": 101.0,
+                    }
+                ]
+            }
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch(
+                "advisor.evidence_collector.AdvisorConfig.default",
+                return_value=AdvisorConfig(stock_watchlist=["AAPL"], fmp_api_key="fmp-key"),
+            ):
+                path = EvidenceCollector(
+                    fetch_json=fetch_json,
+                    transport_root=Path(temporary_directory),
+                    now_utc=_task4_utc("2026-09-08T21:00:00Z"),
+                ).collect_market(
+                    assets=[CollectionAsset("AAPL", "stock")],
+                    existing_provider_by_symbol={},
+                )
+            record = _task4_transport_records(path)[0]
+
+        self.assertEqual([call["provider"] for call in calls], ["fmp"])
+        self.assertEqual(record["status"], "market_data_unavailable")
+        self.assertEqual(record["bars"], [])
+        self.assertNotIn('"volume":0.0', json.dumps(record))
+
     def test_fmp_unavailable_does_not_call_yahoo_as_evidence_fallback(self):
         calls: list[dict[str, object]] = []
 
