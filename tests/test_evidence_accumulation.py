@@ -222,6 +222,81 @@ class ProviderAssignmentTests(unittest.TestCase):
         self.assertNotIn("yahoo", json.dumps(calls))
         self.assertEqual(records[0]["status"], "market_data_unavailable")
 
+    def test_fmp_success_uses_full_raw_ohlcv_request(self):
+        calls: list[dict[str, object]] = []
+        payload = {
+            "historical": [
+                {
+                    "date": "2026-09-08",
+                    "open": 100.0,
+                    "high": 102.0,
+                    "low": 99.0,
+                    "close": 101.0,
+                    "volume": 1000.0,
+                }
+            ]
+        }
+
+        def fetch_json(**kwargs):
+            calls.append(dict(kwargs))
+            return payload
+
+        with tempfile.TemporaryDirectory() as first_directory, tempfile.TemporaryDirectory() as second_directory:
+            with patch(
+                "advisor.evidence_collector.AdvisorConfig.default",
+                return_value=AdvisorConfig(stock_watchlist=["AAPL"], fmp_api_key="fmp-key"),
+            ):
+                first_path = EvidenceCollector(
+                    fetch_json=fetch_json,
+                    transport_root=Path(first_directory),
+                    now_utc=_task4_utc("2026-09-08T21:00:00Z"),
+                ).collect_market(
+                    assets=[CollectionAsset("AAPL", "stock")],
+                    existing_provider_by_symbol={},
+                )
+                second_path = EvidenceCollector(
+                    fetch_json=fetch_json,
+                    transport_root=Path(second_directory),
+                    now_utc=_task4_utc("2026-09-08T21:00:00Z"),
+                ).collect_market(
+                    assets=[CollectionAsset("AAPL", "stock")],
+                    existing_provider_by_symbol={},
+                )
+            first_record = _task4_transport_records(first_path)[0]
+            second_record = _task4_transport_records(second_path)[0]
+            first_bytes = first_path.read_bytes()
+            second_bytes = second_path.read_bytes()
+
+        expected_request = {
+            "provider": "fmp",
+            "symbol": "AAPL",
+            "url": "https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=AAPL&apikey=fmp-key",
+        }
+        self.assertEqual(calls, [expected_request, expected_request])
+        self.assertEqual(first_record["status"], "available")
+        self.assertEqual(
+            first_record["coverage_window"],
+            {"start_date": "2026-09-08", "end_date": "2026-09-08"},
+        )
+        self.assertEqual(
+            first_record["source_request"],
+            {
+                "interval": "1d",
+                "provider": "fmp",
+                "source_contract": "fmp.historical_price_eod.full.raw_ohlcv_v1",
+            },
+        )
+        self.assertEqual(
+            first_record["semantic_provenance"]["price_basis_claim"],
+            {
+                "price_basis": "raw_ohlcv",
+                "price_basis_policy_version": "price_basis_v1",
+                "source_contract": "fmp.historical_price_eod.full.raw_ohlcv_v1",
+            },
+        )
+        self.assertEqual(first_record, second_record)
+        self.assertEqual(first_bytes, second_bytes)
+
 
 class CorporateActionCollectionTests(unittest.TestCase):
     def test_corporate_provider_runtime_error_is_feed_unavailable(self):
