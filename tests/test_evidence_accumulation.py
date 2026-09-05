@@ -11,7 +11,7 @@ import threading
 import time
 import unittest
 import zlib
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, time as datetime_time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -69,6 +69,7 @@ from advisor.evidence_collector import (
     validate_crypto_candle,
     validate_us_equity_candle,
 )
+from advisor.evidence_materializer import EvidenceMaterializer
 from advisor.config import AdvisorConfig
 from advisor.data_pipeline import crypto_snapshot_from_payloads, stock_snapshot_from_payloads
 from advisor.live_loader import LiveDataLoader
@@ -1706,6 +1707,585 @@ class ObservationSidecarTests(unittest.TestCase):
                 ),
             ),
             "signal_basis_unavailable",
+        )
+
+
+_TASK5_DEFAULT_CLAIM = object()
+
+
+def _task5_record(
+    *,
+    symbol: str = "AAPL",
+    asset_type: str = "stock",
+    claim: PriceBasisClaim | None | object = _TASK5_DEFAULT_CLAIM,
+) -> ObservationEvidenceRecord:
+    if claim is _TASK5_DEFAULT_CLAIM:
+        claim = (
+            qualified_fmp_full_price_basis_claim()
+            if asset_type == "stock"
+            else qualified_binance_klines_basis_claim()
+        )
+    provider = "fmp" if asset_type == "stock" else "binance"
+    snapshot = _task3_snapshot(
+        symbol,
+        asset_type=asset_type,
+        provider=provider,
+        claim=claim if isinstance(claim, PriceBasisClaim) else None,
+    )
+    observation = _task3_observation(snapshot)
+    return ObservationEvidenceRecord(
+        observation=observation,
+        source_binding=ObservationSourceBinding(
+            signal_id=observation.signal_id,
+            observation_hash=observation.observation_hash,
+            snapshot_sha256=snapshot_sha256_v1(snapshot),
+            price_basis_claim=claim if isinstance(claim, PriceBasisClaim) else None,
+        ),
+    )
+
+
+def _task5_observation_envelope(record: ObservationEvidenceRecord) -> dict[str, object]:
+    observation = asdict(record.observation)
+    observation["reason_codes"] = list(record.observation.reason_codes)
+    observation["persisted_at_utc"] = None
+    claim = record.source_binding.price_basis_claim
+    source_binding = {
+        "signal_id": record.source_binding.signal_id,
+        "observation_hash": record.source_binding.observation_hash,
+        "snapshot_sha256": record.source_binding.snapshot_sha256,
+        "price_basis_claim": (
+            None
+            if claim is None
+            else {
+                "price_basis": claim.price_basis,
+                "price_basis_policy_version": claim.price_basis_policy_version,
+                "source_contract": claim.source_contract,
+            }
+        ),
+    }
+    payload = observation
+    logical_identity = {
+        "report_type": record.observation.report_type,
+        "run_id": record.observation.run_id,
+        "schema_version": record.observation.schema_version,
+        "source_sha": record.observation.source_sha,
+        "symbol": record.observation.asset,
+    }
+    semantic_provenance = {
+        "binding_contract": "observation_snapshot_binding_v1",
+        "source_binding": source_binding,
+    }
+    return {
+        "canonical_content_sha256": canonical_content_sha256(
+            evidence_type="observation",
+            schema_version="1.0",
+            logical_identity=logical_identity,
+            payload=payload,
+            semantic_provenance=semantic_provenance,
+        ),
+        "evidence_type": "observation",
+        "logical_identity": logical_identity,
+        "payload": payload,
+        "payload_sha256": payload_sha256(payload),
+        "schema_version": "1.0",
+        "semantic_provenance": semantic_provenance,
+    }
+
+
+def _task5_market_dates(count: int = 40) -> list[str]:
+    values: list[str] = []
+    current = date(2026, 9, 1)
+    while len(values) < count:
+        if current.weekday() < 5 and current != date(2026, 9, 7):
+            values.append(current.isoformat())
+        current += timedelta(days=1)
+    return values
+
+
+def _task5_market_envelope(
+    *,
+    symbol: str,
+    market_date: str,
+    asset_type: str = "stock",
+    provider: str = "fmp",
+    close: float = 100.0,
+) -> dict[str, object]:
+    market_timezone = "UTC" if asset_type == "crypto" else "America/New_York"
+    logical_identity = {
+        "asset_type": asset_type,
+        "interval": "1d",
+        "market_date": market_date,
+        "market_timezone": market_timezone,
+        "schema_version": "1.0",
+        "symbol": symbol,
+    }
+    payload = {
+        "asset_type": asset_type,
+        "interval": "1d",
+        "market_date": market_date,
+        "market_timezone": market_timezone,
+        "ohlcv": {
+            "close": close,
+            "high": close + 1.0,
+            "low": close - 1.0,
+            "open": close - 0.5,
+            "volume": 123456.0,
+        },
+        "price_basis": "raw_ohlcv",
+        "session_close_type": "regular",
+        "session_status": "complete",
+    }
+    claim = (
+        qualified_hyperliquid_candle_snapshot_basis_claim()
+        if provider == "hyperliquid"
+        else qualified_binance_klines_basis_claim()
+        if provider == "binance"
+        else qualified_fmp_full_price_basis_claim()
+    )
+    semantic_provenance = {
+        "collection_policy_version": "price_provider_assignment_v1",
+        "price_basis_claim": {
+            "price_basis": claim.price_basis,
+            "price_basis_policy_version": claim.price_basis_policy_version,
+            "source_contract": claim.source_contract,
+        },
+        "price_provider": provider,
+        "source_response_sha256": "0" * 64,
+    }
+    return {
+        "canonical_content_sha256": canonical_content_sha256(
+            evidence_type="market_bar",
+            schema_version="1.0",
+            logical_identity=logical_identity,
+            payload=payload,
+            semantic_provenance=semantic_provenance,
+        ),
+        "evidence_type": "market_bar",
+        "logical_identity": logical_identity,
+        "payload": payload,
+        "payload_sha256": payload_sha256(payload),
+        "schema_version": "1.0",
+        "semantic_provenance": semantic_provenance,
+    }
+
+
+def _task5_conflict_document(
+    *,
+    symbol: str,
+    coverage_start: str,
+    coverage_end: str,
+) -> tuple[str, dict[str, object]]:
+    logical_identity = {
+        "asset_type": "stock",
+        "corporate_action_provider": "alpha_vantage",
+        "coverage_end_date": coverage_end,
+        "coverage_start_date": coverage_start,
+        "function": "SPLITS",
+        "schema_version": "1.0",
+        "symbol": symbol,
+    }
+    identity = {
+        "evidence_type": "corporate_action",
+        "existing_canonical_sha256": "a" * 64,
+        "incoming_canonical_sha256": "b" * 64,
+        "logical_identity": logical_identity,
+        "reason_code": "corporate_action_revision_conflict",
+        "schema_version": "1.0",
+    }
+    identity_sha = hashlib.sha256(canonical_json_bytes(identity)).hexdigest()
+    content = {
+        **identity,
+        "existing_bytes_sha256": "c" * 64,
+        "incoming_bytes_sha256": "d" * 64,
+        "logical_identity_sha256": hashlib.sha256(
+            canonical_json_bytes(logical_identity)
+        ).hexdigest(),
+    }
+    path = (
+        f"evidence/conflicts/{coverage_start[:4]}/{coverage_start[5:7]}/"
+        f"{coverage_start[8:10]}/{identity_sha}.json.gz"
+    )
+    return path, content
+
+
+def _task5_write_checkout(
+    root: Path,
+    envelopes: list[dict[str, object]],
+    *,
+    conflicts: list[tuple[str, dict[str, object]]] | None = None,
+) -> Path:
+    evidence_root = root / "evidence"
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    (evidence_root / "branch-schema.json").write_bytes(
+        canonical_json_bytes(
+            {
+                "branch_name": "advisor-evidence",
+                "financial_evidence_count": 0,
+                "schema_version": "1.0",
+            }
+        )
+    )
+    directory_by_type = {
+        "observation": "observations",
+        "market_bar": "market-bars",
+        "corporate_action": "corporate-actions",
+        "horizon_proof": "horizon-proofs",
+        "outcome": "outcomes",
+    }
+    for envelope in envelopes:
+        evidence_type = envelope["evidence_type"]
+        logical_identity = envelope["logical_identity"]
+        if evidence_type == "observation":
+            partition_date = envelope["payload"]["report_date_brt"]
+        elif evidence_type == "market_bar":
+            partition_date = logical_identity["market_date"]
+        elif evidence_type == "corporate_action":
+            partition_date = logical_identity["coverage_end_date"]
+        else:
+            partition_date = logical_identity["horizon_end_date"]
+        identity_sha = hashlib.sha256(canonical_json_bytes(logical_identity)).hexdigest()
+        relative = (
+            f"evidence/{directory_by_type[evidence_type]}/{partition_date[:4]}/"
+            f"{partition_date[5:7]}/{partition_date[8:10]}/{identity_sha}.json.gz"
+        )
+        path = root.joinpath(*Path(relative).parts)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(deterministic_gzip(canonical_json_bytes(envelope)))
+    for relative, content in conflicts or []:
+        path = root.joinpath(*Path(relative).parts)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(deterministic_gzip(canonical_json_bytes(content)))
+    return root
+
+
+def _task5_stock_envelopes(
+    record: ObservationEvidenceRecord,
+    *,
+    events: list[dict[str, object]] | None = None,
+    include_corporate: bool = True,
+    market_dates: list[str] | None = None,
+) -> tuple[list[dict[str, object]], list[str]]:
+    dates = market_dates or _task5_market_dates()
+    envelopes = [_task5_observation_envelope(record)]
+    envelopes.extend(
+        _task5_market_envelope(
+            symbol=record.observation.asset,
+            market_date=market_date,
+            close=100.0 + index,
+        )
+        for index, market_date in enumerate(dates)
+    )
+    if include_corporate:
+        envelopes.append(
+            _corporate_action_envelope(
+                symbol=record.observation.asset,
+                coverage_start="2026-08-31",
+                coverage_end=dates[-1],
+                events=events if events is not None else [],
+            )
+        )
+    return envelopes, dates
+
+
+class HorizonQualificationTests(unittest.TestCase):
+    def _materializer(self, root: Path) -> EvidenceMaterializer:
+        return EvidenceMaterializer(
+            evidence_checkout=root,
+            db_path=root.parent / "materialization.db",
+        )
+
+    def _qualified(self, root: Path, record: ObservationEvidenceRecord, horizon: int):
+        materializer = self._materializer(root)
+        canonical_record = materializer.read_observation_evidence_record(
+            signal_id=record.observation.signal_id,
+            observation_hash=record.observation.observation_hash,
+        )
+        return materializer.qualify_horizon(
+            record=canonical_record,
+            horizon=horizon,
+        )
+
+    def test_unknown_signal_basis_blocks_stock_maturation_before_3b2(self):
+        record = _task5_record(claim=None)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            envelopes, _ = _task5_stock_envelopes(record)
+            _task5_write_checkout(root, envelopes)
+            with patch("advisor.signal_outcome.evaluate_signal_observation") as evaluator:
+                qualification = self._qualified(root, record, 5)
+
+        self.assertEqual(qualification.status, "signal_basis_unavailable")
+        self.assertIsNone(qualification.proof)
+        evaluator.assert_not_called()
+
+    def test_verified_raw_ohlcv_is_required_for_stock_verified_none(self):
+        record = _task5_record(claim=qualified_fmp_full_price_basis_claim())
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            envelopes, _ = _task5_stock_envelopes(record)
+            _task5_write_checkout(root, envelopes)
+            qualification = self._qualified(root, record, 5)
+
+        self.assertEqual(qualification.status, "verified_none")
+        self.assertEqual(qualification.policy, "verified_no_split_in_signal_horizon_v1")
+
+    def test_split_on_signal_market_date_blocks_horizon(self):
+        record = _task5_record()
+        event = {
+            "effective_date": "2026-08-31",
+            "split_factor_raw": "2.0000",
+            "split_ratio": {"new_shares": "2", "old_shares": "1"},
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            envelopes, _ = _task5_stock_envelopes(record, events=[event])
+            _task5_write_checkout(root, envelopes)
+            qualification = self._qualified(root, record, 5)
+
+        self.assertEqual(qualification.status, "split_in_horizon_unavailable")
+
+    def test_split_on_horizon_end_date_blocks_horizon(self):
+        record = _task5_record()
+        event = {
+            "effective_date": "2026-09-08",
+            "split_factor_raw": "2.0000",
+            "split_ratio": {"new_shares": "2", "old_shares": "1"},
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            envelopes, _ = _task5_stock_envelopes(record, events=[event])
+            _task5_write_checkout(root, envelopes)
+            qualification = self._qualified(root, record, 5)
+
+        self.assertEqual(qualification.status, "split_in_horizon_unavailable")
+
+    def test_split_after_h5_before_h10_blocks_only_h10_and_later(self):
+        record = _task5_record()
+        event = {
+            "effective_date": "2026-09-09",
+            "split_factor_raw": "2.0000",
+            "split_ratio": {"new_shares": "2", "old_shares": "1"},
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            envelopes, _ = _task5_stock_envelopes(record, events=[event])
+            _task5_write_checkout(root, envelopes)
+            h5 = self._qualified(root, record, 5)
+            h10 = self._qualified(root, record, 10)
+            h20 = self._qualified(root, record, 20)
+
+        self.assertEqual(h5.status, "verified_none")
+        self.assertEqual(h10.status, "split_in_horizon_unavailable")
+        self.assertEqual(h20.status, "split_in_horizon_unavailable")
+
+    def test_no_split_produces_verified_none_with_split_policy(self):
+        record = _task5_record()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            envelopes, _ = _task5_stock_envelopes(record, events=[])
+            observation_envelope = envelopes[0]
+            _task5_write_checkout(root, envelopes)
+            qualification = self._qualified(root, record, 5)
+
+        self.assertEqual(qualification.status, "verified_none")
+        self.assertEqual(
+            qualification.proof["corporate_action_policy"],
+            "verified_no_split_in_signal_horizon_v1",
+        )
+        self.assertEqual(
+            qualification.proof["evidence_hashes"]["observation_shard"],
+            observation_envelope["canonical_content_sha256"],
+        )
+
+    def test_status_and_proof_policy_are_distinct(self):
+        stock_record = _task5_record()
+        crypto_record = _task5_record(
+            symbol="BTC",
+            asset_type="crypto",
+            claim=qualified_binance_klines_basis_claim(),
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            stock_envelopes, _ = _task5_stock_envelopes(stock_record, events=[])
+            crypto_dates = [
+                value.isoformat()
+                for value in (date(2026, 9, 1) + timedelta(days=index) for index in range(40))
+            ]
+            crypto_envelopes = [_task5_observation_envelope(crypto_record)]
+            crypto_envelopes.extend(
+                _task5_market_envelope(
+                    symbol="BTC",
+                    asset_type="crypto",
+                    provider="binance",
+                    market_date=market_date,
+                    close=200.0 + index,
+                )
+                for index, market_date in enumerate(crypto_dates)
+            )
+            _task5_write_checkout(root, stock_envelopes + crypto_envelopes)
+            stock_qualification = self._qualified(root, stock_record, 5)
+            crypto_qualification = self._qualified(root, crypto_record, 5)
+
+        self.assertEqual(stock_qualification.status, "verified_none")
+        self.assertEqual(stock_qualification.policy, "verified_no_split_in_signal_horizon_v1")
+        self.assertNotEqual(stock_qualification.status, stock_qualification.policy)
+        self.assertEqual(crypto_qualification.status, "not_applicable")
+        self.assertEqual(crypto_qualification.policy, "not_applicable_crypto_raw_ohlcv_v1")
+
+    def test_feed_unavailable_is_not_verified_none(self):
+        record = _task5_record()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            envelopes, dates = _task5_stock_envelopes(record, include_corporate=False)
+            _task5_write_checkout(root, envelopes)
+            feed_qualification = self._qualified(root, record, 5)
+            missing_bar_envelopes, _ = _task5_stock_envelopes(
+                record,
+                events=[],
+                market_dates=dates[:4],
+            )
+            missing_root = root.parent / "missing-bars"
+            _task5_write_checkout(missing_root, missing_bar_envelopes)
+            pending_qualification = self._materializer(missing_root).qualify_horizon(
+                record=self._materializer(missing_root).read_observation_evidence_record(
+                    signal_id=record.observation.signal_id,
+                    observation_hash=record.observation.observation_hash,
+                ),
+                horizon=5,
+            )
+
+        self.assertEqual(feed_qualification.status, "feed_unavailable")
+        self.assertIsNone(feed_qualification.proof)
+        self.assertNotEqual(feed_qualification.status, "verified_none")
+        self.assertEqual(pending_qualification.status, "pending")
+
+    def test_relevant_corporate_action_conflict_blocks_new_verified_none(self):
+        record = _task5_record()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            envelopes, _ = _task5_stock_envelopes(record, events=[])
+            conflict = _task5_conflict_document(
+                symbol=record.observation.asset,
+                coverage_start="2026-08-31",
+                coverage_end="2026-10-26",
+            )
+            _task5_write_checkout(root, envelopes, conflicts=[conflict])
+            qualification = self._qualified(root, record, 5)
+
+        self.assertEqual(qualification.status, "conflict")
+        self.assertEqual(qualification.reason_code, "corporate_action_revision_conflict")
+        self.assertIsNone(qualification.proof)
+
+    def test_frozen_outcome_is_not_rewritten_by_new_corporate_revision(self):
+        record = _task5_record()
+        outcome_identity = {
+            "evaluation_policy_version": "1.0",
+            "horizon_bars": 5,
+            "horizon_end_date": "2026-09-08",
+            "observation_hash": record.observation.observation_hash,
+            "schema_version": "1.0",
+            "signal_id": record.observation.signal_id,
+        }
+        outcome_payload = {
+            "outcome_id": "outcome-fixture",
+            "outcome_hash": "e" * 64,
+        }
+        outcome_envelope = {
+            "canonical_content_sha256": canonical_content_sha256(
+                evidence_type="outcome",
+                schema_version="1.0",
+                logical_identity=outcome_identity,
+                payload=outcome_payload,
+                semantic_provenance={"source": "frozen"},
+            ),
+            "evidence_type": "outcome",
+            "logical_identity": outcome_identity,
+            "payload": outcome_payload,
+            "payload_sha256": payload_sha256(outcome_payload),
+            "schema_version": "1.0",
+            "semantic_provenance": {"source": "frozen"},
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            envelopes, _ = _task5_stock_envelopes(record, events=[])
+            conflict = _task5_conflict_document(
+                symbol=record.observation.asset,
+                coverage_start="2026-08-31",
+                coverage_end="2026-10-26",
+            )
+            _task5_write_checkout(root, envelopes + [outcome_envelope], conflicts=[conflict])
+            outcome_path = next((root / "evidence" / "outcomes").rglob("*.json.gz"))
+            before = outcome_path.read_bytes()
+            qualification = self._qualified(root, record, 5)
+            after = outcome_path.read_bytes()
+
+        self.assertEqual(qualification.status, "conflict")
+        self.assertEqual(before, after)
+
+    def test_etf_evidence_never_enters_frozen_3b2_asset_types(self):
+        record = _task5_record()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            envelopes, dates = _task5_stock_envelopes(record, events=[])
+            envelopes.extend(
+                _task5_market_envelope(
+                    symbol="IGV",
+                    asset_type="etf",
+                    provider="fmp",
+                    market_date=market_date,
+                )
+                for market_date in dates
+            )
+            _task5_write_checkout(root, envelopes)
+            materializer = self._materializer(root)
+            with self.assertRaises(ValueError) as error:
+                materializer._forward_market_series(symbol="IGV", asset_type="etf")
+
+        self.assertEqual(str(error.exception), "unsupported_frozen_asset_type")
+
+    def test_materializer_has_no_unarchived_transport_input(self):
+        parameters = inspect.signature(EvidenceMaterializer.__init__).parameters
+        self.assertEqual(
+            list(parameters),
+            ["self", "evidence_checkout", "db_path"],
+        )
+        self.assertNotIn("transport_dir", parameters)
+        self.assertNotIn("transport_path", parameters)
+
+        record = _task5_record()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            canonical_envelopes, _ = _task5_stock_envelopes(record, events=[])
+            self.assertNotIn("source_binding", canonical_envelopes[0]["payload"])
+            self.assertIn("source_binding", canonical_envelopes[0]["semantic_provenance"])
+            _task5_write_checkout(root, canonical_envelopes)
+            with tempfile.TemporaryDirectory() as transport_directory:
+                transport_root = Path(transport_directory)
+                divergent = replace(
+                    record,
+                    source_binding=replace(
+                        record.source_binding,
+                        snapshot_sha256="f" * 64,
+                    ),
+                )
+                (transport_root / "observations.json.gz").write_bytes(
+                    deterministic_gzip(
+                        canonical_json_bytes(_task5_observation_envelope(divergent))
+                    )
+                )
+                materializer = self._materializer(root)
+                canonical_record = materializer.read_observation_evidence_record(
+                    signal_id=record.observation.signal_id,
+                    observation_hash=record.observation.observation_hash,
+                )
+                qualification = materializer.qualify_horizon(
+                    record=canonical_record,
+                    horizon=5,
+                )
+
+        self.assertEqual(
+            qualification.status,
+            "verified_none",
         )
 
 
