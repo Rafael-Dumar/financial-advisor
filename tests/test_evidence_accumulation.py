@@ -284,6 +284,47 @@ class CorporateActionCollectionTests(unittest.TestCase):
         self.assertIn("apikey=alpha-key", calls[0]["url"])
         self.assertEqual(record["normalized_events"][0]["split_ratio"], {"new_shares": "4", "old_shares": "1"})
 
+    def test_corporate_transport_preserves_provider_semantic_payload(self):
+        payload = {
+            "symbol": "AAPL",
+            "data": [
+                {"effective_date": "2020-08-31", "split_factor": "4.0000"}
+            ],
+        }
+
+        def fetch_json(**kwargs):
+            return payload
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = EvidenceCollector(
+                fetch_json=fetch_json,
+                transport_root=Path(temporary_directory),
+            ).collect_corporate_actions(
+                assets=[CollectionAsset("AAPL", "stock")],
+                coverage_windows={"AAPL": (date(2020, 1, 1), date(2020, 12, 31))},
+            )
+            record = _task4_transport_records(path)[0]
+
+        self.assertEqual(
+            record["payload"],
+            {
+                "data": payload["data"],
+                "normalized_events": [
+                    {
+                        "effective_date": "2020-08-31",
+                        "split_factor_raw": "4.0000",
+                        "split_ratio": {"new_shares": "4", "old_shares": "1"},
+                    }
+                ],
+                "symbol": "AAPL",
+            },
+        )
+        self.assertEqual(record["normalized_events"], record["payload"]["normalized_events"])
+        self.assertEqual(
+            record["semantic_provenance"]["source_response_sha256"],
+            hashlib.sha256(canonical_json_bytes(payload)).hexdigest(),
+        )
+
     def test_aapl_nvda_tsla_and_igv_split_fixtures_are_supported(self):
         payloads = {
             "AAPL": "4.0000",

@@ -200,6 +200,11 @@ class EvidenceCollector:
                 records.append(record)
                 continue
             record["normalized_events"] = normalized_events
+            record["payload"] = {
+                "data": payload["data"],
+                "normalized_events": normalized_events,
+                "symbol": payload.get("symbol"),
+            }
             record["semantic_provenance"] = {
                 "corporate_action_provider": "alpha_vantage",
                 "source_response_sha256": _response_sha256(payload),
