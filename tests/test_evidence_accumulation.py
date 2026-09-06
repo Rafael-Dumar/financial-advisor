@@ -41,6 +41,7 @@ from advisor.evidence_schema import (
     strict_json_loads_bytes,
     validate_canonical_envelope,
 )
+from advisor.cache import SQLiteCache
 from advisor.evidence_archive import (
     EvidenceArchive,
     bootstrap_evidence_branch,
@@ -69,7 +70,11 @@ from advisor.evidence_collector import (
     validate_crypto_candle,
     validate_us_equity_candle,
 )
-from advisor.evidence_materializer import EvidenceMaterializer
+from advisor.evidence_materializer import (
+    EvidenceMaterializer,
+    HorizonQualification,
+    MaterializationError,
+)
 from advisor.config import AdvisorConfig
 from advisor.data_pipeline import crypto_snapshot_from_payloads, stock_snapshot_from_payloads
 from advisor.live_loader import LiveDataLoader
@@ -1987,6 +1992,47 @@ def _task5_stock_envelopes(
     return envelopes, dates
 
 
+def _task6_all_stock_qualifications() -> dict[int, HorizonQualification]:
+    return {
+        horizon: HorizonQualification(
+            status="verified_none",
+            policy="verified_no_split_in_signal_horizon_v1",
+            reason_code=None,
+            proof={},
+        )
+        for horizon in (5, 10, 20, 40)
+    }
+
+
+def _task6_pending_after_h5_qualifications() -> dict[int, HorizonQualification]:
+    return {
+        5: HorizonQualification(
+            status="verified_none",
+            policy="verified_no_split_in_signal_horizon_v1",
+            reason_code=None,
+            proof={},
+        ),
+        10: HorizonQualification(
+            status="pending",
+            policy=None,
+            reason_code=None,
+            proof=None,
+        ),
+        20: HorizonQualification(
+            status="pending",
+            policy=None,
+            reason_code=None,
+            proof=None,
+        ),
+        40: HorizonQualification(
+            status="pending",
+            policy=None,
+            reason_code=None,
+            proof=None,
+        ),
+    }
+
+
 class HorizonQualificationTests(unittest.TestCase):
     def _materializer(self, root: Path) -> EvidenceMaterializer:
         return EvidenceMaterializer(
@@ -2287,6 +2333,215 @@ class HorizonQualificationTests(unittest.TestCase):
             qualification.status,
             "verified_none",
         )
+
+
+class _OutcomeMaturationMethods:
+    def _materializer_and_record(self, root: Path) -> tuple[EvidenceMaterializer, ObservationEvidenceRecord]:
+        record = _task5_record()
+        envelopes, _ = _task5_stock_envelopes(record, events=[])
+        _task5_write_checkout(root, envelopes)
+        return (
+            EvidenceMaterializer(evidence_checkout=root, db_path=root.parent / "maturation.db"),
+            record,
+        )
+
+    def test_maturation_calls_frozen_evaluator_at_most_once_per_observation_cycle(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            materializer, record = self._materializer_and_record(Path(temporary_directory))
+            series = materializer._forward_market_series(
+                symbol=record.observation.asset,
+                asset_type=record.observation.asset_type,
+            )
+            with patch(
+                "advisor.signal_outcome.evaluate_signal_observation",
+                wraps=__import__(
+                    "advisor.signal_outcome", fromlist=["evaluate_signal_observation"]
+                ).evaluate_signal_observation,
+            ) as evaluator:
+                result = materializer.evaluate_observation_once(
+                    observation=record.observation,
+                    series=series,
+                    qualifications=_task6_all_stock_qualifications(),
+                )
+
+        self.assertEqual(evaluator.call_count, 1)
+        self.assertEqual(len(result.outcomes), 4)
+
+    def test_largest_continuously_eligible_prefix_limits_forward_series(self):
+        qualifications = _task6_all_stock_qualifications()
+        qualifications[10] = HorizonQualification(
+            status="split_in_horizon_unavailable",
+            policy="verified_no_split_in_signal_horizon_v1",
+            reason_code=None,
+            proof=None,
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            materializer, record = self._materializer_and_record(Path(temporary_directory))
+            series = materializer._forward_market_series(
+                symbol=record.observation.asset,
+                asset_type=record.observation.asset_type,
+            )
+            with patch(
+                "advisor.signal_outcome.evaluate_signal_observation",
+                return_value=__import__(
+                    "advisor.signal_outcome", fromlist=["SignalForwardEvaluation"]
+                ).SignalForwardEvaluation(outcomes=(), pending_horizons=(10, 20, 40)),
+            ) as evaluator:
+                materializer.evaluate_observation_once(
+                    observation=record.observation,
+                    series=series,
+                    qualifications=qualifications,
+                )
+
+        self.assertEqual(materializer.largest_continuously_eligible_horizon(qualifications=qualifications), 5)
+        self.assertEqual(len(evaluator.call_args.args[1].candles), 5)
+
+    def test_maturation_does_not_call_scoring(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            materializer, record = self._materializer_and_record(Path(temporary_directory))
+            series = materializer._forward_market_series(
+                symbol=record.observation.asset,
+                asset_type=record.observation.asset_type,
+            )
+            with patch("advisor.scoring.score_asset") as scoring, patch(
+                "advisor.signal_outcome.evaluate_signal_observation",
+                return_value=__import__(
+                    "advisor.signal_outcome", fromlist=["SignalForwardEvaluation"]
+                ).SignalForwardEvaluation(outcomes=(), pending_horizons=(5, 10, 20, 40)),
+            ):
+                materializer.evaluate_observation_once(
+                    observation=record.observation,
+                    series=series,
+                    qualifications=_task6_all_stock_qualifications(),
+                )
+
+        scoring.assert_not_called()
+
+    def test_maturation_does_not_call_risk(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            materializer, record = self._materializer_and_record(Path(temporary_directory))
+            series = materializer._forward_market_series(
+                symbol=record.observation.asset,
+                asset_type=record.observation.asset_type,
+            )
+            with patch("advisor.risk.rate_sample_quality") as risk, patch(
+                "advisor.signal_outcome.evaluate_signal_observation",
+                return_value=__import__(
+                    "advisor.signal_outcome", fromlist=["SignalForwardEvaluation"]
+                ).SignalForwardEvaluation(outcomes=(), pending_horizons=(5, 10, 20, 40)),
+            ):
+                materializer.evaluate_observation_once(
+                    observation=record.observation,
+                    series=series,
+                    qualifications=_task6_all_stock_qualifications(),
+                )
+
+        risk.assert_not_called()
+
+    def test_maturation_stores_exact_frozen_evaluator_result(self):
+        import advisor.signal_outcome as signal_outcome
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            materializer, record = self._materializer_and_record(Path(temporary_directory))
+            series = materializer._forward_market_series(
+                symbol=record.observation.asset,
+                asset_type=record.observation.asset_type,
+            )
+            expected = signal_outcome.evaluate_signal_observation(record.observation, series)
+            result = materializer.evaluate_observation_once(
+                observation=record.observation,
+                series=series,
+                qualifications=_task6_all_stock_qualifications(),
+            )
+
+        self.assertEqual(result, expected)
+        self.assertEqual(result.outcomes, expected.outcomes)
+
+    def test_ineligible_horizon_is_not_sent_to_frozen_evaluator(self):
+        qualifications = _task6_all_stock_qualifications()
+        qualifications[10] = HorizonQualification(
+            status="split_in_horizon_unavailable",
+            policy="verified_no_split_in_signal_horizon_v1",
+            reason_code=None,
+            proof=None,
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            materializer, record = self._materializer_and_record(Path(temporary_directory))
+            series = materializer._forward_market_series(
+                symbol=record.observation.asset,
+                asset_type=record.observation.asset_type,
+            )
+            with patch(
+                "advisor.signal_outcome.evaluate_signal_observation",
+                wraps=__import__(
+                    "advisor.signal_outcome", fromlist=["evaluate_signal_observation"]
+                ).evaluate_signal_observation,
+            ) as evaluator:
+                result = materializer.evaluate_observation_once(
+                    observation=record.observation,
+                    series=series,
+                    qualifications=qualifications,
+                )
+
+        self.assertEqual(evaluator.call_count, 1)
+        self.assertEqual(len(evaluator.call_args.args[1].candles), 5)
+        self.assertNotIn(10, [outcome.horizon_bars for outcome in result.outcomes])
+
+    def test_outcomes_for_externally_blocked_horizons_are_rejected(self):
+        import advisor.signal_outcome as signal_outcome
+
+        qualifications = _task6_all_stock_qualifications()
+        qualifications[10] = HorizonQualification(
+            status="split_in_horizon_unavailable",
+            policy="verified_no_split_in_signal_horizon_v1",
+            reason_code=None,
+            proof=None,
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            materializer, record = self._materializer_and_record(Path(temporary_directory))
+            series = materializer._forward_market_series(
+                symbol=record.observation.asset,
+                asset_type=record.observation.asset_type,
+            )
+            evaluator_result = signal_outcome.evaluate_signal_observation(record.observation, series)
+            with patch(
+                "advisor.signal_outcome.evaluate_signal_observation",
+                return_value=signal_outcome.SignalForwardEvaluation(
+                    outcomes=evaluator_result.outcomes,
+                    pending_horizons=(),
+                ),
+            ):
+                result = materializer.evaluate_observation_once(
+                    observation=record.observation,
+                    series=series,
+                    qualifications=qualifications,
+                )
+
+        self.assertNotIn(10, [outcome.horizon_bars for outcome in result.outcomes])
+        self.assertIn(10, result.pending_horizons)
+
+    def test_pending_horizons_are_preserved_without_recalculation(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            materializer, record = self._materializer_and_record(Path(temporary_directory))
+            series = materializer._forward_market_series(
+                symbol=record.observation.asset,
+                asset_type=record.observation.asset_type,
+            )
+            with patch(
+                "advisor.signal_outcome.evaluate_signal_observation",
+                wraps=__import__(
+                    "advisor.signal_outcome", fromlist=["evaluate_signal_observation"]
+                ).evaluate_signal_observation,
+            ) as evaluator:
+                result = materializer.evaluate_observation_once(
+                    observation=record.observation,
+                    series=series,
+                    qualifications=_task6_pending_after_h5_qualifications(),
+                )
+
+        self.assertEqual(evaluator.call_count, 1)
+        self.assertEqual(result.pending_horizons, (10, 20, 40))
+        self.assertEqual([outcome.horizon_bars for outcome in result.outcomes], [5])
 
 
 class CanonicalIdempotencyTests(unittest.TestCase):
@@ -2623,6 +2878,213 @@ class _ArchiveRepositoryMixin:
             str(destination),
         )
         return destination
+
+
+def _task6_transport_envelopes(record: ObservationEvidenceRecord) -> list[dict[str, object]]:
+    envelopes, _ = _task5_stock_envelopes(record, events=[])
+    return envelopes
+
+
+def _task6_outcome_conflict_envelope(
+    record: ObservationEvidenceRecord,
+    *,
+    horizon_end_date: str = "2026-09-08",
+) -> dict[str, object]:
+    logical_identity = {
+        "evaluation_policy_version": "1.0",
+        "horizon_bars": 5,
+        "horizon_end_date": horizon_end_date,
+        "observation_hash": record.observation.observation_hash,
+        "schema_version": "1.0",
+        "signal_id": record.observation.signal_id,
+    }
+    payload = {
+        "outcome_hash": "a" * 64,
+        "outcome_id": "b" * 64,
+        "source": "preexisting-conflict-fixture",
+    }
+    semantic_provenance = {"source": "preexisting-conflict-fixture"}
+    return {
+        "canonical_content_sha256": canonical_content_sha256(
+            evidence_type="outcome",
+            schema_version="1.0",
+            logical_identity=logical_identity,
+            payload=payload,
+            semantic_provenance=semantic_provenance,
+        ),
+        "evidence_type": "outcome",
+        "logical_identity": logical_identity,
+        "payload": payload,
+        "payload_sha256": payload_sha256(payload),
+        "schema_version": "1.0",
+        "semantic_provenance": semantic_provenance,
+    }
+
+
+def _task6_mature(
+    *,
+    repo_dir: Path,
+    first_transport_dir: Path,
+    evidence_checkout: Path,
+    outcome_transport_dir: Path,
+    db_path: Path,
+):
+    from advisor.evidence_materializer import mature_evidence_cycle
+
+    return mature_evidence_cycle(
+        repo_dir=repo_dir,
+        first_transport_dir=first_transport_dir,
+        evidence_checkout=evidence_checkout,
+        outcome_transport_dir=outcome_transport_dir,
+        db_path=db_path,
+    )
+
+
+class ArchiveDurabilityTests(_ArchiveRepositoryMixin, unittest.TestCase):
+    def test_local_transport_cannot_satisfy_maturation_before_first_archive(self):
+        record = _task5_record()
+        first_transport = self._write_transport(_task6_transport_envelopes(record))
+        outcome_transport = self.root / "outcome-transport"
+        with patch("advisor.signal_outcome.evaluate_signal_observation") as evaluator:
+            with self.assertRaises(MaterializationError) as error:
+                _task6_mature(
+                    repo_dir=self.caller,
+                    first_transport_dir=first_transport,
+                    evidence_checkout=self.root / "fresh-checkout",
+                    outcome_transport_dir=outcome_transport,
+                    db_path=self.root / "evidence.db",
+                )
+
+        self.assertEqual(str(error.exception), "first_archive_not_durable")
+        evaluator.assert_not_called()
+        self.assertFalse(outcome_transport.exists())
+
+    def test_push_confirmation_and_fresh_read_are_required_before_maturation(self):
+        self._bootstrap()
+        record = _task5_record()
+        first_transport = self._write_transport(_task6_transport_envelopes(record))
+        db_path = self.root / "evidence.db"
+        self.assertEqual(
+            SQLiteCache(db_path).save_signal_observations((record.observation,)).status,
+            "written",
+        )
+        outcome_transport = self.root / "outcome-transport"
+        import advisor.signal_outcome as signal_outcome
+
+        with patch(
+            "advisor.signal_outcome.evaluate_signal_observation",
+            wraps=signal_outcome.evaluate_signal_observation,
+        ) as evaluator:
+            result = _task6_mature(
+                repo_dir=self.caller,
+                first_transport_dir=first_transport,
+                evidence_checkout=self.root / "fresh-checkout",
+                outcome_transport_dir=outcome_transport,
+                db_path=db_path,
+            )
+
+        self.assertEqual(evaluator.call_count, 1)
+        self.assertTrue(result.outcome_transport)
+        self.assertTrue(result.outcome_transport.exists())
+        self.assertGreaterEqual(len(result.completed_horizons), 1)
+        self.assertEqual(SQLiteCache(db_path).count_signal_forward_outcomes(), 4)
+
+
+class OutcomeMaturationTests(_ArchiveRepositoryMixin, _OutcomeMaturationMethods, unittest.TestCase):
+    def test_first_archive_failure_prevents_maturation_and_second_archive(self):
+        record = _task5_record()
+        first_transport = self._write_transport(_task6_transport_envelopes(record))
+        calls: list[Path] = []
+        original_archive = EvidenceArchive.archive
+
+        def spy_archive(instance, transport_dir):
+            calls.append(transport_dir)
+            return original_archive(instance, transport_dir)
+
+        EvidenceArchive.archive = spy_archive
+        try:
+            with self.assertRaises(MaterializationError) as error:
+                _task6_mature(
+                    repo_dir=self.caller,
+                    first_transport_dir=first_transport,
+                    evidence_checkout=self.root / "fresh-checkout",
+                    outcome_transport_dir=self.root / "outcome-transport",
+                    db_path=self.root / "evidence.db",
+                )
+        finally:
+            EvidenceArchive.archive = original_archive
+
+        self.assertEqual(str(error.exception), "first_archive_not_durable")
+        self.assertEqual(len(calls), 1)
+
+    def test_second_archive_failure_writes_zero_new_operational_outcome_rows(self):
+        self._bootstrap()
+        record = _task5_record()
+        first_transport = self._write_transport(_task6_transport_envelopes(record))
+        self.assertEqual(self._archive(_task6_transport_envelopes(record)).status, "committed")
+        self.assertEqual(
+            self._archive([_task6_outcome_conflict_envelope(record)]).status,
+            "committed",
+        )
+        db_path = self.root / "evidence.db"
+        self.assertEqual(
+            SQLiteCache(db_path).save_signal_observations((record.observation,)).status,
+            "written",
+        )
+        with self.assertRaises(MaterializationError) as error:
+            _task6_mature(
+                repo_dir=self.caller,
+                first_transport_dir=first_transport,
+                evidence_checkout=self.root / "fresh-checkout",
+                outcome_transport_dir=self.root / "outcome-transport",
+                db_path=db_path,
+            )
+
+        self.assertEqual(str(error.exception), "second_archive_not_durable")
+        self.assertEqual(SQLiteCache(db_path).count_signal_forward_outcomes(), 0)
+
+
+class ArchiveAuthorityTransitionTests(_ArchiveRepositoryMixin, unittest.TestCase):
+    def test_different_source_binding_for_same_observation_conflicts_after_first_archive(self):
+        self._bootstrap()
+        record_x = _task5_record()
+        first = self._archive([_task5_observation_envelope(record_x)])
+        self.assertEqual(first.status, "committed")
+        self.assertTrue(first.durability_confirmed)
+
+        canonical_path = next(
+            path for path in self._remote_tree() if path.startswith("evidence/observations/")
+        )
+        canonical_bytes = self._remote_file(canonical_path)
+        divergent = replace(
+            record_x,
+            source_binding=replace(record_x.source_binding, snapshot_sha256="f" * 64),
+        )
+        commands: list[tuple[str, ...]] = []
+        original_run_git = evidence_archive_module._run_git
+
+        def spy_run_git(cwd, *args, **kwargs):
+            commands.append(tuple(args))
+            return original_run_git(cwd, *args, **kwargs)
+
+        evidence_archive_module._run_git = spy_run_git
+        try:
+            second = self._archive([_task5_observation_envelope(divergent)])
+        finally:
+            evidence_archive_module._run_git = original_run_git
+
+        self.assertEqual(second.status, "conflict")
+        self.assertFalse(second.durability_confirmed)
+        self.assertEqual(self._remote_file(canonical_path), canonical_bytes)
+        self.assertEqual(
+            len([path for path in self._remote_tree() if path.startswith("evidence/observations/")]),
+            1,
+        )
+        self.assertTrue(second.conflict_paths)
+        forbidden = {"--force", "--force-with-lease", "merge", "rebase", "pull"}
+        self.assertFalse(
+            any(token in forbidden for command in commands for token in command)
+        )
 
 
 class ArchiveGitTests(_ArchiveRepositoryMixin, unittest.TestCase):

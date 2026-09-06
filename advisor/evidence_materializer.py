@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping
-from dataclasses import dataclass
+import subprocess
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 from advisor import evidence_archive as _evidence_archive
-from advisor.evidence_archive import _load_authority
+from advisor.cache import SQLiteCache
+from advisor.evidence_archive import ArchiveResult, EvidenceArchive, _load_authority
 from advisor.evidence_schema import (
     CorporateActionReasonCode,
     CryptoPolicy,
@@ -18,9 +20,14 @@ from advisor.evidence_schema import (
     ObservationSourceBinding,
     SignalBasisStatus,
     SplitPolicy,
+    canonical_content_sha256,
+    canonical_json_bytes,
+    deterministic_gzip,
+    payload_sha256,
     resolve_signal_price_basis_status,
 )
 from advisor.models import PriceBasisClaim
+from advisor import signal_outcome as _signal_outcome
 from advisor.signal_observation import (
     SignalObservation,
     compute_observation_hash,
@@ -130,6 +137,7 @@ _NORMALIZED_EVENT_FIELDS = frozenset(
 )
 _SPLIT_RATIO_FIELDS = frozenset({"new_shares", "old_shares"})
 _ELIGIBLE_TERMINAL_STATUSES = frozenset({"verified_none", "not_applicable"})
+_DURABLE_ARCHIVE_STATUSES = frozenset({"committed", "no_op"})
 _HORIZON_STATUSES = frozenset(
     {
         "market_data_unavailable",
@@ -454,6 +462,15 @@ class EvidenceMaterializer:
             error_code = getattr(exc, "error_code", None) or str(exc) or "invalid_evidence_checkout"
             raise MaterializationError(error_code) from exc
 
+    def _canonical_observation_records(self) -> list[ObservationEvidenceRecord]:
+        shards, _ = self._load()
+        records = [
+            _record_from_shard(shard)
+            for shard in shards.values()
+            if shard.evidence_type == "observation"
+        ]
+        return sorted(records, key=lambda item: item.observation.signal_id)
+
     def _read_observation_record_with_hash(
         self, *, signal_id: str, observation_hash: str
     ) -> tuple[ObservationEvidenceRecord, str]:
@@ -577,6 +594,94 @@ class EvidenceMaterializer:
             provider=evidence[0].provider,
             price_basis="split_adjusted_ohlc" if asset_type == "stock" else "raw_ohlcv",
             candles=tuple(item.candle for item in evidence),
+        )
+
+    @staticmethod
+    def _is_externally_eligible(qualification: object) -> bool:
+        if not isinstance(qualification, HorizonQualification):
+            return False
+        if qualification.status == "verified_none":
+            return qualification.policy == "verified_no_split_in_signal_horizon_v1"
+        if qualification.status == "not_applicable":
+            return qualification.policy == "not_applicable_crypto_raw_ohlcv_v1"
+        return False
+
+    def largest_continuously_eligible_horizon(
+        self, *, qualifications: Mapping[int, HorizonQualification]
+    ) -> int | None:
+        largest: int | None = None
+        for horizon in HORIZONS:
+            if all(
+                self._is_externally_eligible(qualifications.get(prefix))
+                for prefix in HORIZONS
+                if prefix <= horizon
+            ):
+                largest = horizon
+            else:
+                break
+        return largest
+
+    def evaluate_observation_once(
+        self,
+        *,
+        observation: SignalObservation,
+        series: ForwardMarketSeries,
+        qualifications: Mapping[int, HorizonQualification],
+    ) -> _signal_outcome.SignalForwardEvaluation:
+        if not isinstance(observation, SignalObservation):
+            raise TypeError("observation must be a SignalObservation")
+        if not isinstance(series, ForwardMarketSeries):
+            raise TypeError("series must be a ForwardMarketSeries")
+
+        largest = self.largest_continuously_eligible_horizon(
+            qualifications=qualifications
+        )
+        if largest is None:
+            return _signal_outcome.SignalForwardEvaluation(
+                outcomes=(),
+                pending_horizons=tuple(HORIZONS),
+            )
+
+        signal_date = signal_market_date(
+            observation.signal_timestamp_utc,
+            observation.market_timezone,
+        )
+        eligible_candles = tuple(
+            candle for candle in series.candles if candle.date > signal_date
+        )
+        limited_series = ForwardMarketSeries(
+            asset=series.asset,
+            asset_type=series.asset_type,
+            provider=series.provider,
+            price_basis=series.price_basis,
+            candles=eligible_candles[:largest],
+        )
+        frozen_evaluation = _signal_outcome.evaluate_signal_observation(
+            observation,
+            limited_series,
+        )
+        externally_eligible = {
+            horizon
+            for horizon in HORIZONS
+            if self._is_externally_eligible(qualifications.get(horizon))
+        }
+        accepted_outcomes = tuple(
+            outcome
+            for outcome in frozen_evaluation.outcomes
+            if outcome.horizon_bars in externally_eligible and outcome.horizon_bars <= largest
+        )
+        accepted_horizons = {outcome.horizon_bars for outcome in accepted_outcomes}
+        pending_horizons = tuple(
+            horizon
+            for horizon in HORIZONS
+            if horizon not in accepted_horizons
+            or horizon in frozen_evaluation.pending_horizons
+        )
+        if accepted_outcomes == frozen_evaluation.outcomes and pending_horizons == frozen_evaluation.pending_horizons:
+            return frozen_evaluation
+        return _signal_outcome.SignalForwardEvaluation(
+            outcomes=accepted_outcomes,
+            pending_horizons=pending_horizons,
         )
 
     def qualify_horizon(
@@ -776,14 +881,10 @@ class EvidenceMaterializer:
         )
 
     def materialize(self) -> MaterializationResult:
-        shards, _ = self._load()
-        records: list[ObservationEvidenceRecord] = []
-        for shard in shards.values():
-            if shard.evidence_type == "observation":
-                records.append(_record_from_shard(shard))
+        records = self._canonical_observation_records()
         completed: list[str] = []
         pending: list[str] = []
-        for record in sorted(records, key=lambda item: item.observation.signal_id):
+        for record in records:
             for horizon in HORIZONS:
                 qualification = self.qualify_horizon(record=record, horizon=horizon)
                 key = f"{record.observation.signal_id}:{horizon}"
@@ -797,3 +898,284 @@ class EvidenceMaterializer:
             proof_transport=None,
             outcome_transport=None,
         )
+
+
+def _is_durable_archive_result(result: ArchiveResult) -> bool:
+    return (
+        result.status in _DURABLE_ARCHIVE_STATUSES
+        and result.durability_confirmed is True
+    )
+
+
+def _fresh_evidence_checkout(
+    *,
+    repo_dir: Path,
+    destination: Path,
+    branch_name: str,
+) -> Path:
+    if destination.exists():
+        if destination.is_symlink() or not destination.is_dir():
+            raise MaterializationError("fresh_read_unavailable")
+        if any(destination.iterdir()):
+            raise MaterializationError("fresh_checkout_path_not_empty")
+        destination.rmdir()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    origin_result = subprocess.run(
+        ["git", "config", "--get", "remote.origin.url"],
+        cwd=str(repo_dir),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    origin = origin_result.stdout.strip()
+    if origin_result.returncode != 0 or not origin:
+        raise MaterializationError("fresh_read_unavailable")
+    clone_result = subprocess.run(
+        [
+            "git",
+            "clone",
+            "--branch",
+            branch_name,
+            "--single-branch",
+            origin,
+            str(destination),
+        ],
+        cwd=str(destination.parent),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if clone_result.returncode != 0:
+        raise MaterializationError("fresh_read_unavailable")
+    return destination
+
+
+def _horizon_end_date(
+    *,
+    observation: SignalObservation,
+    series: ForwardMarketSeries,
+    horizon: int,
+) -> str:
+    signal_date = signal_market_date(
+        observation.signal_timestamp_utc,
+        observation.market_timezone,
+    )
+    eligible = [candle for candle in series.candles if candle.date > signal_date]
+    if len(eligible) < horizon:
+        raise MaterializationError("horizon_end_date_unavailable")
+    return eligible[horizon - 1].date
+
+
+def _horizon_proof_envelope(
+    *,
+    record: ObservationEvidenceRecord,
+    horizon: int,
+    horizon_end_date: str,
+    qualification: HorizonQualification,
+) -> dict[str, object]:
+    logical_identity = {
+        "asset": record.observation.asset,
+        "asset_type": record.observation.asset_type,
+        "horizon_bars": horizon,
+        "horizon_end_date": horizon_end_date,
+        "observation_hash": record.observation.observation_hash,
+        "schema_version": "1.0",
+        "signal_id": record.observation.signal_id,
+    }
+    payload = {
+        "horizon_bars": horizon,
+        "horizon_end_date": horizon_end_date,
+        "observation_hash": record.observation.observation_hash,
+        "policy": qualification.policy,
+        "proof": qualification.proof,
+        "reason_code": qualification.reason_code,
+        "signal_id": record.observation.signal_id,
+        "status": qualification.status,
+    }
+    semantic_provenance = {
+        "materializer": "canonical_evidence_materializer_v1",
+        "source_observation_hash": record.observation.observation_hash,
+    }
+    return {
+        "canonical_content_sha256": canonical_content_sha256(
+            evidence_type="horizon_proof",
+            schema_version="1.0",
+            logical_identity=logical_identity,
+            payload=payload,
+            semantic_provenance=semantic_provenance,
+        ),
+        "evidence_type": "horizon_proof",
+        "logical_identity": logical_identity,
+        "payload": payload,
+        "payload_sha256": payload_sha256(payload),
+        "schema_version": "1.0",
+        "semantic_provenance": semantic_provenance,
+    }
+
+
+def _outcome_envelope(outcome: Any) -> dict[str, object]:
+    logical_identity = {
+        "evaluation_policy_version": outcome.evaluation_policy_version,
+        "horizon_bars": outcome.horizon_bars,
+        "horizon_end_date": outcome.horizon_end_date,
+        "observation_hash": outcome.observation_hash,
+        "schema_version": outcome.schema_version,
+        "signal_id": outcome.signal_id,
+    }
+    payload = asdict(outcome)
+    semantic_provenance = {
+        "materializer": "canonical_evidence_materializer_v1",
+        "source_observation_hash": outcome.observation_hash,
+    }
+    return {
+        "canonical_content_sha256": canonical_content_sha256(
+            evidence_type="outcome",
+            schema_version=outcome.schema_version,
+            logical_identity=logical_identity,
+            payload=payload,
+            semantic_provenance=semantic_provenance,
+        ),
+        "evidence_type": "outcome",
+        "logical_identity": logical_identity,
+        "payload": payload,
+        "payload_sha256": payload_sha256(payload),
+        "schema_version": outcome.schema_version,
+        "semantic_provenance": semantic_provenance,
+    }
+
+
+def _write_maturation_transport(
+    *,
+    output_dir: Path,
+    proof_envelopes: Sequence[Mapping[str, object]],
+    outcome_envelopes: Sequence[Mapping[str, object]],
+) -> tuple[Path, Path]:
+    if output_dir.exists():
+        if output_dir.is_symlink() or not output_dir.is_dir() or any(output_dir.iterdir()):
+            raise MaterializationError("outcome_transport_path_not_empty")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    proof_dir = output_dir / "proofs"
+    outcome_dir = output_dir / "outcomes"
+    proof_dir.mkdir()
+    outcome_dir.mkdir()
+    for envelope in proof_envelopes:
+        digest = str(envelope["canonical_content_sha256"])
+        (proof_dir / f"{digest}.json.gz").write_bytes(
+            deterministic_gzip(canonical_json_bytes(envelope))
+        )
+    for envelope in outcome_envelopes:
+        digest = str(envelope["canonical_content_sha256"])
+        (outcome_dir / f"{digest}.json.gz").write_bytes(
+            deterministic_gzip(canonical_json_bytes(envelope))
+        )
+    return proof_dir, outcome_dir
+
+
+def mature_evidence_cycle(
+    *,
+    repo_dir: Path,
+    first_transport_dir: Path,
+    evidence_checkout: Path,
+    outcome_transport_dir: Path,
+    db_path: Path,
+    branch_name: str = "advisor-evidence",
+) -> MaterializationResult:
+    """Archive, freshly read, mature, and durably archive one evidence cycle."""
+    first_archive = EvidenceArchive(
+        repo_dir=repo_dir,
+        branch_name=branch_name,
+    ).archive(first_transport_dir)
+    if not _is_durable_archive_result(first_archive):
+        raise MaterializationError("first_archive_not_durable")
+
+    fresh_checkout = _fresh_evidence_checkout(
+        repo_dir=repo_dir,
+        destination=evidence_checkout,
+        branch_name=branch_name,
+    )
+    materializer = EvidenceMaterializer(
+        evidence_checkout=fresh_checkout,
+        db_path=db_path,
+    )
+    records = materializer._canonical_observation_records()
+    completed: list[str] = []
+    pending: list[str] = []
+    proof_envelopes: list[Mapping[str, object]] = []
+    outcome_envelopes: list[Mapping[str, object]] = []
+    outcomes_by_signal: dict[str, list[Any]] = {}
+
+    for record in records:
+        qualifications = {
+            horizon: materializer.qualify_horizon(record=record, horizon=horizon)
+            for horizon in HORIZONS
+        }
+        for horizon, qualification in qualifications.items():
+            key = f"{record.observation.signal_id}:{horizon}"
+            if qualification.status in _ELIGIBLE_TERMINAL_STATUSES:
+                completed.append(key)
+            else:
+                pending.append(key)
+
+        largest = materializer.largest_continuously_eligible_horizon(
+            qualifications=qualifications
+        )
+        if largest is None:
+            continue
+        series = materializer._forward_market_series(
+            symbol=record.observation.asset,
+            asset_type=record.observation.asset_type,
+        )
+        evaluation = materializer.evaluate_observation_once(
+            observation=record.observation,
+            series=series,
+            qualifications=qualifications,
+        )
+        for horizon in HORIZONS:
+            qualification = qualifications[horizon]
+            if not materializer._is_externally_eligible(qualification) or horizon > largest:
+                continue
+            proof_envelopes.append(
+                _horizon_proof_envelope(
+                    record=record,
+                    horizon=horizon,
+                    horizon_end_date=_horizon_end_date(
+                        observation=record.observation,
+                        series=series,
+                        horizon=horizon,
+                    ),
+                    qualification=qualification,
+                )
+            )
+        for outcome in evaluation.outcomes:
+            outcomes_by_signal.setdefault(outcome.signal_id, []).append(outcome)
+            outcome_envelopes.append(_outcome_envelope(outcome))
+
+    if not proof_envelopes and not outcome_envelopes:
+        return MaterializationResult(
+            completed_horizons=tuple(completed),
+            pending_horizons=tuple(pending),
+            proof_transport=None,
+            outcome_transport=None,
+        )
+
+    proof_transport, outcome_transport = _write_maturation_transport(
+        output_dir=outcome_transport_dir,
+        proof_envelopes=proof_envelopes,
+        outcome_envelopes=outcome_envelopes,
+    )
+    second_archive = EvidenceArchive(
+        repo_dir=repo_dir,
+        branch_name=branch_name,
+    ).archive(outcome_transport_dir)
+    if not _is_durable_archive_result(second_archive):
+        raise MaterializationError("second_archive_not_durable")
+
+    cache = SQLiteCache(db_path)
+    for signal_outcomes in outcomes_by_signal.values():
+        cache.save_signal_forward_outcomes_for_signal(tuple(signal_outcomes))
+    return MaterializationResult(
+        completed_horizons=tuple(completed),
+        pending_horizons=tuple(pending),
+        proof_transport=proof_transport,
+        outcome_transport=outcome_transport,
+    )
