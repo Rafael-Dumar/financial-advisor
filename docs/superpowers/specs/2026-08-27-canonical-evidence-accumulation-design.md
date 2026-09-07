@@ -291,6 +291,49 @@ máximo e membro único. O manifest guarda `canonical_content_sha256`,
 `payload_sha256` e, quando o arquivo for comprimido, `compressed_bytes_sha256`
 e tamanho.
 
+### 6.3 Canonical packaging boundary
+
+Task 4 permanece collection-only e continua emitindo somente seus formatos
+públicos de transport para market evidence e corporate-action evidence. A
+fronteira operacional é:
+
+```text
+Task 4 transport → advisor/evidence_packager.py
+→ candidate canonical .json.gz shards → EvidenceArchive
+```
+
+O único entrypoint público do packager é:
+
+```python
+from pathlib import Path
+
+def package_task4_transport(
+    *, transport_dir: Path, output_dir: Path
+) -> tuple[Path, ...]:
+    """Return the deterministically produced candidate canonical shard paths."""
+```
+
+`transport_dir` é o diretório que contém os `Path`s retornados por
+`EvidenceCollector.collect_market` e `EvidenceCollector.collect_corporate_actions`;
+`output_dir` é a raiz dos candidatos que pode ser entregue a
+`EvidenceArchive.archive`. O retorno é a lista determinística, ordenada, dos
+paths de shards canônicos produzidos. O packager usa somente os schemas
+canônicos já definidos e não cria novos tipos ou semântica de evidence.
+
+Os shards empacotados são candidatos, nunca authority. Authority só existe
+quando `EvidenceArchive` retorna `status` em `{committed, no_op}` e
+`durability_confirmed == True`. Para o mesmo transport válido, o packager deve
+produzir os mesmos paths, o mesmo conteúdo descomprimido e os mesmos bytes de
+gzip, sem relógio corrente, aleatoriedade ou estado local da máquina.
+
+Input malformado, desconhecido ou não suportado é packaging failure e não pode
+expor um conjunto parcial de candidatos como output bem-sucedido: a exposição
+dos shards é atômica. O packager não chama providers, coleta dados, escreve
+SQLite, usa Git, arquiva, qualifica horizons, avalia outcomes, nem cria
+authority. Observation evidence do Task 3 que já esteja no formato canônico
+aceito pelo archive não é reempacotada; esta fronteira existe somente para
+ligar os transportes do Task 4 aos shards canônicos.
+
 ## 7. Layout e paths da branch
 
 O layout final é:
