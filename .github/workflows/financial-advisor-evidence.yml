@@ -1,0 +1,204 @@
+name: Financial Advisor Evidence
+
+concurrency:
+  group: advisor-evidence-writer
+  cancel-in-progress: false
+
+on:
+  schedule:
+    # UTC 00:30, after the crypto daily candle closes.
+    - cron: "30 0 * * *"
+    # UTC 22:30 weekdays, after the US equity close with a safety margin.
+    - cron: "30 22 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      asset_scope:
+        description: "Typed evidence collection scope"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - stocks
+          - crypto
+
+jobs:
+  collector:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+      COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+      ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+      COINBASE_API_KEY: ${{ secrets.COINBASE_API_KEY }}
+      EVIDENCE_DISPATCH_SCOPE: ${{ inputs.asset_scope }}
+      EVIDENCE_SCHEDULE: ${{ github.event.schedule }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check out canonical evidence read-only
+        uses: actions/checkout@v4
+        with:
+          ref: advisor-evidence
+          path: .tmp/evidence-checkout
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Write typed evidence asset scope
+        shell: bash
+        run: |
+          scope="$EVIDENCE_DISPATCH_SCOPE"
+          if [ -z "$scope" ]; then
+            case "$EVIDENCE_SCHEDULE" in
+              "30 0 * * *") scope=crypto ;;
+              "30 22 * * 1-5") scope=stocks ;;
+              *) scope=all ;;
+            esac
+          fi
+          python - "$scope" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          assets_by_scope = {
+              "all": [
+                  {"symbol": "AAPL", "asset_type": "stock"},
+                  {"symbol": "SPY", "asset_type": "etf"},
+                  {"symbol": "HYPE", "asset_type": "crypto"},
+              ],
+              "stocks": [
+                  {"symbol": "AAPL", "asset_type": "stock"},
+                  {"symbol": "SPY", "asset_type": "etf"},
+              ],
+              "crypto": [{"symbol": "HYPE", "asset_type": "crypto"}],
+          }
+          scope = sys.argv[1]
+          if scope not in assets_by_scope:
+              raise SystemExit("invalid_evidence_asset_scope")
+          output = Path(".tmp/evidence-assets.json")
+          output.parent.mkdir(parents=True, exist_ok=True)
+          output.write_text(
+              json.dumps({"assets": assets_by_scope[scope]}, separators=(",", ":")),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Collect assigned-provider evidence transport
+        run: >
+          python -m advisor evidence collect
+          --assets-file .tmp/evidence-assets.json
+          --transport-dir .tmp/evidence-transport
+          --evidence-checkout .tmp/evidence-checkout
+
+      - name: Upload evidence transport
+        uses: actions/upload-artifact@v4
+        with:
+          name: financial-advisor-evidence-transport-${{ github.run_id }}
+          path: .tmp/evidence-transport/
+          if-no-files-found: error
+
+  archive:
+    needs: collector
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Download evidence transport
+        uses: actions/download-artifact@v4
+        with:
+          name: financial-advisor-evidence-transport-${{ github.run_id }}
+          path: .tmp/evidence-transport
+
+      - name: Package Task 4 transport into canonical candidates
+        run: >
+          python -m advisor evidence package
+          --transport-dir .tmp/evidence-transport
+          --output-dir .tmp/evidence-canonical-transport
+
+      - name: Archive canonical evidence transport
+        run: >
+          python -m advisor evidence archive
+          --transport-dir .tmp/evidence-canonical-transport
+          --repo-dir .
+
+      - name: Upload canonical evidence transport
+        uses: actions/upload-artifact@v4
+        with:
+          name: financial-advisor-evidence-canonical-transport-${{ github.run_id }}
+          path: .tmp/evidence-canonical-transport/
+          if-no-files-found: error
+
+  publish-mature:
+    needs: archive
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Download evidence transport
+        uses: actions/download-artifact@v4
+        with:
+          name: financial-advisor-evidence-canonical-transport-${{ github.run_id }}
+          path: .tmp/evidence-canonical-transport
+
+      - name: First archive canonical collector transport
+        run: >
+          python -m advisor evidence archive
+          --transport-dir .tmp/evidence-canonical-transport
+          --repo-dir .
+
+      - name: Fresh canonical evidence checkout
+        run: echo "fresh canonical evidence checkout is performed by mature_evidence_cycle"
+
+      - name: Mature from canonical evidence
+        shell: bash
+        run: |
+          # mature_evidence_cycle enforces first archive -> fresh read -> materialization -> second archive.
+          python -m advisor evidence mature \
+            --repo-dir . \
+            --first-transport-dir .tmp/evidence-canonical-transport \
+            --evidence-checkout .tmp/evidence-checkout \
+            --db .tmp/evidence.db \
+            --transport-dir .tmp/evidence-proof-transport
+
+      - name: Second archive confirmation
+        run: echo "second archive confirmation is returned by mature_evidence_cycle"

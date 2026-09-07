@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 import re
 import sqlite3
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -17,13 +17,23 @@ from advisor.backtest import backtest_similar_setups, summarize_backtest_setups
 from advisor.audit import run_data_audit
 from advisor.cache import SQLiteCache
 from advisor.config import AdvisorConfig
+from advisor.evidence_archive import EvidenceArchive, oldest_canonical_provider_by_symbol
+from advisor.evidence_collector import CollectionAsset, EvidenceCollector
+from advisor.evidence_packager import package_task4_transport
+from advisor.evidence_materializer import (
+    EvidenceMaterializer,
+    MaterializationError,
+    mature_evidence_cycle,
+)
 from advisor.evidence_schema import (
     ObservationEvidenceRecord,
     ObservationSourceBinding,
     build_observation_sidecar,
     snapshot_sha256_v1,
+    strict_json_loads_bytes,
 )
 from advisor.fixtures import benchmarks_from_fixture, load_scan_fixture, snapshots_from_fixture
+from advisor.http_client import fetch_json
 from advisor.live_loader import LiveDataLoader
 from advisor.models import AssetDecision, AssetSnapshot, BacktestStats, Candle, RiskPlan
 from advisor.report import render_analyst_review_input, render_blocked_report, render_html_report, render_markdown_report
@@ -85,6 +95,38 @@ def main(argv: list[str] | None = None) -> int:
     outcomes_evaluate_parser.add_argument("--input-path", type=Path, required=True)
     outcomes_evaluate_parser.add_argument("--db", default=argparse.SUPPRESS)
 
+    evidence_parser = subparsers.add_parser("evidence")
+    evidence_subparsers = evidence_parser.add_subparsers(
+        dest="evidence_command",
+        required=True,
+    )
+    evidence_collect_parser = evidence_subparsers.add_parser("collect")
+    evidence_collect_parser.add_argument("--assets-file", type=Path, required=True)
+    evidence_collect_parser.add_argument("--transport-dir", type=Path, required=True)
+    evidence_collect_parser.add_argument(
+        "--evidence-checkout",
+        type=Path,
+        default=Path(".tmp/evidence-checkout"),
+    )
+    evidence_package_parser = evidence_subparsers.add_parser("package")
+    evidence_package_parser.add_argument("--transport-dir", type=Path, required=True)
+    evidence_package_parser.add_argument("--output-dir", type=Path, required=True)
+    evidence_archive_parser = evidence_subparsers.add_parser("archive")
+    evidence_archive_parser.add_argument("--transport-dir", type=Path, required=True)
+    evidence_archive_parser.add_argument("--repo-dir", type=Path, required=True)
+    evidence_archive_parser.add_argument("--branch", default="advisor-evidence")
+    evidence_materialize_parser = evidence_subparsers.add_parser("materialize")
+    evidence_materialize_parser.add_argument("--evidence-checkout", type=Path, required=True)
+    evidence_materialize_parser.add_argument("--db", type=Path, required=True)
+    evidence_materialize_parser.add_argument("--branch", default="advisor-evidence")
+    evidence_mature_parser = evidence_subparsers.add_parser("mature")
+    evidence_mature_parser.add_argument("--evidence-checkout", type=Path, required=True)
+    evidence_mature_parser.add_argument("--db", type=Path, required=True)
+    evidence_mature_parser.add_argument("--transport-dir", type=Path, required=True)
+    evidence_mature_parser.add_argument("--repo-dir", type=Path, default=Path("."))
+    evidence_mature_parser.add_argument("--first-transport-dir", type=Path)
+    evidence_mature_parser.add_argument("--branch", default="advisor-evidence")
+
     notify_parser = subparsers.add_parser("notify-telegram")
     notify_parser.add_argument("--report", type=Path, default=Path("reports/latest.md"))
     notify_parser.add_argument("--artifact-path", default="reports/latest.md")
@@ -127,6 +169,17 @@ def main(argv: list[str] | None = None) -> int:
         return _report(args, default_db=args.db)
     if args.command == "outcomes" and args.outcomes_command == "evaluate":
         return _outcomes_evaluate(args, default_db=args.db)
+    if args.command == "evidence":
+        if args.evidence_command == "collect":
+            return _evidence_collect(args)
+        if args.evidence_command == "package":
+            return _evidence_package(args)
+        if args.evidence_command == "archive":
+            return _evidence_archive(args)
+        if args.evidence_command == "materialize":
+            return _evidence_materialize(args)
+        if args.evidence_command == "mature":
+            return _evidence_mature(args)
     if args.command == "notify-telegram":
         return _notify_telegram(args)
     if args.command == "signals" and args.signals_command == "update-results":
@@ -453,6 +506,269 @@ def _outcomes_evaluate(args: argparse.Namespace, *, default_db: str | None = Non
         return 1
     print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
     return 1 if summary["signals_conflict"] or summary["signals_unavailable"] else 0
+
+
+_EVIDENCE_ERROR_CODE_PATTERN = re.compile(r"^[a-z0-9_]{1,96}$")
+_EVIDENCE_ASSET_TYPES = frozenset({"stock", "etf", "crypto"})
+
+
+def _safe_evidence_error_code(error: BaseException, fallback: str) -> str:
+    candidate = getattr(error, "error_code", None)
+    if candidate is None and isinstance(error, MaterializationError):
+        candidate = str(error)
+    if isinstance(candidate, str) and _EVIDENCE_ERROR_CODE_PATTERN.fullmatch(candidate):
+        return candidate
+    return fallback
+
+
+def _print_evidence_status(payload: Mapping[str, object]) -> None:
+    print(json.dumps(dict(payload), sort_keys=True, separators=(",", ":")))
+
+
+def _load_evidence_assets(path: Path) -> tuple[CollectionAsset, ...]:
+    try:
+        payload = strict_json_loads_bytes(path.read_bytes())
+    except (OSError, TypeError, UnicodeError, ValueError) as error:
+        raise ValueError("invalid_assets_input") from error
+    if not isinstance(payload, Mapping) or set(payload) != {"assets"}:
+        raise ValueError("invalid_assets_input")
+    raw_assets = payload.get("assets")
+    if not isinstance(raw_assets, list) or not raw_assets:
+        raise ValueError("invalid_assets_input")
+
+    assets: list[CollectionAsset] = []
+    seen_symbols: set[str] = set()
+    for raw_asset in raw_assets:
+        if not isinstance(raw_asset, Mapping) or set(raw_asset) != {"symbol", "asset_type"}:
+            raise ValueError("invalid_assets_input")
+        symbol = raw_asset.get("symbol")
+        asset_type = raw_asset.get("asset_type")
+        if (
+            not isinstance(symbol, str)
+            or re.fullmatch(r"[A-Za-z0-9.-]{1,12}", symbol) is None
+            or not isinstance(asset_type, str)
+            or asset_type not in _EVIDENCE_ASSET_TYPES
+        ):
+            raise ValueError("invalid_assets_input")
+        normalized_symbol = symbol.upper()
+        if normalized_symbol in seen_symbols:
+            raise ValueError("duplicate_asset_symbol")
+        seen_symbols.add(normalized_symbol)
+        assets.append(CollectionAsset(normalized_symbol, asset_type))
+    return tuple(assets)
+
+
+def _evidence_fetch_json(**request: object) -> object:
+    url = request.get("url")
+    if not isinstance(url, str) or not url:
+        raise ValueError("invalid_provider_request")
+    payload = request.get("payload")
+    if payload is not None and not isinstance(payload, dict):
+        raise ValueError("invalid_provider_request")
+    return fetch_json(url, payload=payload)
+
+
+def _load_evidence_transport_records(path: Path) -> list[Mapping[str, object]]:
+    try:
+        payload = strict_json_loads_bytes(path.read_bytes())
+    except (OSError, TypeError, UnicodeError, ValueError) as error:
+        raise ValueError("transport_validation_failed") from error
+    if not isinstance(payload, Mapping) or set(payload) != {"records"}:
+        raise ValueError("transport_validation_failed")
+    records = payload.get("records")
+    if not isinstance(records, list) or any(not isinstance(item, Mapping) for item in records):
+        raise ValueError("transport_validation_failed")
+    return [item for item in records if isinstance(item, Mapping)]
+
+
+def _coverage_windows_from_market_transport(
+    path: Path,
+) -> dict[str, tuple[date, date]]:
+    windows: dict[str, tuple[date, date]] = {}
+    for record in _load_evidence_transport_records(path):
+        if record.get("status") != "available":
+            continue
+        symbol = record.get("symbol")
+        coverage_window = record.get("coverage_window")
+        if not isinstance(symbol, str) or not isinstance(coverage_window, Mapping):
+            raise ValueError("transport_validation_failed")
+        start_value = coverage_window.get("start_date")
+        end_value = coverage_window.get("end_date")
+        if not isinstance(start_value, str) or not isinstance(end_value, str):
+            raise ValueError("transport_validation_failed")
+        try:
+            start_date = date.fromisoformat(start_value)
+            end_date = date.fromisoformat(end_value)
+        except ValueError as error:
+            raise ValueError("transport_validation_failed") from error
+        if start_date > end_date or symbol in windows:
+            raise ValueError("transport_validation_failed")
+        windows[symbol] = (start_date, end_date)
+    return windows
+
+
+def _evidence_collect(args: argparse.Namespace) -> int:
+    try:
+        assets = _load_evidence_assets(args.assets_file)
+        existing_provider_by_symbol: Mapping[str, str] = {}
+        if args.evidence_checkout.exists():
+            existing_provider_by_symbol = oldest_canonical_provider_by_symbol(
+                evidence_checkout=args.evidence_checkout,
+                symbols=tuple(asset.symbol for asset in assets),
+            )
+        collector = EvidenceCollector(
+            fetch_json=_evidence_fetch_json,
+            transport_root=args.transport_dir,
+        )
+        market_path = collector.collect_market(
+            assets=assets,
+            existing_provider_by_symbol=existing_provider_by_symbol,
+        )
+        coverage_windows = _coverage_windows_from_market_transport(market_path)
+        corporate_path = collector.collect_corporate_actions(
+            assets=assets,
+            coverage_windows=coverage_windows,
+        )
+        market_records = _load_evidence_transport_records(market_path)
+        corporate_records = _load_evidence_transport_records(corporate_path)
+    except (OSError, RuntimeError, TypeError, ValueError, subprocess.SubprocessError) as error:
+        _print_evidence_status(
+            {
+                "status": "unavailable",
+                "error_code": _safe_evidence_error_code(error, "collection_failed"),
+            }
+        )
+        return 1
+    _print_evidence_status(
+        {
+            "status": "ok",
+            "market_records": len(market_records),
+            "corporate_action_records": len(corporate_records),
+        }
+    )
+    return 0
+
+
+def _evidence_package(args: argparse.Namespace) -> int:
+    try:
+        candidate_paths = package_task4_transport(
+            transport_dir=args.transport_dir,
+            output_dir=args.output_dir,
+        )
+    except (OSError, RuntimeError, TypeError, ValueError, subprocess.SubprocessError) as error:
+        _print_evidence_status(
+            {
+                "status": "unavailable",
+                "error_code": _safe_evidence_error_code(error, "packaging_failed"),
+                "candidate_count": 0,
+            }
+        )
+        return 1
+    _print_evidence_status(
+        {
+            "status": "ok",
+            "candidate_count": len(candidate_paths),
+            "candidate_paths": [path.as_posix() for path in candidate_paths],
+        }
+    )
+    return 0
+
+
+def _archive_result_status(result: object) -> dict[str, object]:
+    status = getattr(result, "status", "rejected")
+    status_value = status if isinstance(status, str) else "rejected"
+    error_code = getattr(result, "error_code", None)
+    if not isinstance(error_code, str) or _EVIDENCE_ERROR_CODE_PATTERN.fullmatch(error_code) is None:
+        error_code = None
+    committed_paths = getattr(result, "committed_paths", ())
+    conflict_paths = getattr(result, "conflict_paths", ())
+    return {
+        "status": status_value,
+        "error_code": error_code,
+        "durability_confirmed": bool(getattr(result, "durability_confirmed", False)),
+        "committed_count": len(tuple(committed_paths)) if isinstance(committed_paths, Sequence) else 0,
+        "conflict_count": len(tuple(conflict_paths)) if isinstance(conflict_paths, Sequence) else 0,
+    }
+
+
+def _evidence_archive(args: argparse.Namespace) -> int:
+    try:
+        result = EvidenceArchive(
+            repo_dir=args.repo_dir,
+            branch_name=args.branch,
+        ).archive(args.transport_dir)
+    except (OSError, RuntimeError, TypeError, ValueError, subprocess.SubprocessError) as error:
+        _print_evidence_status(
+            {
+                "status": "rejected",
+                "error_code": _safe_evidence_error_code(error, "archive_failed"),
+                "durability_confirmed": False,
+            }
+        )
+        return 1
+    payload = _archive_result_status(result)
+    _print_evidence_status(payload)
+    return int(
+        payload["status"] not in {"committed", "no_op"}
+        or payload["durability_confirmed"] is not True
+    )
+
+
+def _evidence_materialize(args: argparse.Namespace) -> int:
+    try:
+        result = EvidenceMaterializer(
+            evidence_checkout=args.evidence_checkout,
+            db_path=args.db,
+        ).materialize()
+    except (OSError, RuntimeError, TypeError, ValueError, subprocess.SubprocessError) as error:
+        _print_evidence_status(
+            {
+                "status": "unavailable",
+                "error_code": _safe_evidence_error_code(error, "materialization_failed"),
+            }
+        )
+        return 1
+    _print_evidence_status(
+        {
+            "status": "ok",
+            "completed_horizons": len(result.completed_horizons),
+            "pending_horizons": len(result.pending_horizons),
+        }
+    )
+    return 0
+
+
+def _evidence_mature(args: argparse.Namespace) -> int:
+    first_transport_dir = args.first_transport_dir
+    if first_transport_dir is None:
+        first_transport_dir = args.transport_dir.parent / "evidence-transport"
+    try:
+        result = mature_evidence_cycle(
+            repo_dir=args.repo_dir,
+            first_transport_dir=first_transport_dir,
+            evidence_checkout=args.evidence_checkout,
+            outcome_transport_dir=args.transport_dir,
+            db_path=args.db,
+            branch_name=args.branch,
+        )
+    except (OSError, RuntimeError, TypeError, ValueError, subprocess.SubprocessError) as error:
+        _print_evidence_status(
+            {
+                "status": "unavailable",
+                "error_code": _safe_evidence_error_code(error, "maturation_failed"),
+            }
+        )
+        return 1
+    _print_evidence_status(
+        {
+            "status": "ok",
+            "completed_horizons": len(result.completed_horizons),
+            "pending_horizons": len(result.pending_horizons),
+            "proof_transport": result.proof_transport is not None,
+            "outcome_transport": result.outcome_transport is not None,
+        }
+    )
+    return 0
 
 
 def evaluate_outcomes_from_json(*, input_path: Path, db_path: Path) -> dict[str, int]:

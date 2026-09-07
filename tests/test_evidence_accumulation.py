@@ -2880,6 +2880,312 @@ class _ArchiveRepositoryMixin:
         return destination
 
 
+def _task7_market_transport_record() -> dict[str, object]:
+    return {
+        "asset_type": "stock",
+        "assigned_provider": "fmp",
+        "assignment_policy_version": "price_provider_assignment_v1",
+        "bars": [
+            {
+                "market_date": "2026-08-26",
+                "ohlcv": {
+                    "close": 101.0,
+                    "high": 102.0,
+                    "low": 99.0,
+                    "open": 100.0,
+                    "volume": 1000.0,
+                },
+                "price_basis": "raw_ohlcv",
+                "session_close_type": "regular",
+                "session_status": "complete",
+            }
+        ],
+        "coverage_window": {
+            "start_date": "2026-08-26",
+            "end_date": "2026-08-26",
+        },
+        "interval": "1d",
+        "market_timezone": "America/New_York",
+        "semantic_provenance": {
+            "collection_policy_version": "price_provider_assignment_v1",
+            "price_basis_claim": {
+                "price_basis": "raw_ohlcv",
+                "price_basis_policy_version": "price_basis_v1",
+                "source_contract": "fmp.historical_price_eod.full.raw_ohlcv_v1",
+            },
+            "price_provider": "fmp",
+            "source_response_sha256": "0" * 64,
+        },
+        "source_request": {
+            "interval": "1d",
+            "provider": "fmp",
+            "source_contract": "fmp.historical_price_eod.full.raw_ohlcv_v1",
+        },
+        "status": "available",
+        "symbol": "AAPL",
+    }
+
+
+def _task7_corporate_transport_record() -> dict[str, object]:
+    return {
+        "asset_type": "stock",
+        "coverage_window": {
+            "start_date": "2020-01-01",
+            "end_date": "2026-08-26",
+        },
+        "corporate_action_provider": "alpha_vantage",
+        "function": "SPLITS",
+        "normalized_events": [],
+        "payload": {
+            "data": [],
+            "normalized_events": [],
+            "symbol": "AAPL",
+        },
+        "semantic_provenance": {
+            "corporate_action_provider": "alpha_vantage",
+            "source_response_sha256": "1" * 64,
+        },
+        "source_request": {
+            "function": "SPLITS",
+            "provider": "alpha_vantage",
+            "source_contract": "alpha_vantage.splits.v1",
+        },
+        "status": "available",
+        "symbol": "AAPL",
+    }
+
+
+def _write_task7_raw_transport(
+    directory: Path,
+    *,
+    market: bool = False,
+    corporate: bool = False,
+) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    if market:
+        (directory / "market-transport.json").write_text(
+            json.dumps(
+                {"records": [_task7_market_transport_record()]},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+    if corporate:
+        (directory / "corporate-actions-transport.json").write_text(
+            json.dumps(
+                {"records": [_task7_corporate_transport_record()]},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+    return directory
+
+
+class PackagingTests(_ArchiveRepositoryMixin, unittest.TestCase):
+    @staticmethod
+    def _package(transport_dir: Path, output_dir: Path) -> tuple[Path, ...]:
+        try:
+            from advisor.evidence_packager import package_task4_transport
+        except ModuleNotFoundError as error:
+            raise AssertionError(
+                "advisor.evidence_packager is not implemented"
+            ) from error
+        return package_task4_transport(
+            transport_dir=transport_dir,
+            output_dir=output_dir,
+        )
+
+    def test_market_transport_is_accepted_by_real_archive(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            transport_dir = _write_task7_raw_transport(
+                Path(temporary_directory) / "transport",
+                market=True,
+            )
+            candidate_dir = Path(temporary_directory) / "candidates"
+            self._bootstrap()
+
+            candidate_paths = self._package(transport_dir, candidate_dir)
+            self.assertEqual(len(candidate_paths), 1)
+            self.assertTrue(all(path.suffixes == [".json", ".gz"] for path in candidate_paths))
+            envelope = strict_json_loads_bytes(
+                decompress_single_member_gzip(
+                    (candidate_dir / candidate_paths[0]).read_bytes(),
+                    max_uncompressed_bytes=4 * 1024 * 1024,
+                )
+            )
+            self.assertIsInstance(envelope, dict)
+            self.assertEqual(envelope["evidence_type"], "market_bar")
+            validate_canonical_envelope(envelope)
+
+            result = EvidenceArchive(
+                repo_dir=self.caller,
+                branch_name=self.branch_name,
+            ).archive(candidate_dir)
+
+        self.assertEqual(result.status, "committed")
+        self.assertTrue(result.durability_confirmed)
+        self.assertTrue(any("evidence/market-bars/" in path for path in result.committed_paths))
+
+    def test_corporate_transport_is_accepted_by_real_archive(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            transport_dir = _write_task7_raw_transport(
+                Path(temporary_directory) / "transport",
+                corporate=True,
+            )
+            candidate_dir = Path(temporary_directory) / "candidates"
+            self._bootstrap()
+
+            candidate_paths = self._package(transport_dir, candidate_dir)
+            self.assertEqual(len(candidate_paths), 1)
+            envelope = strict_json_loads_bytes(
+                decompress_single_member_gzip(
+                    (candidate_dir / candidate_paths[0]).read_bytes(),
+                    max_uncompressed_bytes=4 * 1024 * 1024,
+                )
+            )
+            self.assertIsInstance(envelope, dict)
+            self.assertEqual(envelope["evidence_type"], "corporate_action")
+            validate_canonical_envelope(envelope)
+
+            result = EvidenceArchive(
+                repo_dir=self.caller,
+                branch_name=self.branch_name,
+            ).archive(candidate_dir)
+
+        self.assertEqual(result.status, "committed")
+        self.assertTrue(result.durability_confirmed)
+        self.assertTrue(any("evidence/corporate-actions/" in path for path in result.committed_paths))
+
+    def test_packaging_is_deterministic(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            first_transport = _write_task7_raw_transport(root / "transport-a", market=True, corporate=True)
+            second_transport = _write_task7_raw_transport(root / "transport-b", market=True, corporate=True)
+            first_output = root / "candidates-a"
+            second_output = root / "candidates-b"
+
+            first_paths = self._package(first_transport, first_output)
+            second_paths = self._package(second_transport, second_output)
+
+            self.assertEqual(first_paths, second_paths)
+            self.assertTrue(all(not path.is_absolute() for path in first_paths))
+            first_bytes = [(path, (first_output / path).read_bytes()) for path in first_paths]
+            second_bytes = [(path, (second_output / path).read_bytes()) for path in second_paths]
+
+        self.assertEqual(first_bytes, second_bytes)
+        self.assertEqual(
+            [
+                strict_json_loads_bytes(
+                    decompress_single_member_gzip(
+                        data,
+                        max_uncompressed_bytes=4 * 1024 * 1024,
+                    )
+                )
+                for _, data in first_bytes
+            ],
+            [
+                strict_json_loads_bytes(
+                    decompress_single_member_gzip(
+                        data,
+                        max_uncompressed_bytes=4 * 1024 * 1024,
+                    )
+                )
+                for _, data in second_bytes
+            ],
+        )
+
+    def test_packaging_fails_closed_without_partial_candidates(self):
+        cases = ("unknown", "malformed")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary_directory:
+                root = Path(temporary_directory)
+                transport_dir = _write_task7_raw_transport(root / "transport", market=True)
+                invalid_path = transport_dir / (
+                    "unknown-transport.json"
+                    if case == "unknown"
+                    else "corporate-actions-transport.json"
+                )
+                invalid_path.write_text(
+                    '{"records":[]}' if case == "unknown" else "{",
+                    encoding="utf-8",
+                )
+                output_dir = root / "candidates"
+
+                with self.assertRaises(ValueError):
+                    self._package(transport_dir, output_dir)
+
+                self.assertEqual(list(output_dir.rglob("*.json.gz")), [])
+
+    def test_collect_package_archive_operational_integration(self):
+        def fetch_json(**kwargs):
+            if kwargs["provider"] == "fmp":
+                return {
+                    "historical": [
+                        {
+                            "date": "2026-08-26",
+                            "open": 100.0,
+                            "high": 102.0,
+                            "low": 99.0,
+                            "close": 101.0,
+                            "volume": 1000.0,
+                        }
+                    ]
+                }
+            if kwargs["provider"] == "alpha_vantage":
+                return {"symbol": "AAPL", "data": []}
+            raise AssertionError(f"unexpected provider: {kwargs['provider']}")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            raw_transport = root / "transport"
+            with patch(
+                "advisor.evidence_collector.AdvisorConfig.default",
+                return_value=AdvisorConfig(
+                    stock_watchlist=["AAPL"],
+                    fmp_api_key="fmp-key",
+                    alphavantage_api_key="alpha-key",
+                ),
+            ):
+                collector = EvidenceCollector(
+                    fetch_json=fetch_json,
+                    transport_root=raw_transport,
+                    now_utc=_task4_utc("2026-08-27T21:00:00Z"),
+                )
+                market_path = collector.collect_market(
+                    assets=[CollectionAsset("AAPL", "stock")],
+                    existing_provider_by_symbol={},
+                )
+                market_records = _task4_transport_records(market_path)
+                coverage_windows = {
+                    "AAPL": (
+                        date.fromisoformat(market_records[0]["coverage_window"]["start_date"]),
+                        date.fromisoformat(market_records[0]["coverage_window"]["end_date"]),
+                    )
+                }
+                collector.collect_corporate_actions(
+                    assets=[CollectionAsset("AAPL", "stock")],
+                    coverage_windows=coverage_windows,
+                )
+
+            candidate_dir = root / "candidates"
+            candidate_paths = self._package(raw_transport, candidate_dir)
+            self.assertEqual(len(candidate_paths), 2)
+            self._bootstrap()
+            self.assertEqual(self._remote_tree(), ["evidence/branch-schema.json"])
+
+            result = EvidenceArchive(
+                repo_dir=self.caller,
+                branch_name=self.branch_name,
+            ).archive(candidate_dir)
+
+        self.assertEqual(result.status, "committed")
+        self.assertTrue(result.durability_confirmed)
+        self.assertTrue(any("evidence/market-bars/" in path for path in result.committed_paths))
+        self.assertTrue(any("evidence/corporate-actions/" in path for path in result.committed_paths))
+
+
 def _task6_transport_envelopes(record: ObservationEvidenceRecord) -> list[dict[str, object]]:
     envelopes, _ = _task5_stock_envelopes(record, events=[])
     return envelopes
@@ -4080,6 +4386,314 @@ class CanonicalProviderReaderTests(unittest.TestCase):
                     evidence_checkout=checkout,
                     symbols=["AAPL"],
                 )
+
+
+class WorkflowContractTests(unittest.TestCase):
+    project_root = Path(__file__).resolve().parents[1]
+    evidence_workflow = project_root / ".github" / "workflows" / "financial-advisor-evidence.yml"
+    reports_workflow = project_root / ".github" / "workflows" / "financial-advisor-reports.yml"
+    nightly_workflow = project_root / ".github" / "workflows" / "financial-advisor-nightly-review.yml"
+    base_revision = "49bae01217e95d849ee82cfcb6d0aa406a576156"
+
+    @staticmethod
+    def _job_block(content: str, job_name: str) -> str:
+        lines = content.splitlines()
+        marker = f"  {job_name}:"
+        start = next(index for index, line in enumerate(lines) if line == marker)
+        end = len(lines)
+        for index in range(start + 1, len(lines)):
+            if lines[index].startswith("  ") and not lines[index].startswith("    "):
+                end = index
+                break
+        return "\n".join(lines[start:end])
+
+    def test_reports_job_has_contents_read_and_provider_secrets_only(self):
+        content = self.reports_workflow.read_text(encoding="utf-8")
+        report_job = self._job_block(content, "report")
+
+        self.assertIn("contents: read", report_job)
+        self.assertNotIn("contents: write", report_job)
+        for secret_name in (
+            "FMP_API_KEY",
+            "COINGECKO_API_KEY",
+            "ALPHAVANTAGE_API_KEY",
+            "COINBASE_API_KEY",
+        ):
+            self.assertIn(f"{secret_name}: ${{{{ secrets.{secret_name} }}}}", report_job)
+        self.assertIn("reports/evidence/observations.json.gz", content)
+        self.assertIn("uses: actions/upload-artifact@v4", content)
+        self.assertIn("path: reports/", content)
+
+    def test_archive_job_has_contents_write_and_no_provider_secrets(self):
+        content = self.evidence_workflow.read_text(encoding="utf-8")
+        job = self._job_block(content, "archive")
+
+        self.assertIn("contents: write", job)
+        self.assertNotIn("contents: read", job)
+        for secret_name in (
+            "FMP_API_KEY",
+            "COINGECKO_API_KEY",
+            "ALPHAVANTAGE_API_KEY",
+            "COINBASE_API_KEY",
+        ):
+            self.assertNotIn(secret_name, job)
+        self.assertIn("actions/download-artifact@v4", job)
+        self.assertIn("python -m advisor evidence archive", job)
+        self.assertIn("python -m advisor evidence package", job)
+        self.assertIn("--transport-dir", job)
+        self.assertIn("--output-dir .tmp/evidence-canonical-transport", job)
+        self.assertIn("--repo-dir", job)
+        self.assertLess(
+            job.index("python -m advisor evidence package"),
+            job.index("python -m advisor evidence archive"),
+        )
+
+    def test_collector_job_has_contents_read_and_provider_secrets(self):
+        content = self.evidence_workflow.read_text(encoding="utf-8")
+        job = self._job_block(content, "collector")
+
+        self.assertIn("contents: read", job)
+        self.assertNotIn("contents: write", job)
+        for secret_name in (
+            "FMP_API_KEY",
+            "COINGECKO_API_KEY",
+            "ALPHAVANTAGE_API_KEY",
+            "COINBASE_API_KEY",
+        ):
+            self.assertIn(f"{secret_name}: ${{{{ secrets.{secret_name} }}}}", job)
+        self.assertIn("python -m advisor evidence collect", job)
+        self.assertIn("actions/upload-artifact@v4", job)
+
+    def test_collector_job_reads_oldest_provider_from_read_only_evidence_checkout(self):
+        content = self.evidence_workflow.read_text(encoding="utf-8")
+        job = self._job_block(content, "collector")
+
+        self.assertIn("ref: advisor-evidence", job)
+        self.assertIn("path: .tmp/evidence-checkout", job)
+        self.assertIn("--evidence-checkout .tmp/evidence-checkout", job)
+        self.assertIn("--assets-file .tmp/evidence-assets.json", job)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            assets_path = root / "assets.json"
+            assets_path.write_text(
+                json.dumps(
+                    {
+                        "assets": [
+                            {"symbol": "AAPL", "asset_type": "stock"},
+                            {"symbol": "SPY", "asset_type": "etf"},
+                            {"symbol": "HYPE", "asset_type": "crypto"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            checkout = root / "evidence-checkout"
+            checkout.mkdir()
+            market_transport = root / "market-transport.json"
+            market_transport.write_text(json.dumps({"records": []}), encoding="utf-8")
+            corporate_transport = root / "corporate-actions-transport.json"
+            corporate_transport.write_text(json.dumps({"records": []}), encoding="utf-8")
+
+            with patch(
+                "advisor.cli.oldest_canonical_provider_by_symbol",
+                return_value={"AAPL": "fmp"},
+            ) as read_provider, patch("advisor.cli.EvidenceCollector") as collector_type:
+                collector = collector_type.return_value
+                collector.collect_market.return_value = market_transport
+                collector.collect_corporate_actions.return_value = corporate_transport
+                output = StringIO()
+                with redirect_stdout(output):
+                    status = cli_module.main(
+                        [
+                            "evidence",
+                            "collect",
+                            "--assets-file",
+                            str(assets_path),
+                            "--transport-dir",
+                            str(root / "transport"),
+                            "--evidence-checkout",
+                            str(checkout),
+                        ]
+                    )
+
+            self.assertEqual(status, 0)
+            read_provider.assert_called_once_with(
+                evidence_checkout=checkout,
+                symbols=("AAPL", "SPY", "HYPE"),
+            )
+            collector.collect_market.assert_called_once()
+            self.assertEqual(
+                collector.collect_market.call_args.kwargs["existing_provider_by_symbol"],
+                {"AAPL": "fmp"},
+            )
+            self.assertEqual(
+                collector.collect_market.call_args.kwargs["assets"],
+                (
+                    CollectionAsset("AAPL", "stock"),
+                    CollectionAsset("SPY", "etf"),
+                    CollectionAsset("HYPE", "crypto"),
+                ),
+            )
+
+    def test_publish_mature_job_has_contents_write_and_no_provider_secrets(self):
+        content = self.evidence_workflow.read_text(encoding="utf-8")
+        job = self._job_block(content, "publish-mature")
+
+        self.assertIn("contents: write", job)
+        self.assertNotIn("contents: read", job)
+        for secret_name in (
+            "FMP_API_KEY",
+            "COINGECKO_API_KEY",
+            "ALPHAVANTAGE_API_KEY",
+            "COINBASE_API_KEY",
+        ):
+            self.assertNotIn(secret_name, job)
+        self.assertIn("actions/download-artifact@v4", job)
+        self.assertIn("python -m advisor evidence mature", job)
+        self.assertIn("--repo-dir", job)
+        self.assertIn("--first-transport-dir", job)
+        self.assertIn("--evidence-checkout", job)
+        self.assertIn("--db", job)
+
+    def test_publish_mature_order_is_first_archive_fresh_read_mature_second_archive(self):
+        content = self.evidence_workflow.read_text(encoding="utf-8")
+        job = self._job_block(content, "publish-mature")
+
+        markers = (
+            "First archive canonical collector transport",
+            "Fresh canonical evidence checkout",
+            "Mature from canonical evidence",
+            "Second archive confirmation",
+        )
+        positions = [job.index(marker) for marker in markers]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("python -m advisor evidence archive", job)
+        self.assertIn("python -m advisor evidence mature", job)
+        self.assertIn("--first-transport-dir .tmp/evidence-canonical-transport", job)
+        self.assertIn("financial-advisor-evidence-canonical-transport-", job)
+        self.assertIn("first archive -> fresh read -> materialization -> second archive", job)
+
+    def test_evidence_writer_concurrency_does_not_cancel_in_progress(self):
+        content = self.evidence_workflow.read_text(encoding="utf-8")
+
+        self.assertIn("group: advisor-evidence-writer", content)
+        self.assertIn("cancel-in-progress: false", content)
+        self.assertNotIn("cancel-in-progress: true", content)
+
+    def test_nightly_workflow_is_not_modified_or_consumed_by_evidence_flow(self):
+        nightly_bytes = self.nightly_workflow.read_bytes()
+        base = subprocess.run(
+            ["git", "show", f"{self.base_revision}:.github/workflows/financial-advisor-nightly-review.yml"],
+            capture_output=True,
+            check=True,
+        ).stdout
+        self.assertEqual(nightly_bytes.replace(b"\r\n", b"\n"), base.replace(b"\r\n", b"\n"))
+
+        evidence_content = self.evidence_workflow.read_text(encoding="utf-8")
+        self.assertNotIn("financial-advisor-nightly-review.yml", evidence_content)
+        self.assertNotIn("nightly-review-input", evidence_content)
+        self.assertNotIn("runtime-manifest", evidence_content)
+
+    def test_evidence_cli_propagates_branch_missing_and_archive_failure(self):
+        missing = SimpleNamespace(
+            status="evidence_branch_missing",
+            batch_identity="a" * 64,
+            manifest_path=None,
+            committed_paths=(),
+            conflict_paths=(),
+            error_code="evidence_branch_missing",
+            durability_confirmed=False,
+        )
+        rejected = SimpleNamespace(
+            status="rejected",
+            batch_identity="b" * 64,
+            manifest_path=None,
+            committed_paths=(),
+            conflict_paths=(),
+            error_code="validation_failed",
+            durability_confirmed=False,
+        )
+        with patch("advisor.cli.EvidenceArchive") as archive_type:
+            archive = archive_type.return_value
+            archive.archive.return_value = missing
+            output = StringIO()
+            with redirect_stdout(output):
+                missing_status = cli_module.main(
+                    [
+                        "evidence",
+                        "archive",
+                        "--transport-dir",
+                        ".tmp/evidence-transport",
+                        "--repo-dir",
+                        ".",
+                    ]
+                )
+            self.assertEqual(missing_status, 1)
+            self.assertIn("evidence_branch_missing", output.getvalue())
+
+            archive.archive.return_value = rejected
+            output = StringIO()
+            with redirect_stdout(output):
+                rejected_status = cli_module.main(
+                    [
+                        "evidence",
+                        "archive",
+                        "--transport-dir",
+                        ".tmp/evidence-transport",
+                        "--repo-dir",
+                        ".",
+                    ]
+                )
+            self.assertEqual(rejected_status, 1)
+            self.assertIn("validation_failed", output.getvalue())
+
+            package_transport = Path(".tmp/evidence-transport")
+            package_output = Path(".tmp/evidence-canonical-transport")
+            with patch(
+                "advisor.cli.package_task4_transport",
+                return_value=(Path("evidence/market-bars/example.json.gz"),),
+            ) as package:
+                output = StringIO()
+                with redirect_stdout(output):
+                    package_status = cli_module.main(
+                        [
+                            "evidence",
+                            "package",
+                            "--transport-dir",
+                            str(package_transport),
+                            "--output-dir",
+                            str(package_output),
+                        ]
+                    )
+
+            self.assertEqual(package_status, 0)
+            package.assert_called_once_with(
+                transport_dir=package_transport,
+                output_dir=package_output,
+            )
+            self.assertIn('"status":"ok"', output.getvalue())
+
+            with patch(
+                "advisor.cli.package_task4_transport",
+                side_effect=ValueError("secret transport details"),
+            ):
+                output = StringIO()
+                with redirect_stdout(output):
+                    failed_package_status = cli_module.main(
+                        [
+                            "evidence",
+                            "package",
+                            "--transport-dir",
+                            str(package_transport),
+                            "--output-dir",
+                            str(package_output),
+                        ]
+                    )
+
+            self.assertEqual(failed_package_status, 1)
+            self.assertIn("packaging_failed", output.getvalue())
+            self.assertNotIn("secret transport details", output.getvalue())
 
 
 if __name__ == "__main__":

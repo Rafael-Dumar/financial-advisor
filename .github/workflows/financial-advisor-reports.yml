@@ -1,5 +1,9 @@
 name: Financial Advisor Reports
 
+concurrency:
+  group: advisor-evidence-writer
+  cancel-in-progress: false
+
 on:
   schedule:
     # BRT is UTC-3: 11:15 BRT on weekdays.
@@ -90,10 +94,21 @@ jobs:
             python -m advisor report close --from-main --require-live --runtime-scoring-artifact --output-dir reports
           fi
 
+      - name: Record observation sidecar transport
+        id: observation-sidecar
+        shell: bash
+        run: |
+          if [ -f reports/evidence/observations.json.gz ]; then
+            echo "sidecar_path=reports/evidence/observations.json.gz" >> "$GITHUB_OUTPUT"
+          else
+            echo "sidecar_path=unavailable" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload report artifact
         uses: actions/upload-artifact@v4
         with:
           name: financial-advisor-${{ env.REPORT_TYPE }}-${{ github.run_id }}
+          # The unfiltered reports/ artifact carries reports/evidence/observations.json.gz.
           path: reports/
           if-no-files-found: error
 
@@ -103,3 +118,38 @@ jobs:
         with:
           path: data/advisor.db
           key: financial-advisor-market-cache-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
+
+  archive-observation:
+    needs: report
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Download report transport
+        uses: actions/download-artifact@v4
+        with:
+          path: .tmp/report-artifacts
+
+      - name: Archive observation sidecar
+        shell: bash
+        run: |
+          sidecar="$(find .tmp/report-artifacts -type f -path '*/reports/evidence/observations.json.gz' -print -quit)"
+          if [ -z "$sidecar" ]; then
+            echo "observation_sidecar_unavailable"
+            false
+          fi
+          python -m advisor evidence archive --transport-dir "$(dirname "$sidecar")" --repo-dir .
