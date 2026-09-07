@@ -47,8 +47,8 @@ _PARTITION_FIELDS = {
     "observation": ("payload", "report_date_brt"),
     "market_bar": ("logical_identity", "market_date"),
     "corporate_action": ("logical_identity", "coverage_end_date"),
-    "horizon_proof": ("logical_identity", "horizon_end_date"),
-    "outcome": ("logical_identity", "horizon_end_date"),
+    "horizon_proof": ("payload", "horizon_end_date"),
+    "outcome": ("payload", "horizon_end_date"),
 }
 _CONFLICT_REASON_CODES = frozenset(
     {

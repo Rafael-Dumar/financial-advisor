@@ -1947,7 +1947,7 @@ def _task5_write_checkout(
         elif evidence_type == "corporate_action":
             partition_date = logical_identity["coverage_end_date"]
         else:
-            partition_date = logical_identity["horizon_end_date"]
+            partition_date = envelope["payload"]["horizon_end_date"]
         identity_sha = hashlib.sha256(canonical_json_bytes(logical_identity)).hexdigest()
         relative = (
             f"evidence/{directory_by_type[evidence_type]}/{partition_date[:4]}/"
@@ -2227,7 +2227,6 @@ class HorizonQualificationTests(unittest.TestCase):
         outcome_identity = {
             "evaluation_policy_version": "1.0",
             "horizon_bars": 5,
-            "horizon_end_date": "2026-09-08",
             "observation_hash": record.observation.observation_hash,
             "schema_version": "1.0",
             "signal_id": record.observation.signal_id,
@@ -2235,6 +2234,7 @@ class HorizonQualificationTests(unittest.TestCase):
         outcome_payload = {
             "outcome_id": "outcome-fixture",
             "outcome_hash": "e" * 64,
+            "horizon_end_date": "2026-09-08",
         }
         outcome_envelope = {
             "canonical_content_sha256": canonical_content_sha256(
@@ -2893,7 +2893,6 @@ def _task6_outcome_conflict_envelope(
     logical_identity = {
         "evaluation_policy_version": "1.0",
         "horizon_bars": 5,
-        "horizon_end_date": horizon_end_date,
         "observation_hash": record.observation.observation_hash,
         "schema_version": "1.0",
         "signal_id": record.observation.signal_id,
@@ -2901,9 +2900,88 @@ def _task6_outcome_conflict_envelope(
     payload = {
         "outcome_hash": "a" * 64,
         "outcome_id": "b" * 64,
+        "horizon_end_date": horizon_end_date,
         "source": "preexisting-conflict-fixture",
     }
     semantic_provenance = {"source": "preexisting-conflict-fixture"}
+    return {
+        "canonical_content_sha256": canonical_content_sha256(
+            evidence_type="outcome",
+            schema_version="1.0",
+            logical_identity=logical_identity,
+            payload=payload,
+            semantic_provenance=semantic_provenance,
+        ),
+        "evidence_type": "outcome",
+        "logical_identity": logical_identity,
+        "payload": payload,
+        "payload_sha256": payload_sha256(payload),
+        "schema_version": "1.0",
+        "semantic_provenance": semantic_provenance,
+    }
+
+
+def _task6_exact_horizon_proof_envelope() -> dict[str, object]:
+    logical_identity = {
+        "horizon_bars": 5,
+        "observation_hash": "a" * 64,
+        "schema_version": "1.0",
+        "signal_id": "b" * 64,
+    }
+    payload = {
+        "signal_market_date": "2026-08-31",
+        "horizon_start_date": "2026-09-01",
+        "horizon_end_date": "2026-09-08",
+        "horizon_bars": 5,
+        "corporate_action_policy": "verified_no_split_in_signal_horizon_v1",
+        "corporate_action_provider": "alpha_vantage",
+        "split_check_status": "verified_none",
+        "split_event_count": 0,
+        "price_basis": "split_adjusted_ohlc",
+        "raw_price_basis": "raw_ohlcv",
+        "signal_price_basis_status": "verified_raw_ohlcv",
+        "evidence_hashes": {
+            "observation_shard": "c" * 64,
+            "market_bar_shards": ["d" * 64] * 5,
+            "corporate_action_shard": "e" * 64,
+        },
+        "proof_status": "verified_none",
+    }
+    semantic_provenance = {"source": "task6-partition-fixture"}
+    return {
+        "canonical_content_sha256": canonical_content_sha256(
+            evidence_type="horizon_proof",
+            schema_version="1.0",
+            logical_identity=logical_identity,
+            payload=payload,
+            semantic_provenance=semantic_provenance,
+        ),
+        "evidence_type": "horizon_proof",
+        "logical_identity": logical_identity,
+        "payload": payload,
+        "payload_sha256": payload_sha256(payload),
+        "schema_version": "1.0",
+        "semantic_provenance": semantic_provenance,
+    }
+
+
+def _task6_exact_outcome_envelope() -> dict[str, object]:
+    logical_identity = {
+        "evaluation_policy_version": "1.0",
+        "horizon_bars": 5,
+        "observation_hash": "a" * 64,
+        "schema_version": "1.0",
+        "signal_id": "b" * 64,
+    }
+    payload = {
+        "outcome_id": "f" * 64,
+        "outcome_hash": "1" * 64,
+        "horizon_end_date": "2026-09-08",
+    }
+    semantic_provenance = {
+        "horizon_proof_shard": "2" * 64,
+        "market_bar_shards": ["3" * 64] * 5,
+    }
     return {
         "canonical_content_sha256": canonical_content_sha256(
             evidence_type="outcome",
@@ -2938,6 +3016,18 @@ def _task6_mature(
         outcome_transport_dir=outcome_transport_dir,
         db_path=db_path,
     )
+
+
+def _task6_read_transport_records(directory: Path) -> list[dict[str, object]]:
+    return [
+        strict_json_loads_bytes(
+            decompress_single_member_gzip(
+                path.read_bytes(),
+                max_uncompressed_bytes=4 * 1024 * 1024,
+            )
+        )
+        for path in sorted(directory.glob("*.json.gz"))
+    ]
 
 
 class ArchiveDurabilityTests(_ArchiveRepositoryMixin, unittest.TestCase):
@@ -2990,7 +3080,202 @@ class ArchiveDurabilityTests(_ArchiveRepositoryMixin, unittest.TestCase):
         self.assertEqual(SQLiteCache(db_path).count_signal_forward_outcomes(), 4)
 
 
+class ArchivePartitionCompatibilityTests(_ArchiveRepositoryMixin, unittest.TestCase):
+    def test_horizon_proof_partitions_from_payload_date_without_identity_pollution(self):
+        self._bootstrap()
+        envelope = _task6_exact_horizon_proof_envelope()
+
+        result = self._archive([envelope])
+
+        self.assertEqual(result.status, "committed")
+        self.assertTrue(result.durability_confirmed)
+        self.assertIn(
+            "evidence/horizon-proofs/2026/09/08/",
+            "\n".join(self._remote_tree()),
+        )
+        self.assertNotIn("horizon_end_date", envelope["logical_identity"])
+
+    def test_outcome_partitions_from_payload_date_without_identity_pollution(self):
+        self._bootstrap()
+        envelope = _task6_exact_outcome_envelope()
+
+        result = self._archive([envelope])
+
+        self.assertEqual(result.status, "committed")
+        self.assertTrue(result.durability_confirmed)
+        self.assertIn(
+            "evidence/outcomes/2026/09/08/",
+            "\n".join(self._remote_tree()),
+        )
+        self.assertNotIn("horizon_end_date", envelope["logical_identity"])
+
+    def test_missing_or_invalid_horizon_partition_date_fails_closed(self):
+        self._bootstrap()
+        missing = _task6_exact_horizon_proof_envelope()
+        del missing["payload"]["horizon_end_date"]
+        missing["canonical_content_sha256"] = canonical_content_sha256(
+            evidence_type="horizon_proof",
+            schema_version="1.0",
+            logical_identity=missing["logical_identity"],
+            payload=missing["payload"],
+            semantic_provenance=missing["semantic_provenance"],
+        )
+        missing["payload_sha256"] = payload_sha256(missing["payload"])
+        invalid = _task6_exact_outcome_envelope()
+        invalid["payload"]["horizon_end_date"] = "not-a-date"
+        invalid["canonical_content_sha256"] = canonical_content_sha256(
+            evidence_type="outcome",
+            schema_version="1.0",
+            logical_identity=invalid["logical_identity"],
+            payload=invalid["payload"],
+            semantic_provenance=invalid["semantic_provenance"],
+        )
+        invalid["payload_sha256"] = payload_sha256(invalid["payload"])
+
+        missing_result = self._archive([missing])
+        invalid_result = self._archive([invalid])
+
+        self.assertEqual(missing_result.status, "rejected")
+        self.assertEqual(missing_result.error_code, "invalid_partition_date")
+        self.assertEqual(invalid_result.status, "rejected")
+        self.assertEqual(invalid_result.error_code, "invalid_partition_date")
+
+
 class OutcomeMaturationTests(_ArchiveRepositoryMixin, _OutcomeMaturationMethods, unittest.TestCase):
+    def test_horizon_proof_uses_frozen_identity_and_direct_payload_fields(self):
+        self._bootstrap()
+        record = _task5_record()
+        first_transport = self._write_transport(_task6_transport_envelopes(record))
+        db_path = self.root / "evidence.db"
+        SQLiteCache(db_path).save_signal_observations((record.observation,))
+
+        result = _task6_mature(
+            repo_dir=self.caller,
+            first_transport_dir=first_transport,
+            evidence_checkout=self.root / "fresh-checkout",
+            outcome_transport_dir=self.root / "outcome-transport",
+            db_path=db_path,
+        )
+
+        proofs = _task6_read_transport_records(result.proof_transport)
+        proof = next(
+            item for item in proofs if item["logical_identity"]["horizon_bars"] == 5
+        )
+        self.assertEqual(
+            proof["logical_identity"],
+            {
+                "horizon_bars": 5,
+                "observation_hash": record.observation.observation_hash,
+                "schema_version": "1.0",
+                "signal_id": record.observation.signal_id,
+            },
+        )
+        self.assertNotIn("horizon_end_date", proof["logical_identity"])
+        payload = proof["payload"]
+        self.assertEqual(
+            {
+                "signal_market_date": payload["signal_market_date"],
+                "horizon_start_date": payload["horizon_start_date"],
+                "horizon_end_date": payload["horizon_end_date"],
+                "horizon_bars": payload["horizon_bars"],
+                "corporate_action_policy": payload["corporate_action_policy"],
+                "corporate_action_provider": payload["corporate_action_provider"],
+                "split_check_status": payload["split_check_status"],
+                "split_event_count": payload["split_event_count"],
+                "price_basis": payload["price_basis"],
+                "raw_price_basis": payload["raw_price_basis"],
+                "signal_price_basis_status": payload["signal_price_basis_status"],
+                "evidence_hashes": payload["evidence_hashes"],
+                "proof_status": payload["proof_status"],
+            },
+            payload,
+        )
+        self.assertNotIn("policy", payload)
+        self.assertNotIn("proof", payload)
+
+    def test_outcome_uses_frozen_identity_and_evidence_provenance(self):
+        self._bootstrap()
+        record = _task5_record()
+        first_transport = self._write_transport(_task6_transport_envelopes(record))
+        db_path = self.root / "evidence.db"
+        SQLiteCache(db_path).save_signal_observations((record.observation,))
+
+        result = _task6_mature(
+            repo_dir=self.caller,
+            first_transport_dir=first_transport,
+            evidence_checkout=self.root / "fresh-checkout",
+            outcome_transport_dir=self.root / "outcome-transport",
+            db_path=db_path,
+        )
+
+        proofs = _task6_read_transport_records(result.proof_transport)
+        proof = next(
+            item for item in proofs if item["logical_identity"]["horizon_bars"] == 5
+        )
+        outcomes = _task6_read_transport_records(result.outcome_transport)
+        outcome = next(
+            item for item in outcomes if item["logical_identity"]["horizon_bars"] == 5
+        )
+        self.assertEqual(
+            outcome["logical_identity"],
+            {
+                "evaluation_policy_version": "1.0",
+                "horizon_bars": 5,
+                "observation_hash": record.observation.observation_hash,
+                "schema_version": "1.0",
+                "signal_id": record.observation.signal_id,
+            },
+        )
+        self.assertNotIn("horizon_end_date", outcome["logical_identity"])
+        self.assertEqual(
+            outcome["semantic_provenance"],
+            {
+                "horizon_proof_shard": proof["canonical_content_sha256"],
+                "market_bar_shards": proof["payload"]["evidence_hashes"][
+                    "market_bar_shards"
+                ],
+            },
+        )
+
+    def test_split_in_horizon_archives_proof_without_outcome(self):
+        self._bootstrap()
+        record = _task5_record()
+        split_event = {
+            "effective_date": "2026-09-03",
+            "split_factor_raw": "2.0000",
+            "split_ratio": {"new_shares": "2", "old_shares": "1"},
+        }
+        envelopes, _ = _task5_stock_envelopes(record, events=[split_event])
+        first_transport = self._write_transport(envelopes)
+        db_path = self.root / "evidence.db"
+        SQLiteCache(db_path).save_signal_observations((record.observation,))
+
+        with patch("advisor.signal_outcome.evaluate_signal_observation") as evaluator:
+            result = _task6_mature(
+                repo_dir=self.caller,
+                first_transport_dir=first_transport,
+                evidence_checkout=self.root / "fresh-checkout",
+                outcome_transport_dir=self.root / "outcome-transport",
+                db_path=db_path,
+            )
+
+        self.assertIsNotNone(result.proof_transport)
+        proofs = _task6_read_transport_records(result.proof_transport)
+        proof = next(
+            item for item in proofs if item["logical_identity"]["horizon_bars"] == 5
+        )
+        self.assertEqual(
+            proof["payload"]["split_check_status"],
+            "split_in_horizon_unavailable",
+        )
+        self.assertEqual(
+            proof["payload"]["proof_status"],
+            "split_in_horizon_unavailable",
+        )
+        self.assertIsNotNone(result.outcome_transport)
+        self.assertEqual(_task6_read_transport_records(result.outcome_transport), [])
+        evaluator.assert_not_called()
+
     def test_first_archive_failure_prevents_maturation_and_second_archive(self):
         record = _task5_record()
         first_transport = self._write_transport(_task6_transport_envelopes(record))

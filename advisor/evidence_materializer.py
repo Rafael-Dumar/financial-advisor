@@ -974,24 +974,12 @@ def _horizon_proof_envelope(
     qualification: HorizonQualification,
 ) -> dict[str, object]:
     logical_identity = {
-        "asset": record.observation.asset,
-        "asset_type": record.observation.asset_type,
         "horizon_bars": horizon,
-        "horizon_end_date": horizon_end_date,
         "observation_hash": record.observation.observation_hash,
         "schema_version": "1.0",
         "signal_id": record.observation.signal_id,
     }
-    payload = {
-        "horizon_bars": horizon,
-        "horizon_end_date": horizon_end_date,
-        "observation_hash": record.observation.observation_hash,
-        "policy": qualification.policy,
-        "proof": qualification.proof,
-        "reason_code": qualification.reason_code,
-        "signal_id": record.observation.signal_id,
-        "status": qualification.status,
-    }
+    payload = dict(qualification.proof or {})
     semantic_provenance = {
         "materializer": "canonical_evidence_materializer_v1",
         "source_observation_hash": record.observation.observation_hash,
@@ -1013,19 +1001,24 @@ def _horizon_proof_envelope(
     }
 
 
-def _outcome_envelope(outcome: Any) -> dict[str, object]:
+def _outcome_envelope(
+    outcome: Any,
+    *,
+    horizon_proof: Mapping[str, object],
+) -> dict[str, object]:
     logical_identity = {
         "evaluation_policy_version": outcome.evaluation_policy_version,
         "horizon_bars": outcome.horizon_bars,
-        "horizon_end_date": outcome.horizon_end_date,
         "observation_hash": outcome.observation_hash,
         "schema_version": outcome.schema_version,
         "signal_id": outcome.signal_id,
     }
     payload = asdict(outcome)
+    proof_payload = horizon_proof["payload"]
+    evidence_hashes = proof_payload["evidence_hashes"]
     semantic_provenance = {
-        "materializer": "canonical_evidence_materializer_v1",
-        "source_observation_hash": outcome.observation_hash,
+        "horizon_proof_shard": horizon_proof["canonical_content_sha256"],
+        "market_bar_shards": evidence_hashes["market_bar_shards"],
     }
     return {
         "canonical_content_sha256": canonical_content_sha256(
@@ -1119,36 +1112,48 @@ def mature_evidence_cycle(
         largest = materializer.largest_continuously_eligible_horizon(
             qualifications=qualifications
         )
-        if largest is None:
+        has_terminal_proof = any(
+            qualification.proof is not None
+            for qualification in qualifications.values()
+        )
+        if largest is None and not has_terminal_proof:
             continue
         series = materializer._forward_market_series(
             symbol=record.observation.asset,
             asset_type=record.observation.asset_type,
         )
+        proof_by_horizon: dict[int, Mapping[str, object]] = {}
+        for horizon in HORIZONS:
+            qualification = qualifications[horizon]
+            if qualification.proof is None:
+                continue
+            proof = _horizon_proof_envelope(
+                record=record,
+                horizon=horizon,
+                horizon_end_date=_horizon_end_date(
+                    observation=record.observation,
+                    series=series,
+                    horizon=horizon,
+                ),
+                qualification=qualification,
+            )
+            proof_envelopes.append(proof)
+            proof_by_horizon[horizon] = proof
+        if largest is None:
+            continue
         evaluation = materializer.evaluate_observation_once(
             observation=record.observation,
             series=series,
             qualifications=qualifications,
         )
-        for horizon in HORIZONS:
-            qualification = qualifications[horizon]
-            if not materializer._is_externally_eligible(qualification) or horizon > largest:
-                continue
-            proof_envelopes.append(
-                _horizon_proof_envelope(
-                    record=record,
-                    horizon=horizon,
-                    horizon_end_date=_horizon_end_date(
-                        observation=record.observation,
-                        series=series,
-                        horizon=horizon,
-                    ),
-                    qualification=qualification,
-                )
-            )
         for outcome in evaluation.outcomes:
+            horizon_proof = proof_by_horizon.get(outcome.horizon_bars)
+            if horizon_proof is None:
+                continue
             outcomes_by_signal.setdefault(outcome.signal_id, []).append(outcome)
-            outcome_envelopes.append(_outcome_envelope(outcome))
+            outcome_envelopes.append(
+                _outcome_envelope(outcome, horizon_proof=horizon_proof)
+            )
 
     if not proof_envelopes and not outcome_envelopes:
         return MaterializationResult(
