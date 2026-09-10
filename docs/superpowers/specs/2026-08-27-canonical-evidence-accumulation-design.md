@@ -293,32 +293,58 @@ e tamanho.
 
 ### 6.3 Canonical packaging boundary
 
-Task 4 permanece collection-only e continua emitindo somente seus formatos
-públicos de transport para market evidence e corporate-action evidence. A
-fronteira operacional é:
+Task 3 permanece responsável pela captura e continua emitindo seu wrapper
+determinístico de observation sidecar. Task 4 permanece collection-only e
+continua emitindo somente seus formatos públicos de transport para market
+evidence e corporate-action evidence. Uma única fronteira fechada aceita
+exatamente estas três famílias:
+
+1. o observation sidecar emitido pelo Task 3;
+2. o market transport emitido pelo Task 4;
+3. o corporate-action transport emitido pelo Task 4.
 
 ```text
-Task 4 transport → advisor/evidence_packager.py
-→ candidate canonical .json.gz shards → EvidenceArchive
+Task 3 observation sidecar ─┐
+Task 4 market transport ────┼→ advisor/evidence_packager.py
+Task 4 corporate transport ┘       → candidate canonical .json.gz shards
+                                   → EvidenceArchive
 ```
 
-O único entrypoint público do packager é:
+O único entrypoint público do packager, para as três famílias, é:
 
 ```python
 from pathlib import Path
 
-def package_task4_transport(
+def package_evidence_transport(
     *, transport_dir: Path, output_dir: Path
 ) -> tuple[Path, ...]:
     """Return the deterministically produced candidate canonical shard paths."""
 ```
 
-`transport_dir` é o diretório que contém os `Path`s retornados por
-`EvidenceCollector.collect_market` e `EvidenceCollector.collect_corporate_actions`;
-`output_dir` é a raiz dos candidatos que pode ser entregue a
+`transport_dir` contém os transportes públicos aprovados: o
+`observations.json.gz` produzido por `build_observation_sidecar`, o
+`market-transport.json` produzido por `EvidenceCollector.collect_market` ou o
+`corporate-actions-transport.json` produzido por
+`EvidenceCollector.collect_corporate_actions`. A entrada deve pertencer a uma
+das três famílias aprovadas; nomes, envelopes ou arquivos desconhecidos são
+rejeitados. `output_dir` é a raiz dos candidatos que pode ser entregue a
 `EvidenceArchive.archive`. O retorno é a lista determinística, ordenada, dos
 paths de shards canônicos produzidos. O packager usa somente os schemas
 canônicos já definidos e não cria novos tipos ou semântica de evidence.
+
+O Task 3 sidecar continua sendo serializado pelo caminho existente como um
+wrapper com `schema_version`, `source_sha`, `run_id`, `report_type` e
+`records`. Para cada `records[i]`, o packager serializa o par já capturado
+`observation + source_binding` no envelope canônico de observation definido em
+`8.1`: o payload é a observation completa sem fields de outcome, a
+`logical_identity` é exatamente `report_type + run_id + schema_version +
+source_sha + symbol`, e a proveniência semântica é composta por
+`binding_contract: "observation_snapshot_binding_v1"` e pelo
+`source_binding` capturado.
+Essa transformação é somente serialização. O packager não reconstrói
+`AssetSnapshot`, não recalcula `snapshot_sha256`, não resolve provider/source,
+não faz rejoin por symbol, não altera `SignalObservation` ou
+`ObservationSourceBinding` e não envia o wrapper bruto diretamente ao archive.
 
 Os shards empacotados são candidatos, nunca authority. Authority só existe
 quando `EvidenceArchive` retorna `status` em `{committed, no_op}` e
@@ -330,9 +356,7 @@ Input malformado, desconhecido ou não suportado é packaging failure e não pod
 expor um conjunto parcial de candidatos como output bem-sucedido: a exposição
 dos shards é atômica. O packager não chama providers, coleta dados, escreve
 SQLite, usa Git, arquiva, qualifica horizons, avalia outcomes, nem cria
-authority. Observation evidence do Task 3 que já esteja no formato canônico
-aceito pelo archive não é reempacotada; esta fronteira existe somente para
-ligar os transportes do Task 4 aos shards canônicos.
+authority. Nenhum output local ou empacotado é authority por si só.
 
 ## 7. Layout e paths da branch
 
@@ -1856,17 +1880,35 @@ budget de corporate action.
 O conjunto mínimo coerente de subcommands será:
 
 ```text
-python -m advisor evidence archive --input-path <transport>
-python -m advisor evidence collect --asset-scope <all|stocks|crypto> --output-dir <dir>
-python -m advisor evidence materialize --evidence-root <dir> --output-dir <dir>
-python -m advisor evidence mature --evidence-root <dir> --output-dir <dir>
+python -m advisor evidence package --transport-dir <transport> --output-dir <dir>
+python -m advisor evidence archive --transport-dir <canonical-transport> --repo-dir <dir>
+python -m advisor evidence collect --assets-file <file> --transport-dir <dir>
+python -m advisor evidence materialize --evidence-checkout <dir> --db <db>
+python -m advisor evidence mature --evidence-checkout <dir> --db <db> --transport-dir <dir>
 ```
 
 `archive` é o único que escreve na branch. `collect` pode usar providers e
-somente produz transportes. `materialize` reconstrói dados e JSON local.
-`mature` chama a 3B.2 e produz proof/outcome transports; não faz push direto.
-SQLite, quando usado pelos dois últimos, é explicitamente output reconstruível,
-nunca input de autoridade.
+somente produz transportes. `package` converte somente as três famílias
+aprovadas de transporte em shards canônicos candidatos; não cria authority.
+`materialize` é uma operação READ-ONLY de inspeção/materialização sobre o
+checkout fornecido pelo caller: não prova durabilidade do archive, não prova
+freshness, não escreve SQLite, não cria outcomes, não arquiva evidence e não
+cria authority. `mature` chama a 3B.2 e produz proof/outcome transports; não
+faz push direto.
+
+O caminho stateful é `mature_evidence_cycle`, que continua impondo:
+
+```text
+first archive durável
+→ fresh canonical checkout
+→ evaluation/materialization
+→ second archive durável
+→ SQLite persistence
+```
+
+SQLite, quando usado por esse caminho stateful, é output reconstruível, nunca
+input de autoridade. Não são adicionados tokens, marker files, certificados de
+durabilidade ou outros mecanismos runtime ao `materialize` standalone.
 
 `advisor/cli.py` não conterá lógica de identidade, Git, split, calendar ou
 outcome. Os comandos emitirão JSON/status compacto e sanitizado; exceptions

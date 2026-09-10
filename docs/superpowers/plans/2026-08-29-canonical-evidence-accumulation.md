@@ -1721,11 +1721,12 @@ binding, but it does not duplicate Task 8's full recovery acceptance.
 ## Task 7 — GitHub Actions permission boundaries and CLI dispatch
 
 Task 7 transports and archives the records-only observation sidecar produced by
-Task 3. Workflow jobs do not receive snapshots_by_symbol and never construct a
-new ObservationSourceBinding; they only hand off the prebuilt O+B artifact to
-the archive/materializer stages in the specified order. Task 4 market and
-corporate-action transport passes through the explicit canonical packaging
-adapter before it reaches the archive; Task 4 remains collection-only.
+Task 3 through the same explicit closed-world packaging boundary used by Task 4.
+Workflow jobs do not receive snapshots_by_symbol and never construct a new
+ObservationSourceBinding; they only hand off the prebuilt O+B artifact to the
+packager and then to the archive/materializer stages in the specified order.
+Task 4 market and corporate-action transport also passes through that single
+packaging adapter before it reaches the archive; Task 4 remains collection-only.
 
 **Reviewer boundary:** A reviewer can approve or reject workflow job boundaries, secrets, concurrency, artifact handoffs, and the unchanged nightly workflow without running GitHub.
 
@@ -1749,17 +1750,24 @@ candidate paths only:
 # advisor/evidence_packager.py
 from pathlib import Path
 
-def package_task4_transport(
+def package_evidence_transport(
     *, transport_dir: Path, output_dir: Path
 ) -> tuple[Path, ...]:
     """Return the deterministically produced candidate canonical shard paths."""
 ```
 
-The returned candidates are not authority until the archive result is
-`status in {"committed", "no_op"}` and `durability_confirmed is True`. The
-CLI and workflow must keep packaging explicit; `EvidenceArchive` does not
-learn Task 4 transport semantics. Task 3 observation evidence already in
-archive-compatible canonical format is passed through without repackaging.
+The one packager recognizes exactly three input families: the Task 3
+`observations.json.gz` sidecar wrapper, Task 4 `market-transport.json`, and
+Task 4 `corporate-actions-transport.json`. It emits only candidate canonical
+shards. For each Task 3 sidecar record it serializes the already captured
+`observation + source_binding` into the frozen canonical observation envelope;
+it does not reconstruct `AssetSnapshot`, recompute `snapshot_sha256`, resolve a
+provider, perform a source rejoin, or mutate either captured object. Unknown
+or malformed input fails closed and exposes no successful partial candidate
+set. The returned candidates are not authority until the archive result is
+`status in {"committed", "no_op"}` and `durability_confirmed is True`. The CLI
+and workflow must keep packaging explicit; `EvidenceArchive` does not learn
+Task 3 or Task 4 transport semantics.
 The operational sequence is `collect → package → first archive → fresh
 canonical read → materialize/mature → second archive → SQLite`; each archive
 must satisfy the same durable `committed`/`no_op` confirmation before the next
@@ -1784,19 +1792,22 @@ The existing `python -m advisor outcomes evaluate --input-path .tmp/forward-inpu
 - [ ] Run RED:
   `.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.WorkflowContractTests.test_archive_job_has_contents_write_and_no_provider_secrets`
   Expected failure: `FileNotFoundError` for `.github/workflows/financial-advisor-evidence.yml`.
-- [ ] Implement `advisor/evidence_packager.py` as the sole adapter from the two public Task 4 transport formats to candidate canonical `.json.gz` shards. It must fail closed and atomically expose candidates; it does not call providers, Git, SQLite, `EvidenceArchive`, qualification, or evaluation. Do not hide packaging inside `EvidenceArchive`.
-- [ ] Implement report-job sidecar upload with `contents: read` and only the existing provider secrets. The archive job consumes the uploaded transport, has `contents: write`, and receives no provider secrets. The collector job has `contents: read` plus provider secrets and emits Task 4 transport only. The publish/mature job has `contents: write`, receives no provider secrets, explicitly runs `collect → package → archive → materialize → mature`, performs the first archive on packaged candidates, does a fresh read, and performs the second archive for proof/outcome transport.
+- [ ] Implement `advisor/evidence_packager.py` as the sole closed-world adapter from the three approved transport families to candidate canonical `.json.gz` shards. It must fail closed and atomically expose candidates; it does not call providers, Git, SQLite, `EvidenceArchive`, qualification, or evaluation. Do not hide packaging inside `EvidenceArchive`.
+- [ ] Implement report-job sidecar upload with `contents: read` and only the existing provider secrets. The archive-observation job packages the uploaded sidecar before archiving and has `contents: write`; it receives no provider secrets. The collector job has `contents: read` plus provider secrets and emits Task 4 transport only. The archive and publish/mature jobs archive only packaged canonical directories, explicitly run `collect/report → package → archive → fresh canonical read → materialize/mature`, perform the first archive on packaged candidates, and perform the second archive for proof/outcome transport.
 - [ ] Make the collector job check out `advisor-evidence` read-only, call `oldest_canonical_provider_by_symbol` for the typed assets from `.tmp/evidence-assets.json`, and pass that mapping into `EvidenceCollector.collect_market`. The YAML supplies paths and credentials only; provider assignment, asset typing, session rules, and error statuses remain in Python.
 - [ ] Set concurrency group exactly `advisor-evidence-writer` with `cancel-in-progress: false`. Make artifact names, paths, and job outputs explicit; do not pass provider response data through writer environment variables. Preserve the existing report invocations and report fallback behavior.
-- [ ] Add the explicit `evidence package` CLI parser delegating to `package_task4_transport`; return nonzero for packaging failure, `evidence_branch_missing`, archive rejection, validation failure, materialization failure, and first-archive failure. Keep `financial-advisor-nightly-review.yml` byte/scope unchanged and prove it does not consume runtime/evidence artifacts.
+- [ ] Add the explicit `evidence package` CLI parser delegating to `package_evidence_transport`; return nonzero for packaging failure, `evidence_branch_missing`, archive rejection, validation failure, materialization failure, and first-archive failure. Keep `financial-advisor-nightly-review.yml` byte/scope unchanged and prove it does not consume runtime/evidence artifacts.
+- [ ] Add exactly one load-bearing packaging test, `PackagingTests.test_task3_observation_sidecar_is_packaged_and_recoverable_by_real_archive`. Produce the sidecar by invoking the existing Task 3 path (`cli_module._build_signal_observation_records` followed by `build_observation_sidecar`), pass that real `observations.json.gz` through `package_evidence_transport`, and archive the resulting canonical observation shard with a real `EvidenceArchive` against a temporary Git fixture. Require `status in {"committed", "no_op"}`, `durability_confirmed is True`, and recovery through the canonical reader to produce the same `SignalObservation` and `ObservationSourceBinding` values and hashes as the prebuilt Task 3 record. Do not reconstruct a snapshot, recompute its digest, perform a provider lookup, or add a mutation matrix.
+- [ ] Preserve the five existing packaging properties—market acceptance, corporate-action acceptance, determinism, fail-closed packaging, and collect/package/archive integration—and update them to call `package_evidence_transport`.
+- [ ] Document and test that standalone `evidence materialize` is read-only inspection over the caller-supplied checkout: it does not prove archive durability or freshness and does not write SQLite, outcomes, archives, or authority. Keep `mature_evidence_cycle` as the stateful path enforcing first durable archive → fresh canonical checkout → materialization/evaluation → second durable archive → SQLite.
 - [ ] Propagate every failed packaging, archive, or materialization step as a visibly failed run or the exact frozen unavailable state; never continue as success after a failed step.
 - [ ] Run targeted workflow and CLI tests:
-  `.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.WorkflowContractTests`
+  `.\.venv\Scripts\python.exe -m unittest tests.test_evidence_accumulation.PackagingTests tests.test_evidence_accumulation.WorkflowContractTests`
 - [ ] Run existing workflow/automation regressions:
   `.\.venv\Scripts\python.exe -m unittest tests.test_github_actions_workflow tests.test_automation_scripts`
 - [ ] Commit the task result as `ci: separate evidence collection and publication permissions` after exact workflow scope inspection.
 
-**Acceptance:** Provider secrets exist only in report/collector jobs; write permissions exist only in archive/publish jobs; publish/mature has no provider secrets; writer concurrency is non-cancelling; the nightly workflow is unchanged; Task 4 transport is explicitly packaged before archive; package/archive/materialization failures are visible and nonzero or the exact frozen unavailable state; candidates never become authority before durable archive confirmation; CLI errors are explicit and nonzero.
+**Acceptance:** Provider secrets exist only in report/collector jobs; write permissions exist only in archive/publish jobs; publish/mature has no provider secrets; writer concurrency is non-cancelling; the nightly workflow is unchanged; exactly the three approved transport families—including the Task 3 sidecar wrapper—are explicitly packaged before archive and the raw observation wrapper is never sent directly to `EvidenceArchive`; package/archive/materialization failures are visible and nonzero or the exact frozen unavailable state; candidates never become authority before durable archive confirmation; standalone `materialize` is read-only and ungated, while `mature_evidence_cycle` enforces the durable first-archive/fresh-read/second-archive sequence; CLI errors are explicit and nonzero.
 
 ## Task 8 — Recovery acceptance, security properties, and registered mutations
 
