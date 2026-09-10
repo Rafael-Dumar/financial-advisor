@@ -144,7 +144,7 @@ jobs:
         with:
           path: .tmp/report-artifacts
 
-      - name: Archive observation sidecar
+      - name: Package observation sidecar
         shell: bash
         run: |
           sidecar="$(find .tmp/report-artifacts -type f -path '*/reports/evidence/observations.json.gz' -print -quit)"
@@ -152,4 +152,11 @@ jobs:
             echo "observation_sidecar_unavailable"
             false
           fi
-          python -m advisor evidence archive --transport-dir "$(dirname "$sidecar")" --repo-dir .
+          mkdir -p .tmp/observation-transport
+          cp "$sidecar" .tmp/observation-transport/observations.json.gz
+          python -m advisor evidence package --transport-dir .tmp/observation-transport --output-dir .tmp/observation-canonical-transport
+
+      - name: Archive packaged observation sidecar
+        shell: bash
+        run: |
+          python -m advisor evidence archive --transport-dir .tmp/observation-canonical-transport --repo-dir .

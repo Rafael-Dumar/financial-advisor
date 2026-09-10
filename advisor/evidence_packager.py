@@ -13,6 +13,7 @@ import tempfile
 from advisor.evidence_schema import (
     canonical_content_sha256,
     canonical_json_bytes,
+    decompress_single_member_gzip,
     deterministic_gzip,
     payload_sha256,
     strict_json_loads_bytes,
@@ -20,17 +21,84 @@ from advisor.evidence_schema import (
 )
 
 
-__all__ = ("package_task4_transport",)
+__all__ = ("package_evidence_transport",)
 
 _SCHEMA_VERSION = "1.0"
+_OBSERVATION_TRANSPORT = "observations.json.gz"
 _MARKET_TRANSPORT = "market-transport.json"
 _CORPORATE_TRANSPORT = "corporate-actions-transport.json"
-_TRANSPORT_NAMES = frozenset({_MARKET_TRANSPORT, _CORPORATE_TRANSPORT})
+_TRANSPORT_NAMES = frozenset(
+    {_OBSERVATION_TRANSPORT, _MARKET_TRANSPORT, _CORPORATE_TRANSPORT}
+)
 _ASSET_TYPES = frozenset({"stock", "etf", "crypto"})
 _MARKET_PROVIDERS = frozenset({"fmp", "binance", "hyperliquid"})
 _DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_SOURCE_SHA_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SYMBOL_RE = re.compile(r"^[A-Z0-9.-]{1,12}$")
+_OBSERVATION_FIELDS = frozenset(
+    {
+        "signal_id",
+        "schema_version",
+        "source_sha",
+        "run_id",
+        "run_origin",
+        "report_date_brt",
+        "report_type",
+        "signal_timestamp_utc",
+        "asset",
+        "asset_type",
+        "universe_origin",
+        "market_session",
+        "market_timezone",
+        "decision_label",
+        "bucket",
+        "investment_quality_score",
+        "swing_trade_score",
+        "decision_confidence_score",
+        "data_quality_score",
+        "expected_value_r",
+        "backtest_sample_size",
+        "sample_quality",
+        "data_quality",
+        "missing_data_severity",
+        "ideal_entry",
+        "alternative_entry",
+        "entry_semantics",
+        "alternative_entry_semantics",
+        "stop",
+        "target_2r",
+        "target_3r",
+        "per_unit_risk",
+        "risk_amount",
+        "risk_fraction",
+        "max_position_units",
+        "max_position_value",
+        "reason_codes",
+        "data_source",
+        "data_timestamp",
+        "last_price_timestamp",
+        "provider",
+        "is_stale",
+        "stock_regime",
+        "crypto_regime",
+        "relative_strength_vs_spy",
+        "relative_strength_vs_qqq",
+        "relative_strength_vs_sector",
+        "sector_benchmark",
+        "evaluation_role",
+        "provenance_json",
+        "observation_hash",
+        "persisted_at_utc",
+    }
+)
+_SOURCE_BINDING_FIELDS = frozenset(
+    {"signal_id", "observation_hash", "snapshot_sha256", "price_basis_claim"}
+)
+_PRICE_BASIS_CLAIM_FIELDS = frozenset(
+    {"price_basis", "price_basis_policy_version", "source_contract"}
+)
 _MARKET_BASE_KEYS = frozenset(
     {
         "asset_type",
@@ -152,6 +220,118 @@ def _transport_records(path: Path) -> list[Mapping[str, object]]:
     if any(not isinstance(record, Mapping) for record in records):
         _fail("transport_validation_failed")
     return [record for record in records if isinstance(record, Mapping)]
+
+
+def _source_sha(value: object, error_code: str) -> str:
+    value = _string(value, error_code)
+    if _SOURCE_SHA_RE.fullmatch(value) is None:
+        _fail(error_code)
+    return value
+
+
+def _observation_sidecar(path: Path) -> list[dict[str, object]]:
+    try:
+        raw = decompress_single_member_gzip(
+            path.read_bytes(),
+            max_uncompressed_bytes=100 * 1024 * 1024,
+        )
+        parsed = strict_json_loads_bytes(raw)
+    except (OSError, TypeError, UnicodeError, ValueError) as error:
+        raise _PackagingError("invalid_observation_sidecar") from error
+
+    sidecar = _mapping(parsed, "invalid_observation_sidecar")
+    required = {"schema_version", "source_sha", "run_id", "report_type", "records"}
+    if set(sidecar) != required:
+        _fail("invalid_observation_sidecar")
+    if sidecar.get("schema_version") != _SCHEMA_VERSION:
+        _fail("unsupported_observation_sidecar")
+    source_sha = _source_sha(sidecar.get("source_sha"), "invalid_observation_sidecar")
+    run_id = _string(sidecar.get("run_id"), "invalid_observation_sidecar")
+    if _RUN_ID_RE.fullmatch(run_id) is None:
+        _fail("invalid_observation_sidecar")
+    report_type = _string(sidecar.get("report_type"), "invalid_observation_sidecar")
+    if report_type not in {"main", "close"}:
+        _fail("unsupported_observation_sidecar")
+    records = sidecar.get("records")
+    if not isinstance(records, list) or not records:
+        _fail("invalid_observation_sidecar")
+
+    envelopes: list[dict[str, object]] = []
+    identities: set[tuple[str, str]] = set()
+    for raw_record in records:
+        record = _mapping(raw_record, "invalid_observation_sidecar")
+        if set(record) != {"observation", "source_binding"}:
+            _fail("invalid_observation_sidecar")
+        observation = dict(
+            _mapping(record.get("observation"), "invalid_observation_sidecar")
+        )
+        binding = dict(
+            _mapping(record.get("source_binding"), "invalid_observation_sidecar")
+        )
+        if set(observation) != _OBSERVATION_FIELDS or set(binding) != _SOURCE_BINDING_FIELDS:
+            _fail("invalid_observation_sidecar")
+        if any(
+            observation.get(key) != sidecar.get(key)
+            for key in ("schema_version", "source_sha", "run_id", "report_type")
+        ):
+            _fail("invalid_observation_sidecar")
+        if observation.get("asset_type") not in {"stock", "crypto"}:
+            _fail("unsupported_observation_sidecar")
+        _symbol(observation.get("asset"), "invalid_observation_sidecar")
+        _sha256(observation.get("signal_id"), "invalid_observation_sidecar")
+        observation_hash = _sha256(
+            observation.get("observation_hash"), "invalid_observation_sidecar"
+        )
+        if observation.get("persisted_at_utc") is not None:
+            _fail("invalid_observation_sidecar")
+        reason_codes = observation.get("reason_codes")
+        if not isinstance(reason_codes, list) or any(
+            not isinstance(code, str) for code in reason_codes
+        ):
+            _fail("invalid_observation_sidecar")
+
+        if binding.get("signal_id") != observation.get("signal_id"):
+            _fail("invalid_observation_sidecar")
+        if binding.get("observation_hash") != observation_hash:
+            _fail("invalid_observation_sidecar")
+        _sha256(binding.get("snapshot_sha256"), "invalid_observation_sidecar")
+        claim = binding.get("price_basis_claim")
+        if claim is not None:
+            claim_mapping = _mapping(claim, "invalid_observation_sidecar")
+            if set(claim_mapping) != _PRICE_BASIS_CLAIM_FIELDS or any(
+                not isinstance(claim_mapping.get(key), str)
+                for key in _PRICE_BASIS_CLAIM_FIELDS
+            ):
+                _fail("invalid_observation_sidecar")
+
+        identity = {
+            "report_type": report_type,
+            "run_id": run_id,
+            "schema_version": _SCHEMA_VERSION,
+            "source_sha": source_sha,
+            "symbol": observation["asset"],
+        }
+        expected_signal_id = hashlib.sha256(canonical_json_bytes(identity)).hexdigest()
+        if observation["signal_id"] != expected_signal_id:
+            _fail("invalid_observation_sidecar")
+        record_identity = (str(observation["signal_id"]), observation_hash)
+        if record_identity in identities:
+            _fail("duplicate_observation_sidecar_record")
+        identities.add(record_identity)
+
+        semantic_provenance = {
+            "binding_contract": "observation_snapshot_binding_v1",
+            "source_binding": binding,
+        }
+        envelopes.append(
+            _canonical_envelope(
+                "observation",
+                identity,
+                observation,
+                semantic_provenance,
+            )
+        )
+    return envelopes
 
 
 def _coverage_window(value: object, error_code: str) -> tuple[str, str]:
@@ -436,7 +616,11 @@ def _canonical_envelope(
 def _candidate_path(envelope: Mapping[str, object]) -> Path:
     evidence_type = envelope.get("evidence_type")
     identity = _mapping(envelope.get("logical_identity"), "invalid_canonical_shard")
-    if evidence_type == "market_bar":
+    if evidence_type == "observation":
+        payload = _mapping(envelope.get("payload"), "invalid_canonical_shard")
+        directory = "observations"
+        partition = _date_string(payload.get("report_date_brt"), "invalid_canonical_shard")
+    elif evidence_type == "market_bar":
         directory = "market-bars"
         partition = _date_string(identity.get("market_date"), "invalid_canonical_shard")
     elif evidence_type == "corporate_action":
@@ -498,24 +682,31 @@ def _publish_candidates(output_dir: Path, candidates: Mapping[Path, bytes]) -> t
     return tuple(sorted(candidates, key=lambda path: path.as_posix()))
 
 
-def package_task4_transport(
+def package_evidence_transport(
     *,
     transport_dir: Path,
     output_dir: Path,
 ) -> tuple[Path, ...]:
-    """Package Task 4 transport into deterministic candidate canonical shards."""
+    """Package approved transport into deterministic candidate canonical shards."""
     files = _transport_files(transport_dir)
     candidates: dict[Path, bytes] = {}
     for name in sorted(files):
-        records = _transport_records(files[name])
-        envelope_factory = (
-            _market_envelopes if name == _MARKET_TRANSPORT else _corporate_envelopes
-        )
-        for record in records:
-            for envelope in envelope_factory(record):
-                relative_path = _candidate_path(envelope)
-                compressed = deterministic_gzip(canonical_json_bytes(envelope))
-                if relative_path in candidates:
-                    _fail("duplicate_candidate_shard")
-                candidates[relative_path] = compressed
+        if name == _OBSERVATION_TRANSPORT:
+            envelopes = _observation_sidecar(files[name])
+        else:
+            records = _transport_records(files[name])
+            envelope_factory = (
+                _market_envelopes if name == _MARKET_TRANSPORT else _corporate_envelopes
+            )
+            envelopes = [
+                envelope
+                for record in records
+                for envelope in envelope_factory(record)
+            ]
+        for envelope in envelopes:
+            relative_path = _candidate_path(envelope)
+            compressed = deterministic_gzip(canonical_json_bytes(envelope))
+            if relative_path in candidates:
+                _fail("duplicate_candidate_shard")
+            candidates[relative_path] = compressed
     return _publish_candidates(output_dir, candidates)

@@ -19,7 +19,7 @@ from advisor.cache import SQLiteCache
 from advisor.config import AdvisorConfig
 from advisor.evidence_archive import EvidenceArchive, oldest_canonical_provider_by_symbol
 from advisor.evidence_collector import CollectionAsset, EvidenceCollector
-from advisor.evidence_packager import package_task4_transport
+from advisor.evidence_packager import package_evidence_transport
 from advisor.evidence_materializer import (
     EvidenceMaterializer,
     MaterializationError,
@@ -651,7 +651,7 @@ def _evidence_collect(args: argparse.Namespace) -> int:
 
 def _evidence_package(args: argparse.Namespace) -> int:
     try:
-        candidate_paths = package_task4_transport(
+        candidate_paths = package_evidence_transport(
             transport_dir=args.transport_dir,
             output_dir=args.output_dir,
         )

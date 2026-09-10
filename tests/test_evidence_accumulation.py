@@ -2987,14 +2987,76 @@ class PackagingTests(_ArchiveRepositoryMixin, unittest.TestCase):
     @staticmethod
     def _package(transport_dir: Path, output_dir: Path) -> tuple[Path, ...]:
         try:
-            from advisor.evidence_packager import package_task4_transport
+            from advisor.evidence_packager import package_evidence_transport
         except ModuleNotFoundError as error:
             raise AssertionError(
                 "advisor.evidence_packager is not implemented"
             ) from error
-        return package_task4_transport(
+        return package_evidence_transport(
             transport_dir=transport_dir,
             output_dir=output_dir,
+        )
+
+    def test_task3_observation_sidecar_is_packaged_and_recoverable_by_real_archive(self):
+        snapshot = _task3_projection_snapshot()
+        record = cli_module._build_signal_observation_records(
+            [_task3_decision(snapshot)],
+            snapshots_by_symbol={snapshot.symbol: snapshot},
+            stock_regime="bull",
+            crypto_regime="neutral",
+            run_metadata=_task3_run_metadata(),
+        )[0]
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            sidecar_dir = root / "sidecar"
+            sidecar_path = sidecar_dir / "observations.json.gz"
+            build_observation_sidecar(records=[record], output_path=sidecar_path)
+
+            self._bootstrap()
+            raw_result = EvidenceArchive(
+                repo_dir=self.caller,
+                branch_name=self.branch_name,
+            ).archive(sidecar_dir)
+            self.assertEqual(raw_result.status, "rejected")
+            self.assertEqual(raw_result.error_code, "invalid_transport_shard")
+            self.assertFalse(raw_result.durability_confirmed)
+
+            from advisor.evidence_packager import package_evidence_transport
+
+            candidate_dir = root / "canonical-candidates"
+            candidate_paths = package_evidence_transport(
+                transport_dir=sidecar_dir,
+                output_dir=candidate_dir,
+            )
+            self.assertEqual(len(candidate_paths), 1)
+            self.assertEqual(candidate_paths[0].suffixes, [".json", ".gz"])
+
+            result = EvidenceArchive(
+                repo_dir=self.caller,
+                branch_name=self.branch_name,
+            ).archive(candidate_dir)
+            self.assertIn(result.status, {"committed", "no_op"})
+            self.assertTrue(result.durability_confirmed)
+
+            checkout = self._clone_branch(root / "fresh-checkout")
+            recovered = EvidenceMaterializer(
+                evidence_checkout=checkout,
+                db_path=root / "evidence.db",
+            ).read_observation_evidence_record(
+                signal_id=record.observation.signal_id,
+                observation_hash=record.observation.observation_hash,
+            )
+
+        self.assertEqual(recovered.observation, record.observation)
+        self.assertEqual(recovered.source_binding, record.source_binding)
+        self.assertEqual(
+            recovered.observation.observation_hash,
+            record.observation.observation_hash,
+        )
+        self.assertEqual(
+            recovered.source_binding.snapshot_sha256,
+            record.source_binding.snapshot_sha256,
         )
 
     def test_market_transport_is_accepted_by_real_archive(self):
@@ -4651,7 +4713,7 @@ class WorkflowContractTests(unittest.TestCase):
             package_transport = Path(".tmp/evidence-transport")
             package_output = Path(".tmp/evidence-canonical-transport")
             with patch(
-                "advisor.cli.package_task4_transport",
+                "advisor.cli.package_evidence_transport",
                 return_value=(Path("evidence/market-bars/example.json.gz"),),
             ) as package:
                 output = StringIO()
@@ -4675,7 +4737,7 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertIn('"status":"ok"', output.getvalue())
 
             with patch(
-                "advisor.cli.package_task4_transport",
+                "advisor.cli.package_evidence_transport",
                 side_effect=ValueError("secret transport details"),
             ):
                 output = StringIO()
