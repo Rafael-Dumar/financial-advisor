@@ -2735,6 +2735,18 @@ def _market_envelope(
     }
 
 
+def _large_market_envelopes(count: int = 500) -> list[dict[str, object]]:
+    start = date(2025, 1, 1)
+    return [
+        _market_envelope(
+            symbol="AAPL",
+            market_date=(start + timedelta(days=index)).isoformat(),
+            close=100.0 + index,
+        )
+        for index in range(count)
+    ]
+
+
 def _corporate_action_envelope(
     *,
     symbol: str = "AAPL",
@@ -3873,6 +3885,146 @@ class ArchiveGitTests(_ArchiveRepositoryMixin, unittest.TestCase):
         self.assertEqual(self._remote_tree(), before_tree)
         self.assertFalse(any(path.startswith("evidence/manifests/") for path in self._remote_tree()))
         self.assertFalse(any(path.startswith("evidence/market-bars/") for path in self._remote_tree()))
+
+    def test_large_canonical_archive_batches_windows_safe_git_add_commands(self):
+        self._bootstrap()
+        before_count = self._remote_commit_count()
+        transport = self._write_transport(_large_market_envelopes())
+        incoming = evidence_archive_module._read_transport(transport)
+        batch_identity = evidence_archive_module._batch_identity(incoming)
+        manifest_path, _, _ = evidence_archive_module._manifest_for_batch(
+            shards=incoming,
+            batch_identity=batch_identity,
+        )
+        intended_paths = sorted([shard.path for shard in incoming] + [manifest_path])
+        command_budget = 24_000
+        self.assertGreater(
+            len(subprocess.list2cmdline(["git", "add", "--", *intended_paths])),
+            command_budget,
+        )
+
+        original_run_git = evidence_archive_module._run_git
+        add_commands: list[tuple[str, ...]] = []
+
+        def record_add(cwd, *args, **kwargs):
+            if args[:2] == ("add", "--"):
+                add_commands.append(tuple(args[2:]))
+            return original_run_git(cwd, *args, **kwargs)
+
+        with patch.object(evidence_archive_module, "_run_git", side_effect=record_add):
+            result = EvidenceArchive(
+                repo_dir=self.caller,
+                branch_name=self.branch_name,
+            ).archive(transport)
+
+        self.assertEqual(result.status, "committed")
+        self.assertTrue(result.durability_confirmed)
+        self.assertEqual(result.committed_paths, tuple(intended_paths))
+        self.assertEqual(self._remote_commit_count(), before_count + 1)
+        self.assertGreater(len(add_commands), 1)
+        self.assertTrue(
+            all(
+                len(subprocess.list2cmdline(["git", "add", "--", *paths]))
+                <= command_budget
+                for paths in add_commands
+            )
+        )
+        self.assertEqual(
+            set(self._remote_tree()),
+            {"evidence/branch-schema.json", *intended_paths},
+        )
+
+    def test_git_add_batching_preserves_deterministic_explicit_path_set(self):
+        start = date(2025, 1, 1)
+        intended_paths = [
+            (
+                "evidence/market-bars/"
+                f"{(start + timedelta(days=index)).year:04d}/"
+                f"{(start + timedelta(days=index)).month:02d}/"
+                f"{(start + timedelta(days=index)).day:02d}/"
+                f"{hashlib.sha256(f'AAPL-{index}'.encode()).hexdigest()}.json.gz"
+            )
+            for index in range(500)
+        ]
+        input_paths = list(reversed(intended_paths)) + [intended_paths[0], intended_paths[-1]]
+        expected_paths = sorted(set(input_paths))
+        commit_sha = "c" * 40
+        add_commands: list[tuple[str, ...]] = []
+
+        def fake_run_git(cwd, *args, **kwargs):
+            if args[:2] == ("add", "--"):
+                add_commands.append(tuple(args[2:]))
+            if args[0] == "rev-parse":
+                return subprocess.CompletedProcess(
+                    ["git", *args], 0, stdout=f"{commit_sha}\n".encode(), stderr=b""
+                )
+            if args[0] == "ls-remote":
+                return subprocess.CompletedProcess(
+                    ["git", *args],
+                    0,
+                    stdout=f"{commit_sha}\trefs/heads/{self.branch_name}\n".encode(),
+                    stderr=b"",
+                )
+            return subprocess.CompletedProcess(
+                ["git", *args], 0, stdout=b"", stderr=b""
+            )
+
+        with patch.object(evidence_archive_module, "_run_git", side_effect=fake_run_git):
+            committed, error_code = evidence_archive_module._push_commit(
+                self.caller,
+                self.branch_name,
+                input_paths,
+            )
+
+        flattened_paths = [path for batch in add_commands for path in batch]
+        self.assertTrue(committed)
+        self.assertEqual(error_code, commit_sha)
+        self.assertGreater(len(add_commands), 1)
+        self.assertEqual(flattened_paths, expected_paths)
+        self.assertEqual(
+            {path: flattened_paths.count(path) for path in expected_paths},
+            {path: 1 for path in expected_paths},
+        )
+        self.assertTrue(
+            all(
+                len(subprocess.list2cmdline(["git", "add", "--", *batch])) <= 24_000
+                for batch in add_commands
+            )
+        )
+
+    def test_git_add_batch_failure_fails_closed_without_remote_authority(self):
+        self._bootstrap()
+        before_sha = _run_git(self.remote, "rev-parse", self.branch_name).stdout.strip()
+        before_tree = self._remote_tree()
+        before_count = self._remote_commit_count()
+        transport = self._write_transport(_large_market_envelopes())
+        original_run_git = evidence_archive_module._run_git
+        add_batches: list[tuple[str, ...]] = []
+
+        def fail_second_add(cwd, *args, **kwargs):
+            if args[:2] == ("add", "--"):
+                add_batches.append(tuple(args[2:]))
+                if len(add_batches) == 2:
+                    raise evidence_archive_module._ArchiveError("git_error")
+            return original_run_git(cwd, *args, **kwargs)
+
+        with patch.object(
+            evidence_archive_module,
+            "_run_git",
+            side_effect=fail_second_add,
+        ):
+            result = EvidenceArchive(
+                repo_dir=self.caller,
+                branch_name=self.branch_name,
+            ).archive(transport)
+
+        self.assertGreaterEqual(len(add_batches), 2)
+        self.assertEqual(result.status, "rejected")
+        self.assertEqual(result.error_code, "storage_error")
+        self.assertFalse(result.durability_confirmed)
+        self.assertEqual(_run_git(self.remote, "rev-parse", self.branch_name).stdout.strip(), before_sha)
+        self.assertEqual(self._remote_tree(), before_tree)
+        self.assertEqual(self._remote_commit_count(), before_count)
 
     def test_storage_failure_is_not_retried_or_reported_as_push_race_exhausted(
         self,

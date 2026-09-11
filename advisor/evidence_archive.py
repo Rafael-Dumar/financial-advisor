@@ -31,6 +31,7 @@ _SCHEMA_VERSION = "1.0"
 _MAX_COMPRESSED_BYTES = 25 * 1024 * 1024
 _MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
 _MAX_BATCH_UNCOMPRESSED_BYTES = 500 * 1024 * 1024
+_MAX_GIT_ADD_COMMAND_CHARS = 24_000
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 _BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
@@ -1230,12 +1231,37 @@ def _clone_branch(origin: str, branch_name: str, parent: Path) -> Path:
     return clone
 
 
+def _git_add_batches(paths: Sequence[str]) -> tuple[tuple[str, ...], ...]:
+    unique_paths = sorted(set(paths))
+    if not unique_paths:
+        raise _ArchiveError("empty_commit")
+
+    batches: list[tuple[str, ...]] = []
+    current: list[str] = []
+    for path in unique_paths:
+        single_path_argv = ["git", "add", "--", path]
+        if len(subprocess.list2cmdline(single_path_argv)) > _MAX_GIT_ADD_COMMAND_CHARS:
+            raise _ArchiveError("storage_error")
+        candidate = [*current, path]
+        if current and len(
+            subprocess.list2cmdline(["git", "add", "--", *candidate])
+        ) > _MAX_GIT_ADD_COMMAND_CHARS:
+            batches.append(tuple(current))
+            current = [path]
+        else:
+            current = candidate
+    if current:
+        batches.append(tuple(current))
+    return tuple(batches)
+
+
 def _push_commit(clone: Path, branch_name: str, paths: Sequence[str]) -> tuple[bool, str]:
     unique_paths = sorted(set(paths))
     if not unique_paths:
         raise _ArchiveError("empty_commit")
     try:
-        _run_git(clone, "add", "--", *unique_paths)
+        for batch in _git_add_batches(unique_paths):
+            _run_git(clone, "add", "--", *batch)
     except _ArchiveError as exc:
         raise _ArchiveError("storage_error") from exc
     committed = _run_git(
