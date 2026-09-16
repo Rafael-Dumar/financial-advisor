@@ -796,6 +796,53 @@ class ScoringCharacterizationTests(unittest.TestCase):
         self.assertTrue(sample_events[0].matched)
         self.assertTrue(sample_events[0].terminated)
 
+    def test_backtest_short_circuit_sentinels_preserve_unevaluated_conditions(self) -> None:
+        from advisor.runtime_scoring_observability import ObservationContext
+        from advisor.scoring import classify_asset_with_trace
+
+        cases = (
+            ("below_35", 0.34, 0.55, {}),
+            ("below_40", 0.37, 0.55, {"classify_asset.win_rate_below_40": True}),
+            (
+                "below_45_nonpositive_ev",
+                0.42,
+                0.0,
+                {
+                    "classify_asset.win_rate_below_40": False,
+                    "classify_asset.win_rate_below_45_nonpositive_ev": True,
+                },
+            ),
+        )
+        sentinel_rule_ids = {
+            "classify_asset.win_rate_below_40",
+            "classify_asset.win_rate_below_45_nonpositive_ev",
+            "classify_asset.nonpositive_ev",
+        }
+
+        for name, win_rate, expected_value, expected_events in cases:
+            with self.subTest(case=name):
+                scored = _base_scored(f"BACKTEST_{name}")
+                stats = _stats(win_rate_2r=win_rate, expected_value_r=expected_value)
+                expected = classify_asset(scored, stats, effective_now_utc=FIXED_NOW_UTC)
+                context = ObservationContext.create_enabled(FIXED_NOW_UTC)
+
+                observed, trace = classify_asset_with_trace(
+                    scored,
+                    stats,
+                    effective_now_utc=FIXED_NOW_UTC,
+                    observation_context=context,
+                )
+
+                self.assertEqual(expected, observed)
+                events_by_rule = {event.rule_id: event for event in trace.events}
+                for rule_id in sentinel_rule_ids:
+                    event = events_by_rule.get(rule_id)
+                    if rule_id in expected_events:
+                        self.assertIsNotNone(event)
+                        self.assertEqual(event.matched, expected_events[rule_id])
+                    else:
+                        self.assertNotIn(rule_id, events_by_rule)
+
     def test_decision_state_deltas_are_lossless_and_noop_is_explicit(self) -> None:
         from advisor.scoring import classify_asset_with_trace
 

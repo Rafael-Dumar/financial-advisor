@@ -672,7 +672,7 @@ def _classify_asset_observed(
             _finish_token(backtest_branch_token, observation_context)
         win_rate = backtest_stats.win_rate_2r
         ev = backtest_stats.expected_value_r
-        win_rate_low_token = None
+        win_rate_low_token = win_rate_below_40_matched = win_rate_below_45_nonpositive_ev_matched = nonpositive_ev_matched = None
         win_rate_low_matched = bool(win_rate < 0.35)
         if observation_context is not None:
             win_rate_low_token = _observe(
