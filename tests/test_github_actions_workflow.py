@@ -136,11 +136,12 @@ class GitHubActionsWorkflowTests(unittest.TestCase):
     def test_runtime_absence_is_not_a_workflow_gate(self) -> None:
         workflow_path = PROJECT_ROOT / ".github" / "workflows" / "financial-advisor-reports.yml"
         content = workflow_path.read_text(encoding="utf-8").lower()
+        report_job = content.split("\n  archive-observation:", 1)[0]
 
         self.assertNotIn("reports/runtime", content)
         self.assertNotIn("artifact_status", content)
-        self.assertNotIn("exit 1", content)
-        self.assertNotRegex(content, r"\b(?:partial|failed)\b")
+        self.assertNotIn("exit 1", report_job)
+        self.assertNotRegex(report_job, r"\b(?:partial|failed)\b")
 
     def test_scheduled_report_type_selection_is_explicit(self) -> None:
         workflow_path = PROJECT_ROOT / ".github" / "workflows" / "financial-advisor-reports.yml"

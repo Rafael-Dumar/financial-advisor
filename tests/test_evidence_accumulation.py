@@ -4621,6 +4621,16 @@ class WorkflowContractTests(unittest.TestCase):
                 break
         return "\n".join(lines[start:end])
 
+    @classmethod
+    def _step_block(cls, content: str, job_name: str, step_name: str) -> str:
+        job = cls._job_block(content, job_name)
+        marker = f"      - name: {step_name}"
+        start = job.index(marker)
+        end = job.find("\n      - name:", start + len(marker))
+        if end == -1:
+            return job[start:]
+        return job[start:end]
+
     def test_reports_job_has_contents_read_and_provider_secrets_only(self):
         content = self.reports_workflow.read_text(encoding="utf-8")
         report_job = self._job_block(content, "report")
@@ -4634,9 +4644,59 @@ class WorkflowContractTests(unittest.TestCase):
             "COINBASE_API_KEY",
         ):
             self.assertIn(f"{secret_name}: ${{{{ secrets.{secret_name} }}}}", report_job)
-        self.assertIn("reports/evidence/observations.json.gz", content)
+        self.assertIn("*/evidence/observations.json.gz", content)
+        self.assertNotIn("*/reports/evidence/observations.json.gz", content)
         self.assertIn("uses: actions/upload-artifact@v4", content)
         self.assertIn("path: reports/", content)
+
+    def test_canonical_writer_commands_propagate_checkout_auth_to_child_git(self):
+        auth_setup = (
+            'auth_header="$(git config --local --get http.https://github.com/.extraheader)"',
+            'if [ -z "$auth_header" ]; then',
+            'echo "github_checkout_auth_header_unavailable"',
+            "export GIT_CONFIG_COUNT=1",
+            "export GIT_CONFIG_KEY_0='http.https://github.com/.extraheader'",
+            'export GIT_CONFIG_VALUE_0="$auth_header"',
+        )
+        writer_steps = (
+            (
+                self.reports_workflow,
+                "archive-observation",
+                "Archive packaged observation sidecar",
+                "python -m advisor evidence archive",
+            ),
+            (
+                self.evidence_workflow,
+                "archive",
+                "Archive canonical evidence transport",
+                "python -m advisor evidence archive",
+            ),
+            (
+                self.evidence_workflow,
+                "publish-mature",
+                "First archive canonical collector transport",
+                "python -m advisor evidence archive",
+            ),
+            (
+                self.evidence_workflow,
+                "publish-mature",
+                "Mature from canonical evidence",
+                "python -m advisor evidence mature",
+            ),
+        )
+
+        for workflow_path, job_name, step_name, command in writer_steps:
+            with self.subTest(workflow=workflow_path.name, job=job_name, step=step_name):
+                content = workflow_path.read_text(encoding="utf-8")
+                step = self._step_block(content, job_name, step_name)
+                for line in auth_setup:
+                    self.assertIn(line, step)
+                self.assertIn(command, step)
+                self.assertLess(
+                    step.index('export GIT_CONFIG_VALUE_0="$auth_header"'),
+                    step.index(command),
+                )
+                self.assertNotIn('echo "$auth_header"', step)
 
     def test_archive_job_has_contents_write_and_no_provider_secrets(self):
         content = self.evidence_workflow.read_text(encoding="utf-8")

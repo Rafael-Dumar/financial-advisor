@@ -142,10 +142,19 @@ jobs:
           --output-dir .tmp/evidence-canonical-transport
 
       - name: Archive canonical evidence transport
-        run: >
-          python -m advisor evidence archive
-          --transport-dir .tmp/evidence-canonical-transport
-          --repo-dir .
+        shell: bash
+        run: |
+          auth_header="$(git config --local --get http.https://github.com/.extraheader)"
+          if [ -z "$auth_header" ]; then
+            echo "github_checkout_auth_header_unavailable"
+            exit 1
+          fi
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0='http.https://github.com/.extraheader'
+          export GIT_CONFIG_VALUE_0="$auth_header"
+          python -m advisor evidence archive \
+            --transport-dir .tmp/evidence-canonical-transport \
+            --repo-dir .
 
       - name: Upload canonical evidence transport
         uses: actions/upload-artifact@v4
@@ -181,10 +190,19 @@ jobs:
           path: .tmp/evidence-canonical-transport
 
       - name: First archive canonical collector transport
-        run: >
-          python -m advisor evidence archive
-          --transport-dir .tmp/evidence-canonical-transport
-          --repo-dir .
+        shell: bash
+        run: |
+          auth_header="$(git config --local --get http.https://github.com/.extraheader)"
+          if [ -z "$auth_header" ]; then
+            echo "github_checkout_auth_header_unavailable"
+            exit 1
+          fi
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0='http.https://github.com/.extraheader'
+          export GIT_CONFIG_VALUE_0="$auth_header"
+          python -m advisor evidence archive \
+            --transport-dir .tmp/evidence-canonical-transport \
+            --repo-dir .
 
       - name: Fresh canonical evidence checkout
         run: echo "fresh canonical evidence checkout is performed by mature_evidence_cycle"
@@ -192,6 +210,14 @@ jobs:
       - name: Mature from canonical evidence
         shell: bash
         run: |
+          auth_header="$(git config --local --get http.https://github.com/.extraheader)"
+          if [ -z "$auth_header" ]; then
+            echo "github_checkout_auth_header_unavailable"
+            exit 1
+          fi
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0='http.https://github.com/.extraheader'
+          export GIT_CONFIG_VALUE_0="$auth_header"
           # mature_evidence_cycle enforces first archive -> fresh read -> materialization -> second archive.
           python -m advisor evidence mature \
             --repo-dir . \
