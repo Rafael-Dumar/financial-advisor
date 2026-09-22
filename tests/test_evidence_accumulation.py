@@ -4698,6 +4698,73 @@ class WorkflowContractTests(unittest.TestCase):
                 )
                 self.assertNotIn('echo "$auth_header"', step)
 
+    def test_canonical_writer_commands_remove_checkout_auth_before_inheriting_one_header(self):
+        writer_steps = (
+            (
+                self.reports_workflow,
+                "archive-observation",
+                "Archive packaged observation sidecar",
+                "python -m advisor evidence archive",
+            ),
+            (
+                self.evidence_workflow,
+                "archive",
+                "Archive canonical evidence transport",
+                "python -m advisor evidence archive",
+            ),
+            (
+                self.evidence_workflow,
+                "publish-mature",
+                "First archive canonical collector transport",
+                "python -m advisor evidence archive",
+            ),
+            (
+                self.evidence_workflow,
+                "publish-mature",
+                "Mature from canonical evidence",
+                "python -m advisor evidence mature",
+            ),
+        )
+        combined_workflows = "\n".join(
+            workflow_path.read_text(encoding="utf-8")
+            for workflow_path in (self.reports_workflow, self.evidence_workflow)
+        )
+
+        for workflow_path, job_name, step_name, command in writer_steps:
+            with self.subTest(workflow=workflow_path.name, job=job_name, step=step_name):
+                step = self._step_block(
+                    workflow_path.read_text(encoding="utf-8"),
+                    job_name,
+                    step_name,
+                )
+                ordered_markers = (
+                    'auth_header="$(git config --local --get http.https://github.com/.extraheader)"',
+                    'if [ -z "$auth_header" ]; then',
+                    "exit 1",
+                    "git config --local --unset-all http.https://github.com/.extraheader",
+                    "export GIT_CONFIG_COUNT=1",
+                    "export GIT_CONFIG_KEY_0='http.https://github.com/.extraheader'",
+                    'export GIT_CONFIG_VALUE_0="$auth_header"',
+                    command,
+                )
+                for marker in ordered_markers:
+                    self.assertIn(marker, step)
+                positions = [step.index(marker) for marker in ordered_markers]
+                self.assertEqual(positions, sorted(positions))
+                self.assertEqual(step.count("export GIT_CONFIG_COUNT="), 1)
+                self.assertEqual(step.count("export GIT_CONFIG_KEY_0="), 1)
+                self.assertEqual(step.count("export GIT_CONFIG_VALUE_0="), 1)
+                self.assertNotRegex(
+                    step,
+                    r"(?im)^\s*(?:echo|printf)\b.*(?:\$auth_header|\$\{auth_header\}|GIT_CONFIG_VALUE_0)",
+                )
+                self.assertNotRegex(step, r"https?://[^\s]*@")
+
+        normalized_workflows = combined_workflows.casefold()
+        self.assertNotRegex(normalized_workflows, r"\bpat\b")
+        for forbidden in (".netrc", ".git-credentials", "git config --global", "credential.helper"):
+            self.assertNotIn(forbidden, normalized_workflows)
+
     def test_archive_job_has_contents_write_and_no_provider_secrets(self):
         content = self.evidence_workflow.read_text(encoding="utf-8")
         job = self._job_block(content, "archive")

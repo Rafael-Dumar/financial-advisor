@@ -164,6 +164,7 @@ jobs:
             echo "github_checkout_auth_header_unavailable"
             exit 1
           fi
+          git config --local --unset-all http.https://github.com/.extraheader
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0='http.https://github.com/.extraheader'
           export GIT_CONFIG_VALUE_0="$auth_header"
