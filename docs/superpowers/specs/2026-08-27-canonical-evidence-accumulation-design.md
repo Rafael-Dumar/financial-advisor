@@ -249,6 +249,10 @@ sozinho uma regra de idempotência. Para a mesma `logical_identity`:
 - mesmo `canonical_content_sha256` resulta em `duplicate_same`;
 - `canonical_content_sha256` diferente resulta em `conflict`.
 
+Para a idempotência de `market_bar`, `source_response_sha256` identifica o snapshot da resposta de coleta. Uma mudança isolada nesse campo não constitui revisão do bar quando
+o payload canônico e todos os contratos semânticos de provider e price basis
+permanecem iguais.
+
 Assim, mesmo OHLC com `price_provider` diferente na proveniência semântica é
 `conflict`, não `duplicate_same`. O hash embutido de `SignalObservation` ou de
 `SignalForwardOutcome` mantém sua semântica própria e é validado

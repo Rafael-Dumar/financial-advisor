@@ -2688,35 +2688,56 @@ def _market_envelope(
     market_date: str = "2026-08-26",
     close: float = 100.0,
     provider: str = "fmp",
+    asset_type: str = "stock",
+    market_timezone: str | None = None,
+    ohlcv: dict[str, object] | None = None,
+    price_basis: str = "raw_ohlcv",
+    session_status: str = "complete",
+    session_close_type: str = "regular",
+    collection_policy_version: str = "1.0",
+    price_basis_policy_version: str = "price_basis_v1",
+    source_contract: str | None = None,
+    source_response_sha256: str = "0" * 64,
+    price_basis_claim: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    market_timezone = market_timezone or (
+        "UTC" if asset_type == "crypto" else "America/New_York"
+    )
     logical_identity = {
-        "asset_type": "stock",
+        "asset_type": asset_type,
         "interval": "1d",
         "market_date": market_date,
-        "market_timezone": "America/New_York",
+        "market_timezone": market_timezone,
         "schema_version": "1.0",
         "symbol": symbol,
     }
+    ohlcv = ohlcv or {
+        "close": close,
+        "high": close + 1.0,
+        "low": close - 1.0,
+        "open": close - 0.5,
+        "volume": 123456,
+    }
+    price_basis_claim = price_basis_claim or {
+        "price_basis": price_basis,
+        "price_basis_policy_version": price_basis_policy_version,
+        "source_contract": source_contract or f"{provider}.fixture.raw_ohlcv_v1",
+    }
     payload = {
-        "asset_type": "stock",
+        "asset_type": asset_type,
         "interval": "1d",
         "market_date": market_date,
-        "market_timezone": "America/New_York",
-        "ohlcv": {
-            "close": close,
-            "high": close + 1.0,
-            "low": close - 1.0,
-            "open": close - 0.5,
-            "volume": 123456,
-        },
-        "price_basis": "raw_ohlcv",
-        "session_close_type": "regular",
-        "session_status": "complete",
+        "market_timezone": market_timezone,
+        "ohlcv": ohlcv,
+        "price_basis": price_basis,
+        "session_close_type": session_close_type,
+        "session_status": session_status,
     }
     semantic_provenance = {
-        "collection_policy_version": "1.0",
+        "collection_policy_version": collection_policy_version,
+        "price_basis_claim": price_basis_claim,
         "price_provider": provider,
-        "source_response_sha256": "0" * 64,
+        "source_response_sha256": source_response_sha256,
     }
     return {
         "canonical_content_sha256": canonical_content_sha256(
@@ -2733,7 +2754,6 @@ def _market_envelope(
         "schema_version": "1.0",
         "semantic_provenance": semantic_provenance,
     }
-
 
 def _large_market_envelopes(count: int = 500) -> list[dict[str, object]]:
     start = date(2025, 1, 1)
@@ -4245,6 +4265,352 @@ class ArchiveGitTests(_ArchiveRepositoryMixin, unittest.TestCase):
             )
         )
         self.assertEqual(conflict["reason_code"], "divergent_payload")
+
+    def test_conflict_manifest_roundtrips_across_multiple_partition_dates(self):
+        self._bootstrap()
+        original = [
+            _market_envelope(market_date="2026-08-26", close=100.0),
+            _market_envelope(market_date="2026-08-27", close=101.0),
+        ]
+        first = self._archive(original)
+        self.assertEqual(first.status, "committed")
+        self.assertIsNotNone(first.manifest_path)
+        original_manifest = strict_json_loads_bytes(
+            decompress_single_member_gzip(
+                self._remote_file(first.manifest_path),
+                max_uncompressed_bytes=1024 * 1024,
+            )
+        )
+        original_entries = original_manifest["entries"]
+        self.assertEqual(
+            original_entries,
+            sorted(
+                original_entries,
+                key=lambda entry: (
+                    entry["evidence_type"],
+                    entry["logical_identity_sha256"],
+                    entry["canonical_content_sha256"],
+                ),
+            ),
+        )
+
+        result = self._archive(
+            [
+                _market_envelope(market_date="2026-08-26", close=101.0),
+                _market_envelope(market_date="2026-08-27", close=102.0),
+            ]
+        )
+
+        self.assertEqual(result.status, "conflict")
+        self.assertEqual(len(result.conflict_paths), 2)
+        self.assertEqual(
+            len({"/".join(path.split("/")[2:5]) for path in result.conflict_paths}),
+            2,
+        )
+        self.assertIsNotNone(result.manifest_path)
+        manifest = strict_json_loads_bytes(
+            decompress_single_member_gzip(
+                self._remote_file(result.manifest_path),
+                max_uncompressed_bytes=1024 * 1024,
+            )
+        )
+        entries = manifest["entries"]
+        self.assertEqual(
+            [entry["path"] for entry in entries],
+            sorted(entry["path"] for entry in entries),
+        )
+        self.assertNotEqual(
+            entries,
+            sorted(
+                entries,
+                key=lambda entry: (
+                    entry["evidence_type"],
+                    entry["logical_identity_sha256"],
+                    entry["canonical_content_sha256"],
+                ),
+            ),
+        )
+
+        clone = self._clone_branch(self.root / "manifest-roundtrip")
+        shards, manifests = evidence_archive_module._load_authority(clone)
+        self.assertEqual(len(shards), 2)
+        self.assertEqual(len(evidence_archive_module._existing_conflicts(clone)), 2)
+        conflict_manifests = [
+            item for item in manifests.values()
+            if item["operation"] == "conflict_archive"
+        ]
+        self.assertEqual(len(conflict_manifests), 1)
+
+    def test_same_market_bar_with_new_response_snapshot_is_duplicate_same(self):
+        self._bootstrap()
+        claim = qualified_hyperliquid_candle_snapshot_basis_claim()
+        price_basis_claim = {
+            "price_basis": claim.price_basis,
+            "price_basis_policy_version": claim.price_basis_policy_version,
+            "source_contract": claim.source_contract,
+        }
+        original = _market_envelope(
+            symbol="HYPE",
+            market_date="2025-05-10",
+            close=26.262,
+            provider="hyperliquid",
+            asset_type="crypto",
+            ohlcv={
+                "open": 24.734,
+                "high": 26.337,
+                "low": 24.318,
+                "close": 26.262,
+                "volume": 15947755.25,
+            },
+            collection_policy_version=PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION,
+            source_response_sha256="b74bcd82a65d1717b3428ecc69e5c0b576d4c4cd135463fa2c7dfda535735318",
+            price_basis_claim=price_basis_claim,
+        )
+        first = self._archive([original])
+        self.assertEqual(first.status, "committed")
+        self.assertTrue(first.durability_confirmed)
+        canonical_path = next(
+            path for path in first.committed_paths
+            if path.startswith("evidence/market-bars/")
+        )
+        canonical_before = self._remote_file(canonical_path)
+        commits_before = self._remote_commit_count()
+
+        incoming = _market_envelope(
+            symbol="HYPE",
+            market_date="2025-05-10",
+            close=26.262,
+            provider="hyperliquid",
+            asset_type="crypto",
+            ohlcv={
+                "open": 24.734,
+                "high": 26.337,
+                "low": 24.318,
+                "close": 26.262,
+                "volume": 15947755.25,
+            },
+            collection_policy_version=PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION,
+            source_response_sha256="ef8beafc2ed5d5b9e321c8269b72e7798e1d2296b623723c2f0bec63e1abbeb6",
+            price_basis_claim=price_basis_claim,
+        )
+        self.assertEqual(original["logical_identity"], incoming["logical_identity"])
+        self.assertEqual(original["payload"], incoming["payload"])
+        self.assertEqual(
+            original["semantic_provenance"]["price_basis_claim"],
+            incoming["semantic_provenance"]["price_basis_claim"],
+        )
+        self.assertNotEqual(
+            original["semantic_provenance"]["source_response_sha256"],
+            incoming["semantic_provenance"]["source_response_sha256"],
+        )
+
+        result = self._archive([incoming])
+
+        self.assertEqual(result.status, "no_op")
+        self.assertTrue(result.durability_confirmed)
+        self.assertEqual(result.conflict_paths, ())
+        self.assertEqual(result.committed_paths, ())
+        self.assertEqual(self._remote_file(canonical_path), canonical_before)
+        self.assertEqual(self._remote_commit_count(), commits_before)
+
+    def test_response_hash_overlap_commits_only_the_new_market_bar(self):
+        self._bootstrap()
+        first = self._archive(
+            [
+                _market_envelope(market_date="2026-08-26", close=100.0),
+                _market_envelope(market_date="2026-08-27", close=101.0),
+            ]
+        )
+        self.assertEqual(first.status, "committed")
+        original_market_paths = {
+            path for path in self._remote_tree()
+            if path.startswith("evidence/market-bars/")
+        }
+        original_market_bytes = {
+            path: self._remote_file(path) for path in original_market_paths
+        }
+
+        result = self._archive(
+            [
+                _market_envelope(
+                    market_date="2026-08-26",
+                    close=100.0,
+                    source_response_sha256="1" * 64,
+                ),
+                _market_envelope(
+                    market_date="2026-08-27",
+                    close=101.0,
+                    source_response_sha256="1" * 64,
+                ),
+                _market_envelope(
+                    market_date="2026-08-28",
+                    close=102.0,
+                    source_response_sha256="2" * 64,
+                ),
+            ]
+        )
+
+        self.assertEqual(result.status, "committed")
+        self.assertTrue(result.durability_confirmed)
+        self.assertEqual(result.conflict_paths, ())
+        current_market_paths = {
+            path for path in self._remote_tree()
+            if path.startswith("evidence/market-bars/")
+        }
+        self.assertEqual(len(current_market_paths), 3)
+        self.assertTrue(original_market_paths.issubset(current_market_paths))
+        self.assertEqual(
+            {path: self._remote_file(path) for path in original_market_paths},
+            original_market_bytes,
+        )
+        new_market_paths = current_market_paths - original_market_paths
+        self.assertEqual(len(new_market_paths), 1)
+        self.assertEqual(
+            set(result.committed_paths).intersection(new_market_paths),
+            new_market_paths,
+        )
+        self.assertFalse(
+            any(path.startswith("evidence/conflicts/") for path in self._remote_tree())
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            clone = self._clone_branch(Path(temporary_directory) / "clone")
+            authority, _ = evidence_archive_module._load_authority(
+                clone,
+                branch_name=self.branch_name,
+            )
+        self.assertEqual(
+            sum(shard.evidence_type == "market_bar" for shard in authority.values()),
+            3,
+        )
+
+    def test_mixed_exact_and_response_snapshot_overlap_is_a_no_op(self):
+        self._bootstrap()
+        first = [
+            _market_envelope(market_date="2026-08-26", close=100.0),
+            _market_envelope(market_date="2026-08-27", close=101.0),
+        ]
+        self.assertEqual(self._archive(first).status, "committed")
+        original_market_paths = {
+            path for path in self._remote_tree()
+            if path.startswith("evidence/market-bars/")
+        }
+        original_market_bytes = {
+            path: self._remote_file(path) for path in original_market_paths
+        }
+        commits_before = self._remote_commit_count()
+
+        result = self._archive(
+            [
+                first[0],
+                _market_envelope(
+                    market_date="2026-08-27",
+                    close=101.0,
+                    source_response_sha256="1" * 64,
+                ),
+            ]
+        )
+
+        self.assertEqual(result.status, "no_op")
+        self.assertTrue(result.durability_confirmed)
+        self.assertEqual(result.conflict_paths, ())
+        self.assertEqual(result.committed_paths, ())
+        self.assertEqual(self._remote_commit_count(), commits_before)
+        self.assertEqual(
+            {path: self._remote_file(path) for path in original_market_paths},
+            original_market_bytes,
+        )
+
+    def test_changed_single_ohlcv_value_remains_a_conflict(self):
+        self._bootstrap()
+        original = _market_envelope()
+        self.assertEqual(self._archive([original]).status, "committed")
+        original_ohlcv = dict(original["payload"]["ohlcv"])
+        changed_ohlcv = {**original_ohlcv, "volume": original_ohlcv["volume"] + 1}
+        incoming = _market_envelope(ohlcv=changed_ohlcv)
+        self.assertEqual(
+            {
+                key: value for key, value in original_ohlcv.items()
+                if key != "volume"
+            },
+            {
+                key: value for key, value in changed_ohlcv.items()
+                if key != "volume"
+            },
+        )
+        canonical_path = next(
+            path for path in self._remote_tree()
+            if path.startswith("evidence/market-bars/")
+        )
+        canonical_before = self._remote_file(canonical_path)
+
+        result = self._archive([incoming])
+
+        self.assertEqual(result.status, "conflict")
+        self.assertFalse(result.durability_confirmed)
+        self.assertTrue(result.conflict_paths)
+        self.assertEqual(self._remote_file(canonical_path), canonical_before)
+
+    def test_invalid_response_hash_does_not_qualify_for_market_equivalence(self):
+        self._bootstrap()
+        original = _market_envelope()
+        first = self._archive([original])
+        self.assertEqual(first.status, "committed")
+        canonical_path = next(
+            path for path in first.committed_paths
+            if path.startswith("evidence/market-bars/")
+        )
+        canonical_before = self._remote_file(canonical_path)
+        incoming = _market_envelope(source_response_sha256="not-a-sha256")
+
+        result = self._archive([incoming])
+
+        self.assertEqual(result.status, "conflict")
+        self.assertFalse(result.durability_confirmed)
+        self.assertTrue(result.conflict_paths)
+        self.assertEqual(self._remote_file(canonical_path), canonical_before)
+
+    def test_market_payload_provider_and_price_contract_changes_remain_conflicts(self):
+        self._bootstrap()
+        symbols = ("AAPL", "MSFT", "NVDA", "AMZN", "TSLA", "META", "GOOG")
+        original = [_market_envelope(symbol=symbol) for symbol in symbols]
+        self.assertEqual(self._archive(original).status, "committed")
+        original_market_paths = {
+            path for path in self._remote_tree()
+            if path.startswith("evidence/market-bars/")
+        }
+        original_market_bytes = {
+            path: self._remote_file(path) for path in original_market_paths
+        }
+        incoming = [
+            _market_envelope(symbol="AAPL", source_contract="fmp.fixture.raw_ohlcv_v2"),
+            _market_envelope(
+                symbol="MSFT",
+                provider="binance",
+                source_contract="fmp.fixture.raw_ohlcv_v1",
+            ),
+            _market_envelope(symbol="NVDA", price_basis_policy_version="price_basis_v2"),
+            _market_envelope(
+                symbol="AMZN",
+                collection_policy_version="price_provider_assignment_v2",
+            ),
+            _market_envelope(symbol="TSLA", price_basis="split_adjusted"),
+            _market_envelope(symbol="META", session_status="partial"),
+            _market_envelope(symbol="GOOG", session_close_type="early"),
+        ]
+
+        result = self._archive(incoming)
+
+        self.assertEqual(result.status, "conflict")
+        self.assertEqual(len(result.conflict_paths), 7)
+        self.assertFalse(result.durability_confirmed)
+        self.assertEqual(
+            {path for path in self._remote_tree() if path.startswith("evidence/market-bars/")},
+            original_market_paths,
+        )
+        self.assertEqual(
+            {path: self._remote_file(path) for path in original_market_paths},
+            original_market_bytes,
+        )
 
     def test_push_retries_fast_forward_at_most_three_times_without_force_or_merge(self):
         self._bootstrap()

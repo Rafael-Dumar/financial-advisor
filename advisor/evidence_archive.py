@@ -678,14 +678,20 @@ def _validate_manifest_object(
             if normalized["path"] != expected_shard_path:
                 raise _ArchiveError("invalid_manifest")
         normalized_entries.append(normalized)
-    sorted_entries = sorted(
-        normalized_entries,
-        key=lambda entry: (
-            entry["evidence_type"],
-            entry["logical_identity_sha256"],
-            entry["canonical_content_sha256"],
-        ),
-    )
+    if operation == "conflict_archive":
+        sorted_entries = sorted(
+            normalized_entries,
+            key=lambda entry: entry["path"],
+        )
+    else:
+        sorted_entries = sorted(
+            normalized_entries,
+            key=lambda entry: (
+                entry["evidence_type"],
+                entry["logical_identity_sha256"],
+                entry["canonical_content_sha256"],
+            ),
+        )
     if normalized_entries != sorted_entries:
         raise _ArchiveError("invalid_manifest")
     if shards != [entry["path"] for entry in normalized_entries]:
@@ -1153,6 +1159,76 @@ def _market_provider(shard: _Shard) -> str | None:
     return provider
 
 
+def _market_bar_response_snapshot_equivalent(
+    *, existing: _Shard, incoming: _Shard
+) -> bool:
+    if existing.evidence_type != "market_bar" or incoming.evidence_type != "market_bar":
+        return False
+    existing_envelope = existing.envelope
+    incoming_envelope = incoming.envelope
+    if existing_envelope.get("schema_version") != incoming_envelope.get("schema_version"):
+        return False
+
+    existing_identity = existing_envelope.get("logical_identity")
+    incoming_identity = incoming_envelope.get("logical_identity")
+    existing_payload = existing_envelope.get("payload")
+    incoming_payload = incoming_envelope.get("payload")
+    existing_provenance = existing_envelope.get("semantic_provenance")
+    incoming_provenance = incoming_envelope.get("semantic_provenance")
+    if (
+        not isinstance(existing_identity, Mapping)
+        or not isinstance(incoming_identity, Mapping)
+        or not isinstance(existing_payload, Mapping)
+        or not isinstance(incoming_payload, Mapping)
+        or not isinstance(existing_provenance, Mapping)
+        or not isinstance(incoming_provenance, Mapping)
+    ):
+        return False
+
+    existing_policy = existing_provenance.get("collection_policy_version")
+    incoming_policy = incoming_provenance.get("collection_policy_version")
+    existing_provider = existing_provenance.get("price_provider")
+    incoming_provider = incoming_provenance.get("price_provider")
+    existing_claim = existing_provenance.get("price_basis_claim")
+    incoming_claim = incoming_provenance.get("price_basis_claim")
+    required_claim_fields = (
+        "price_basis",
+        "price_basis_policy_version",
+        "source_contract",
+    )
+    if (
+        not isinstance(existing_policy, str)
+        or not existing_policy
+        or existing_policy != incoming_policy
+        or not isinstance(existing_provider, str)
+        or not existing_provider
+        or existing_provider != incoming_provider
+        or not isinstance(existing_claim, Mapping)
+        or not isinstance(incoming_claim, Mapping)
+        or any(
+            not isinstance(existing_claim.get(field), str)
+            or not existing_claim.get(field)
+            or not isinstance(incoming_claim.get(field), str)
+            or not incoming_claim.get(field)
+            for field in required_claim_fields
+        )
+        or canonical_json_bytes(existing_claim) != canonical_json_bytes(incoming_claim)
+        or not _is_sha256(existing_provenance.get("source_response_sha256"))
+        or not _is_sha256(incoming_provenance.get("source_response_sha256"))
+        or canonical_json_bytes(existing_identity) != canonical_json_bytes(incoming_identity)
+        or canonical_json_bytes(existing_payload) != canonical_json_bytes(incoming_payload)
+    ):
+        return False
+
+    existing_semantics = dict(existing_provenance)
+    incoming_semantics = dict(incoming_provenance)
+    existing_semantics.pop("source_response_sha256")
+    incoming_semantics.pop("source_response_sha256")
+    return canonical_json_bytes(existing_semantics) == canonical_json_bytes(
+        incoming_semantics
+    )
+
+
 def _validate_provider_consistency(shards: Sequence[_Shard]) -> None:
     providers_by_series: dict[tuple[str, str, str, str, str], str] = {}
     for shard in shards:
@@ -1448,12 +1524,16 @@ class EvidenceArchive:
 
                     conflicts: list[_Conflict] = []
                     new_shards: list[_Shard] = []
-                    corporate_equivalent_only = bool(incoming)
+                    manifest_shards_by_identity = {
+                        (shard.evidence_type, shard.logical_identity_sha256): shard
+                        for shard in incoming
+                    }
+                    equivalent_existing_only = bool(incoming)
                     for shard in incoming:
                         key = (shard.evidence_type, shard.logical_identity_sha256)
                         existing_shard = existing.get(key)
                         if existing_shard is None:
-                            corporate_equivalent_only = False
+                            equivalent_existing_only = False
                             incoming_series = _market_series_key(shard)
                             incoming_provider = _market_provider(shard)
                             provider_conflict = next(
@@ -1528,10 +1608,27 @@ class EvidenceArchive:
                                         reason_code="divergent_payload",
                                     )
                                 )
+                            else:
+                                manifest_shards_by_identity[key] = existing_shard
                             continue
-                        corporate_equivalent_only = False
                         if classify_idempotency(existing_shard.envelope, shard.envelope) == "duplicate_same":
+                            manifest_shards_by_identity[key] = existing_shard
+                            if not (
+                                shard.evidence_type == "market_bar"
+                                and _market_bar_response_snapshot_equivalent(
+                                    existing=existing_shard,
+                                    incoming=shard,
+                                )
+                            ):
+                                equivalent_existing_only = False
                             continue
+                        if _market_bar_response_snapshot_equivalent(
+                            existing=existing_shard,
+                            incoming=shard,
+                        ):
+                            manifest_shards_by_identity[key] = existing_shard
+                            continue
+                        equivalent_existing_only = False
                         conflicts.append(
                             _conflict_from_pair(
                                 existing=existing_shard,
@@ -1591,7 +1688,7 @@ class EvidenceArchive:
                         )
 
                     if not new_shards:
-                        if corporate_equivalent_only and not conflicts:
+                        if equivalent_existing_only and not conflicts:
                             return ArchiveResult(
                                 status="no_op",
                                 batch_identity=batch_identity,
@@ -1602,6 +1699,29 @@ class EvidenceArchive:
                                 durability_confirmed=True,
                             )
                         raise _ArchiveError("missing_historical_manifest")
+                    manifest_shards = list(manifest_shards_by_identity.values())
+                    manifest_batch_identity = _batch_identity(manifest_shards)
+                    manifest_path, _, manifest_bytes = _manifest_for_batch(
+                        shards=manifest_shards,
+                        batch_identity=manifest_batch_identity,
+                    )
+                    resolved_manifest = manifests.get(manifest_batch_identity)
+                    if resolved_manifest is not None:
+                        if _validate_existing_batch(
+                            root=clone,
+                            manifest=resolved_manifest,
+                            incoming=manifest_shards,
+                        ):
+                            return ArchiveResult(
+                                status="no_op",
+                                batch_identity=manifest_batch_identity,
+                                manifest_path=manifest_path,
+                                committed_paths=(),
+                                conflict_paths=(),
+                                error_code=None,
+                                durability_confirmed=True,
+                            )
+                        raise _ArchiveError("manifest_batch_mismatch")
                     for shard in new_shards:
                         _write_under(clone, shard.path, shard.compressed_bytes)
                     _write_under(clone, manifest_path, manifest_bytes)
@@ -1616,7 +1736,7 @@ class EvidenceArchive:
                         continue
                     return ArchiveResult(
                         status="committed",
-                        batch_identity=batch_identity,
+                        batch_identity=manifest_batch_identity,
                         manifest_path=manifest_path,
                         committed_paths=tuple(
                             sorted([shard.path for shard in new_shards] + [manifest_path])
