@@ -5131,6 +5131,54 @@ class WorkflowContractTests(unittest.TestCase):
         for forbidden in (".netrc", ".git-credentials", "git config --global", "credential.helper"):
             self.assertNotIn(forbidden, normalized_workflows)
 
+    def test_publish_mature_restores_checkout_auth_after_first_archive(self):
+        content = self.evidence_workflow.read_text(encoding="utf-8")
+        first_archive = self._step_block(
+            content,
+            "publish-mature",
+            "First archive canonical collector transport",
+        )
+        mature = self._step_block(
+            content,
+            "publish-mature",
+            "Mature from canonical evidence",
+        )
+        publish_mature_job = self._job_block(content, "publish-mature")
+        capture = 'auth_header="$(git config --local --get http.https://github.com/.extraheader)"'
+        unset = "git config --local --unset-all http.https://github.com/.extraheader"
+        restore = 'git config --local http.https://github.com/.extraheader "$auth_header"'
+
+        self.assertLess(
+            publish_mature_job.index("- name: First archive canonical collector transport"),
+            publish_mature_job.index("- name: Mature from canonical evidence"),
+        )
+        first_archive_order = (
+            capture,
+            unset,
+            "export GIT_CONFIG_VALUE_0=\"$auth_header\"",
+            "python -m advisor evidence archive",
+            "--repo-dir .",
+            restore,
+        )
+        self.assertIn(restore, first_archive)
+        self.assertEqual(first_archive.count(restore), 1)
+        first_archive_positions = [first_archive.index(marker) for marker in first_archive_order]
+        self.assertEqual(first_archive_positions, sorted(first_archive_positions))
+
+        mature_order = (
+            capture,
+            unset,
+            "python -m advisor evidence mature",
+        )
+        mature_positions = [mature.index(marker) for marker in mature_order]
+        self.assertEqual(mature_positions, sorted(mature_positions))
+
+        for step in (first_archive, mature):
+            self.assertNotRegex(
+                step,
+                r"(?im)^\s*(?:echo|printf)\b.*(?:\$auth_header|\$\{auth_header\}|GIT_CONFIG_VALUE_0)",
+            )
+
     def test_archive_job_has_contents_write_and_no_provider_secrets(self):
         content = self.evidence_workflow.read_text(encoding="utf-8")
         job = self._job_block(content, "archive")
