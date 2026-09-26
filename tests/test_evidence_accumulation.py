@@ -90,6 +90,7 @@ from advisor.models import (
     RiskPlan,
 )
 from advisor import evidence_archive as evidence_archive_module
+from advisor import evidence_materializer as evidence_materializer_module
 from advisor import cli as cli_module
 from advisor.scoring import classify_asset, score_asset
 from advisor.signal_observation import (
@@ -2910,6 +2911,105 @@ class _ArchiveRepositoryMixin:
             str(destination),
         )
         return destination
+
+
+class FreshEvidenceCheckoutTests(_ArchiveRepositoryMixin, unittest.TestCase):
+    def test_relative_destination_returns_the_checkout_at_the_requested_path(self):
+        self._bootstrap()
+        previous_directory = Path.cwd()
+        try:
+            os.chdir(self.root)
+            destination = Path(".tmp/evidence-checkout")
+            destination.mkdir(parents=True)
+            checkout = evidence_materializer_module._fresh_evidence_checkout(
+                repo_dir=self.caller,
+                destination=destination,
+                branch_name=self.branch_name,
+            )
+
+            self.assertEqual(checkout, destination)
+            self.assertFalse(Path(".tmp/.tmp/evidence-checkout").exists())
+            self.assertTrue(checkout.is_dir())
+            self.assertTrue((checkout / "evidence/branch-schema.json").is_file())
+            self.assertEqual(
+                evidence_archive_module._load_authority(
+                    checkout,
+                    branch_name=self.branch_name,
+                ),
+                ({}, {}),
+            )
+        finally:
+            os.chdir(previous_directory)
+
+    def test_absolute_destination_still_returns_the_requested_checkout(self):
+        self._bootstrap()
+        destination = self.root / "absolute-evidence-checkout"
+
+        checkout = evidence_materializer_module._fresh_evidence_checkout(
+            repo_dir=self.caller,
+            destination=destination,
+            branch_name=self.branch_name,
+        )
+
+        self.assertEqual(checkout, destination)
+        self.assertTrue(checkout.is_dir())
+        self.assertTrue((checkout / "evidence/branch-schema.json").is_file())
+        evidence_archive_module._load_authority(
+            checkout,
+            branch_name=self.branch_name,
+        )
+
+    def test_nonempty_destination_is_rejected(self):
+        destination = self.root / "nonempty-evidence-checkout"
+        destination.mkdir()
+        (destination / "existing.txt").write_text("keep", encoding="utf-8")
+
+        with self.assertRaisesRegex(
+            MaterializationError,
+            "fresh_checkout_path_not_empty",
+        ):
+            evidence_materializer_module._fresh_evidence_checkout(
+                repo_dir=self.caller,
+                destination=destination,
+                branch_name=self.branch_name,
+            )
+
+        self.assertEqual((destination / "existing.txt").read_text(), "keep")
+
+    def test_symlink_and_nondirectory_destinations_are_rejected(self):
+        symlink_destination = self.root / "symlink-evidence-checkout"
+        symlink_destination.mkdir()
+        nondirectory_destination = self.root / "file-evidence-checkout"
+        nondirectory_destination.write_text("file", encoding="utf-8")
+
+        # The Windows host denies creating real symbolic links; exercise the guard predicate.
+        path_is_symlink = Path.is_symlink
+        with patch.object(
+            Path,
+            "is_symlink",
+            autospec=True,
+            side_effect=lambda path: path == symlink_destination
+            or path_is_symlink(path),
+        ):
+            with self.assertRaisesRegex(
+                MaterializationError,
+                "fresh_read_unavailable",
+            ):
+                evidence_materializer_module._fresh_evidence_checkout(
+                    repo_dir=self.caller,
+                    destination=symlink_destination,
+                    branch_name=self.branch_name,
+                )
+
+        with self.assertRaisesRegex(
+            MaterializationError,
+            "fresh_read_unavailable",
+        ):
+            evidence_materializer_module._fresh_evidence_checkout(
+                repo_dir=self.caller,
+                destination=nondirectory_destination,
+                branch_name=self.branch_name,
+            )
 
 
 def _task7_market_transport_record() -> dict[str, object]:

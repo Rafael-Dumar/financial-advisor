@@ -938,7 +938,7 @@ def _fresh_evidence_checkout(
             branch_name,
             "--single-branch",
             origin,
-            str(destination),
+            destination.name,
         ],
         cwd=str(destination.parent),
         capture_output=True,
