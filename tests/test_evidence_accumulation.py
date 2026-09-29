@@ -1,4 +1,5 @@
 import argparse
+import ast
 import hashlib
 import inspect
 import json
@@ -9,6 +10,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import textwrap
 import unittest
 import zlib
 from dataclasses import asdict, dataclass, replace
@@ -117,6 +119,8 @@ class ProviderAssignmentTests(unittest.TestCase):
         self.assertEqual(assigned_price_provider(asset=CollectionAsset("IGV", "etf"), existing_provider=None), "fmp")
         self.assertEqual(assigned_price_provider(asset=CollectionAsset("hype", "crypto"), existing_provider=None), "hyperliquid")
         self.assertEqual(assigned_price_provider(asset=CollectionAsset("BTC", "crypto"), existing_provider=None), "binance")
+        self.assertEqual(assigned_price_provider(asset=CollectionAsset("ETH", "crypto"), existing_provider=None), "binance")
+        self.assertEqual(assigned_price_provider(asset=CollectionAsset("SOL", "crypto"), existing_provider=None), "binance")
 
     def test_oldest_canonical_provider_is_sticky_for_existing_series(self):
         asset = CollectionAsset("HYPE", "crypto")
@@ -5096,6 +5100,34 @@ class WorkflowContractTests(unittest.TestCase):
         if end == -1:
             return job[start:]
         return job[start:end]
+
+    def test_crypto_evidence_universe_contains_core_radar_assets(self):
+        content = self.evidence_workflow.read_text(encoding="utf-8")
+        step = self._step_block(content, "collector", "Write typed evidence asset scope")
+        script = step.split("python - \"$scope\" <<'PY'\n", 1)[1].split("\n          PY", 1)[0]
+        module = ast.parse(textwrap.dedent(script))
+        scope_assignment = next(
+            node for node in module.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "assets_by_scope" for target in node.targets)
+        )
+        assets_by_scope = ast.literal_eval(scope_assignment.value)
+        crypto = [
+            {"symbol": "BTC", "asset_type": "crypto"},
+            {"symbol": "ETH", "asset_type": "crypto"},
+            {"symbol": "SOL", "asset_type": "crypto"},
+            {"symbol": "HYPE", "asset_type": "crypto"},
+        ]
+
+        self.assertEqual(assets_by_scope["crypto"], crypto)
+        self.assertEqual(
+            assets_by_scope["all"],
+            [
+                {"symbol": "AAPL", "asset_type": "stock"},
+                {"symbol": "SPY", "asset_type": "etf"},
+                *crypto,
+            ],
+        )
 
     def test_reports_job_has_contents_read_and_provider_secrets_only(self):
         content = self.reports_workflow.read_text(encoding="utf-8")

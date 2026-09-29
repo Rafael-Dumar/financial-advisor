@@ -76,13 +76,21 @@ jobs:
               "all": [
                   {"symbol": "AAPL", "asset_type": "stock"},
                   {"symbol": "SPY", "asset_type": "etf"},
+                  {"symbol": "BTC", "asset_type": "crypto"},
+                  {"symbol": "ETH", "asset_type": "crypto"},
+                  {"symbol": "SOL", "asset_type": "crypto"},
                   {"symbol": "HYPE", "asset_type": "crypto"},
               ],
               "stocks": [
                   {"symbol": "AAPL", "asset_type": "stock"},
                   {"symbol": "SPY", "asset_type": "etf"},
               ],
-              "crypto": [{"symbol": "HYPE", "asset_type": "crypto"}],
+              "crypto": [
+                  {"symbol": "BTC", "asset_type": "crypto"},
+                  {"symbol": "ETH", "asset_type": "crypto"},
+                  {"symbol": "SOL", "asset_type": "crypto"},
+                  {"symbol": "HYPE", "asset_type": "crypto"},
+              ],
           }
           scope = sys.argv[1]
           if scope not in assets_by_scope:
