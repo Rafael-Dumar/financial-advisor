@@ -123,10 +123,11 @@ class EvidenceCollector:
                     symbol=symbol, provider=provider
                 )
             except (OSError, RuntimeError, ValueError, TypeError) as error:
+                source_error = error.__cause__ or error
                 http_status = next(
                     (
                         value
-                        for value in (getattr(error, "code", None), getattr(error, "status", None))
+                        for value in (getattr(source_error, "code", None), getattr(source_error, "status", None))
                         if isinstance(value, int) and not isinstance(value, bool)
                     ),
                     None,
@@ -135,7 +136,7 @@ class EvidenceCollector:
                     "event=evidence_provider_unavailable provider=%s symbol=%s error_type=%s http_status=%s",
                     provider,
                     symbol,
-                    type(error).__name__,
+                    type(source_error).__name__,
                     http_status if http_status is not None else "null",
                 )
                 record["status"] = "market_data_unavailable"

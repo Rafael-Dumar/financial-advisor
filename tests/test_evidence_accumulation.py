@@ -169,6 +169,35 @@ class ProviderAssignmentTests(unittest.TestCase):
             self.assertIn(expected, log)
         self.assertNotIn("assigned provider unavailable", log)
 
+    def test_binance_wrapped_http_failure_logs_original_type_and_status(self):
+        calls: list[str] = []
+        url = "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&secret=private-key"
+        cause = HTTPError(url, 451, "secret response body", {}, BytesIO(b"secret response body"))
+
+        def fetch_json(**request):
+            calls.append(request["provider"])
+            raise RuntimeError("http_error:451:secret response body") from cause
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with self.assertLogs("advisor.evidence_collector", level="WARNING") as captured:
+                path = EvidenceCollector(
+                    fetch_json=fetch_json,
+                    transport_root=Path(temporary_directory),
+                ).collect_market(
+                    assets=[CollectionAsset("BTC", "crypto")],
+                    existing_provider_by_symbol={},
+                )
+            record = _task4_transport_records(path)[0]
+
+        self.assertEqual(calls, ["binance"])
+        self.assertEqual(record["assigned_provider"], "binance")
+        self.assertEqual(record["status"], "market_data_unavailable")
+        log = "\n".join(captured.output)
+        for expected in ("provider=binance", "symbol=BTC", "error_type=HTTPError", "http_status=451"):
+            self.assertIn(expected, log)
+        for forbidden in (url, "?symbol=", "private-key", "secret response body"):
+            self.assertNotIn(forbidden, log)
+
     def test_price_provider_assignment_v1_is_deterministic(self):
         self.assertEqual(PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION, "price_provider_assignment_v1")
         self.assertEqual(assigned_price_provider(asset=CollectionAsset("aapl", "stock"), existing_provider=None), "fmp")
