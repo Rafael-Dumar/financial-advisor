@@ -387,7 +387,12 @@ def _market_envelopes(record: Mapping[str, object]) -> list[dict[str, object]]:
     assignment_policy = _string(
         record.get("assignment_policy_version"), "invalid_market_transport"
     )
-    if assignment_policy != "price_provider_assignment_v1":
+    if assignment_policy != "price_provider_assignment_v1" and not (
+        assignment_policy == "price_provider_assignment_v2"
+        and asset_type == "crypto"
+        and symbol in {"BTC", "ETH", "SOL"}
+        and record.get("assigned_provider") == "hyperliquid"
+    ):
         _fail("unsupported_market_transport")
     status = _string(record.get("status"), "invalid_market_transport")
     bars = record.get("bars")

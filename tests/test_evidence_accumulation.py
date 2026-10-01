@@ -78,6 +78,7 @@ from advisor.evidence_materializer import (
     HorizonQualification,
     MaterializationError,
 )
+from advisor.evidence_packager import package_evidence_transport
 from advisor.config import AdvisorConfig
 from advisor.data_pipeline import crypto_snapshot_from_payloads, stock_snapshot_from_payloads
 from advisor.live_loader import LiveDataLoader
@@ -130,7 +131,7 @@ class ProviderAssignmentTests(unittest.TestCase):
                     transport_root=Path(temporary_directory),
                 ).collect_market(
                     assets=[CollectionAsset("BTC", "crypto")],
-                    existing_provider_by_symbol={},
+                    existing_provider_by_symbol={"BTC": "binance"},
                 )
             record = _task4_transport_records(path)[0]
 
@@ -157,7 +158,7 @@ class ProviderAssignmentTests(unittest.TestCase):
                     transport_root=Path(temporary_directory),
                 ).collect_market(
                     assets=[CollectionAsset("BTC", "crypto")],
-                    existing_provider_by_symbol={},
+                    existing_provider_by_symbol={"BTC": "binance"},
                 )
             record = _task4_transport_records(path)[0]
 
@@ -185,7 +186,7 @@ class ProviderAssignmentTests(unittest.TestCase):
                     transport_root=Path(temporary_directory),
                 ).collect_market(
                     assets=[CollectionAsset("BTC", "crypto")],
-                    existing_provider_by_symbol={},
+                    existing_provider_by_symbol={"BTC": "binance"},
                 )
             record = _task4_transport_records(path)[0]
 
@@ -198,19 +199,102 @@ class ProviderAssignmentTests(unittest.TestCase):
         for forbidden in (url, "?symbol=", "private-key", "secret response body"):
             self.assertNotIn(forbidden, log)
 
-    def test_price_provider_assignment_v1_is_deterministic(self):
+    def test_price_provider_assignment_versions_are_deterministic(self):
         self.assertEqual(PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION, "price_provider_assignment_v1")
-        self.assertEqual(assigned_price_provider(asset=CollectionAsset("aapl", "stock"), existing_provider=None), "fmp")
-        self.assertEqual(assigned_price_provider(asset=CollectionAsset("IGV", "etf"), existing_provider=None), "fmp")
-        self.assertEqual(assigned_price_provider(asset=CollectionAsset("hype", "crypto"), existing_provider=None), "hyperliquid")
-        self.assertEqual(assigned_price_provider(asset=CollectionAsset("BTC", "crypto"), existing_provider=None), "binance")
-        self.assertEqual(assigned_price_provider(asset=CollectionAsset("ETH", "crypto"), existing_provider=None), "binance")
-        self.assertEqual(assigned_price_provider(asset=CollectionAsset("SOL", "crypto"), existing_provider=None), "binance")
+        cases = (
+            (CollectionAsset("aapl", "stock"), "fmp", "price_provider_assignment_v1"),
+            (CollectionAsset("IGV", "etf"), "fmp", "price_provider_assignment_v1"),
+            (CollectionAsset("hype", "crypto"), "hyperliquid", "price_provider_assignment_v1"),
+            (CollectionAsset("BTC", "crypto"), "hyperliquid", "price_provider_assignment_v2"),
+            (CollectionAsset("ETH", "crypto"), "hyperliquid", "price_provider_assignment_v2"),
+            (CollectionAsset("SOL", "crypto"), "hyperliquid", "price_provider_assignment_v2"),
+        )
+        for asset, provider, policy in cases:
+            with self.subTest(symbol=asset.symbol):
+                assignment = assigned_price_provider(asset=asset, existing_provider=None)
+                self.assertEqual(assignment.provider, provider)
+                self.assertEqual(assignment.policy_version, policy)
 
     def test_oldest_canonical_provider_is_sticky_for_existing_series(self):
-        asset = CollectionAsset("HYPE", "crypto")
-        self.assertEqual(assigned_price_provider(asset=asset, existing_provider="binance"), "binance")
-        self.assertEqual(assigned_price_provider(asset=CollectionAsset("AAPL", "stock"), existing_provider="fmp"), "fmp")
+        cases = (
+            (CollectionAsset("BTC", "crypto"), "binance", "price_provider_assignment_v1"),
+            (CollectionAsset("BTC", "crypto"), "hyperliquid", "price_provider_assignment_v2"),
+            (CollectionAsset("HYPE", "crypto"), "hyperliquid", "price_provider_assignment_v1"),
+            (CollectionAsset("HYPE", "crypto"), "binance", "price_provider_assignment_v1"),
+            (CollectionAsset("AAPL", "stock"), "fmp", "price_provider_assignment_v1"),
+        )
+        for asset, provider, policy in cases:
+            with self.subTest(symbol=asset.symbol, existing_provider=provider):
+                assignment = assigned_price_provider(asset=asset, existing_provider=provider)
+                self.assertEqual(assignment.provider, provider)
+                self.assertEqual(assignment.policy_version, policy)
+
+    def test_core_crypto_transport_uses_hyperliquid_v2_and_hype_stays_v1(self):
+        calls: list[tuple[str, str]] = []
+        market_date = _task4_utc("2026-09-08T00:00:00Z")
+
+        def fetch_json(**request):
+            calls.append((request["provider"], request["symbol"]))
+            self.assertEqual(request["provider"], "hyperliquid")
+            self.assertEqual(request["payload"]["type"], "candleSnapshot")
+            self.assertEqual(request["payload"]["req"]["coin"], request["symbol"])
+            self.assertEqual(request["payload"]["req"]["interval"], "1d")
+            return [{
+                "s": request["symbol"], "i": "1d", "t": int(market_date.timestamp() * 1000),
+                "o": "100", "h": "102", "l": "99", "c": "101", "v": "123",
+            }]
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            path = EvidenceCollector(
+                fetch_json=fetch_json,
+                transport_root=root / "transport",
+                now_utc=_task4_utc("2026-09-09T00:30:00Z"),
+            ).collect_market(
+                assets=[CollectionAsset(symbol, "crypto") for symbol in ("BTC", "ETH", "SOL", "HYPE")],
+                existing_provider_by_symbol={"HYPE": "hyperliquid"},
+            )
+            records = _task4_transport_records(path)
+            candidates = package_evidence_transport(
+                transport_dir=root / "transport", output_dir=root / "candidates"
+            )
+            candidate_policies = {}
+            for candidate in candidates:
+                envelope = strict_json_loads_bytes(decompress_single_member_gzip(
+                    (root / "candidates" / candidate).read_bytes(),
+                    max_uncompressed_bytes=4 * 1024 * 1024,
+                ))
+                candidate_policies[envelope["logical_identity"]["symbol"]] = (
+                    envelope["semantic_provenance"]["collection_policy_version"]
+                )
+
+        self.assertEqual(
+            calls, [("hyperliquid", symbol) for symbol in ("BTC", "ETH", "SOL", "HYPE")]
+        )
+        self.assertEqual(len(candidates), 4)
+        self.assertEqual(candidate_policies, {
+            "BTC": "price_provider_assignment_v2",
+            "ETH": "price_provider_assignment_v2",
+            "SOL": "price_provider_assignment_v2",
+            "HYPE": "price_provider_assignment_v1",
+        })
+        for record in records:
+            expected_policy = (
+                "price_provider_assignment_v1"
+                if record["symbol"] == "HYPE"
+                else "price_provider_assignment_v2"
+            )
+            self.assertEqual(record["assigned_provider"], "hyperliquid")
+            self.assertEqual(record["assignment_policy_version"], expected_policy)
+            self.assertEqual(
+                record["semantic_provenance"]["collection_policy_version"], expected_policy
+            )
+            self.assertEqual(
+                record["source_request"]["source_contract"],
+                "hyperliquid.candle_snapshot.raw_ohlcv_v1",
+            )
+            self.assertEqual(record["status"], "available")
+            self.assertEqual(len(record["bars"]), 1)
 
     def test_unknown_or_unsupported_symbol_is_market_data_unavailable(self):
         calls: list[dict[str, object]] = []
@@ -3962,6 +4046,64 @@ class ArchiveAuthorityTransitionTests(_ArchiveRepositoryMixin, unittest.TestCase
 
 
 class ArchiveGitTests(_ArchiveRepositoryMixin, unittest.TestCase):
+    def test_existing_hype_v1_bar_recollected_by_collector_is_no_op(self):
+        self._bootstrap()
+        claim = qualified_hyperliquid_candle_snapshot_basis_claim()
+        original = _market_envelope(
+            symbol="HYPE",
+            market_date="2026-09-08",
+            provider="hyperliquid",
+            asset_type="crypto",
+            ohlcv={"open": 24.734, "high": 26.337, "low": 24.318, "close": 26.262, "volume": 15947755.25},
+            collection_policy_version="price_provider_assignment_v1",
+            price_basis_claim={
+                "price_basis": claim.price_basis,
+                "price_basis_policy_version": claim.price_basis_policy_version,
+                "source_contract": claim.source_contract,
+            },
+        )
+        first = self._archive([original])
+        self.assertEqual(first.status, "committed")
+        canonical_path = next(
+            path for path in first.committed_paths if path.startswith("evidence/market-bars/")
+        )
+        canonical_before = self._remote_file(canonical_path)
+        market_date = _task4_utc("2026-09-08T00:00:00Z")
+
+        def fetch_json(**request):
+            self.assertEqual(request["provider"], "hyperliquid")
+            return [{
+                "s": "HYPE", "i": "1d", "t": int(market_date.timestamp() * 1000),
+                "o": "24.734", "h": "26.337", "l": "24.318", "c": "26.262", "v": "15947755.25",
+            }]
+
+        transport_dir = self.root / "hype-recollection"
+        transport_path = EvidenceCollector(
+            fetch_json=fetch_json,
+            transport_root=transport_dir,
+            now_utc=_task4_utc("2026-09-09T00:30:00Z"),
+        ).collect_market(
+            assets=[CollectionAsset("HYPE", "crypto")],
+            existing_provider_by_symbol={"HYPE": "hyperliquid"},
+        )
+        record = _task4_transport_records(transport_path)[0]
+        self.assertEqual(record["assignment_policy_version"], "price_provider_assignment_v1")
+        self.assertEqual(
+            record["semantic_provenance"]["collection_policy_version"],
+            "price_provider_assignment_v1",
+        )
+        candidate_dir = self.root / "hype-candidates"
+        self.assertEqual(
+            len(package_evidence_transport(transport_dir=transport_dir, output_dir=candidate_dir)),
+            1,
+        )
+        second = EvidenceArchive(repo_dir=self.caller, branch_name=self.branch_name).archive(candidate_dir)
+
+        self.assertEqual(second.status, "no_op")
+        self.assertTrue(second.durability_confirmed)
+        self.assertEqual(second.conflict_paths, ())
+        self.assertEqual(self._remote_file(canonical_path), canonical_before)
+
     def test_branch_bootstrap_is_orphan_and_evidence_only(self):
         root_sha = self._bootstrap()
 

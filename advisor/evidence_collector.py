@@ -24,6 +24,8 @@ from advisor.evidence_schema import canonical_json_bytes
 
 
 PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION = "price_provider_assignment_v1"
+CORE_CRYPTO_ASSIGNMENT_POLICY_VERSION = "price_provider_assignment_v2"
+CORE_CRYPTO_SYMBOLS = frozenset({"BTC", "ETH", "SOL"})
 US_EQUITIES_SESSION_POLICY_VERSION = "us_equities_session_v1"
 SessionCandleStatus = Literal["accepted", "rejected"]
 logger = logging.getLogger(__name__)
@@ -36,6 +38,12 @@ class CollectionAsset:
 
 
 @dataclass(frozen=True)
+class ProviderAssignment:
+    provider: str | None
+    policy_version: str
+
+
+@dataclass(frozen=True)
 class CanonicalSplitRatio:
     new_shares: str
     old_shares: str
@@ -43,15 +51,27 @@ class CanonicalSplitRatio:
 
 def assigned_price_provider(
     *, asset: CollectionAsset, existing_provider: str | None
-) -> str | None:
-    """Return the v1 provider assignment without probing any provider."""
+) -> ProviderAssignment:
+    """Keep canonical series sticky and version new core crypto assignments."""
+    symbol = _normalized_symbol(asset)
     if existing_provider is not None:
-        return existing_provider
+        policy_version = (
+            CORE_CRYPTO_ASSIGNMENT_POLICY_VERSION
+            if asset.asset_type == "crypto"
+            and symbol in CORE_CRYPTO_SYMBOLS
+            and existing_provider == "hyperliquid"
+            else PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION
+        )
+        return ProviderAssignment(existing_provider, policy_version)
     if asset.asset_type in {"stock", "etf"}:
-        return "fmp"
+        return ProviderAssignment("fmp", PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION)
     if asset.asset_type == "crypto":
-        return "hyperliquid" if _normalized_symbol(asset) == "HYPE" else "binance"
-    return None
+        if symbol in CORE_CRYPTO_SYMBOLS:
+            return ProviderAssignment("hyperliquid", CORE_CRYPTO_ASSIGNMENT_POLICY_VERSION)
+        if symbol == "HYPE":
+            return ProviderAssignment("hyperliquid", PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION)
+        return ProviderAssignment("binance", PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION)
+    return ProviderAssignment(None, PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION)
 
 
 def normalize_split_factor(*, split_factor: str | Decimal) -> CanonicalSplitRatio:
@@ -108,8 +128,11 @@ class EvidenceCollector:
         for asset in assets:
             symbol = _normalized_symbol(asset)
             existing_provider = existing_provider_by_symbol.get(symbol)
-            provider = assigned_price_provider(asset=asset, existing_provider=existing_provider)
-            record = _market_record_base(asset=asset, symbol=symbol, provider=provider)
+            assignment = assigned_price_provider(asset=asset, existing_provider=existing_provider)
+            provider = assignment.provider
+            record = _market_record_base(
+                asset=asset, symbol=symbol, provider=provider, policy_version=assignment.policy_version
+            )
             if not _is_supported_asset(asset=asset, symbol=symbol) or provider not in {
                 "fmp",
                 "binance",
@@ -151,7 +174,7 @@ class EvidenceCollector:
             )
             record["source_request"] = source_request
             record["semantic_provenance"] = {
-                "collection_policy_version": PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION,
+                "collection_policy_version": assignment.policy_version,
                 "price_basis_claim": _claim_projection(claim),
                 "price_provider": provider,
                 "source_response_sha256": _response_sha256(payload),
@@ -393,12 +416,12 @@ def _is_supported_asset(*, asset: CollectionAsset, symbol: str) -> bool:
 
 
 def _market_record_base(
-    *, asset: CollectionAsset, symbol: str, provider: str | None
+    *, asset: CollectionAsset, symbol: str, provider: str | None, policy_version: str
 ) -> dict[str, object]:
     return {
         "asset_type": asset.asset_type,
         "assigned_provider": provider,
-        "assignment_policy_version": PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION,
+        "assignment_policy_version": policy_version,
         "bars": [],
         "coverage_window": None,
         "interval": "1d",
