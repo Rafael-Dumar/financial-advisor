@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
@@ -25,6 +26,7 @@ from advisor.evidence_schema import canonical_json_bytes
 PRICE_PROVIDER_ASSIGNMENT_POLICY_VERSION = "price_provider_assignment_v1"
 US_EQUITIES_SESSION_POLICY_VERSION = "us_equities_session_v1"
 SessionCandleStatus = Literal["accepted", "rejected"]
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -120,7 +122,22 @@ class EvidenceCollector:
                 payload, source_request, claim = self._fetch_market_payload(
                     symbol=symbol, provider=provider
                 )
-            except (OSError, RuntimeError, ValueError, TypeError):
+            except (OSError, RuntimeError, ValueError, TypeError) as error:
+                http_status = next(
+                    (
+                        value
+                        for value in (getattr(error, "code", None), getattr(error, "status", None))
+                        if isinstance(value, int) and not isinstance(value, bool)
+                    ),
+                    None,
+                )
+                logger.warning(
+                    "event=evidence_provider_unavailable provider=%s symbol=%s error_type=%s http_status=%s",
+                    provider,
+                    symbol,
+                    type(error).__name__,
+                    http_status if http_status is not None else "null",
+                )
                 record["status"] = "market_data_unavailable"
                 records.append(record)
                 continue
