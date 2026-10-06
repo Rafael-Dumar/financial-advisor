@@ -617,7 +617,17 @@ def generate_analyst_final_review(
             "- `not_implemented` e status de campo, nao bloqueio generico.",
         ]
     )
-    lines.extend(["", *_legacy_compatibility_lines(package, nightly_markdown, final_decision)])
+    lines.extend(
+        [
+            "",
+            *_legacy_compatibility_lines(
+                package,
+                nightly_markdown,
+                final_decision,
+                confirmed_tradeables=confirmed_tradeables,
+            ),
+        ]
+    )
     lines.extend(["", *_runtime_audit_lines(runtime_audit)])
     return "\n".join(lines).strip() + "\n"
 
@@ -634,6 +644,8 @@ def _legacy_compatibility_lines(
     package: ReviewPackage,
     nightly_markdown: str,
     final_decision: str,
+    *,
+    confirmed_tradeables: list[AssetReview],
 ) -> list[str]:
     """Keep the useful human-oriented V2 sections without using them as decision authority."""
     assets = package.main_assets
@@ -649,7 +661,7 @@ def _legacy_compatibility_lines(
     report_data_grade = _report_data_grade(context_markdown, assets)
     trade_readiness = "tradeable" if final_decision == "tradeable" else "no_trade"
     input_completeness = _nightly_input_completeness(nightly_markdown, equities, cryptos)
-    market_brief_status = _market_brief_status(assets)
+    market_brief_status = _market_brief_status(assets, context_markdown)
     main_diagnostic_lines = _main_decision_grade_diagnostic_lines(context_markdown)
     main_blocked = main_blocks_operation(package.main_context)
     lines = [
@@ -691,11 +703,11 @@ def _legacy_compatibility_lines(
                 "## Telegram summary",
                 "",
                 _telegram_summary(
-                    final_decision,
                     assets,
-                    report_data_grade=report_data_grade,
-                    trade_readiness=trade_readiness,
+                    confirmed_tradeables=confirmed_tradeables,
                     market_brief_status=market_brief_status,
+                    market_context_markdown=context_markdown,
+                    main_blocked=main_blocked,
                     input_incomplete=input_completeness["incomplete"],
                     main_diagnostic_lines=main_diagnostic_lines,
                 ),
@@ -741,11 +753,11 @@ def _legacy_compatibility_lines(
             "## Telegram summary",
             "",
             _telegram_summary(
-                final_decision,
                 assets,
-                report_data_grade=report_data_grade,
-                trade_readiness=trade_readiness,
+                confirmed_tradeables=confirmed_tradeables,
                 market_brief_status=market_brief_status,
+                market_context_markdown=context_markdown,
+                main_blocked=main_blocked,
                 input_incomplete=input_completeness["incomplete"],
                 main_diagnostic_lines=main_diagnostic_lines,
             ),
@@ -1071,61 +1083,93 @@ def _artifact_run_ids(markdown: str) -> str:
     return ",".join(dict.fromkeys(values))
 
 
-def _market_brief_status(assets: list[AssetReview]) -> str:
+def _market_brief_status(assets: list[AssetReview], markdown: str = "") -> str:
     by_ticker = {asset.ticker: asset for asset in assets}
-    missing = [ticker for ticker in ("SPY", "QQQ", "SMH", "BTC", "ETH") if ticker not in by_ticker]
-    if any(ticker in missing for ticker in ("SPY", "QQQ", "SMH")):
-        return "missing"
-    if missing:
+    proxies = ("SPY", "QQQ", "SMH", "BTC", "ETH")
+    observed = {ticker for ticker in proxies if _has_market_observation(by_ticker.get(ticker))}
+    if len(observed) == len(proxies):
+        return "complete"
+    stock_regime = _field_any(markdown, "stock_regime", "Stock regime")
+    crypto_regime = _field_any(markdown, "crypto_regime", "Crypto regime")
+    if observed or _usable_context_value(stock_regime) or _usable_context_value(crypto_regime):
         return "partial"
-    return "ok"
+    return "unavailable"
 
 
 def _market_brief_lines(markdown: str, assets: list[AssetReview]) -> list[str]:
     by_ticker = {asset.ticker: asset for asset in assets}
-    status = _market_brief_status(assets)
+    status = _market_brief_status(assets, markdown)
+    proxy_labels = {
+        "SPY": "SPY/S&P proxy",
+        "QQQ": "QQQ/Nasdaq proxy",
+        "SMH": "SMH/semi proxy",
+        "BTC": "BTC",
+        "ETH": "ETH",
+    }
+    missing = [ticker for ticker in proxy_labels if not _has_market_observation(by_ticker.get(ticker))]
     stock_regime = _field_any(markdown, "stock_regime", "Stock regime") or "unknown"
     crypto_regime = _field_any(markdown, "crypto_regime", "Crypto regime") or "unknown"
     lines = [
         "## Market brief",
         "",
         f"- market_brief_status: {status}",
-        f"- SPY/S&P proxy: {_brief_asset_summary(by_ticker.get('SPY'))}",
-        f"- QQQ/Nasdaq proxy: {_brief_asset_summary(by_ticker.get('QQQ'))}",
-        f"- SMH/semi proxy: {_brief_asset_summary(by_ticker.get('SMH'))}",
-        f"- BTC: {_brief_asset_summary(by_ticker.get('BTC'))}",
-        f"- ETH: {_brief_asset_summary(by_ticker.get('ETH'))}",
-        f"- stock_regime: `{stock_regime}`",
-        f"- crypto_regime: `{crypto_regime}`",
+        *[f"- {label}: {_brief_asset_summary(by_ticker.get(ticker))}" for ticker, label in proxy_labels.items()],
+        *([f"- stock_regime: `{stock_regime}`"] if _usable_context_value(stock_regime) else []),
+        *([f"- crypto_regime: `{crypto_regime}`"] if _usable_context_value(crypto_regime) else []),
         "- summary:",
     ]
-    if status == "missing":
-        lines.extend(
-            [
-                "  - Equity proxy data missing, so index/sector context is not decision-grade.",
-                "  - BTC/ETH context is shown only when basic crypto data is present.",
-                "  - Use the watch ranking as observation priority, not an entry signal.",
-            ]
-        )
+    if missing:
+        lines.append(f"  - Proxies without usable observations: {', '.join(missing)}.")
+    if status == "complete":
+        lines.append("  - All expected proxies have observed price or daily-change facts; no direction is inferred.")
+    elif status == "partial":
+        lines.append("  - Useful market context is available, with gaps named above; no direction is inferred.")
     else:
-        lines.extend(
-            [
-                "  - Market proxies are present for directional context.",
-                "  - Crypto majors are present for cross-asset risk context.",
-                "  - Rankings remain blocked for trading until checks clear.",
-            ]
-        )
+        lines.append("  - Market context is unavailable because no usable proxy values or verified regimes were supplied.")
     return lines
 
 
 def _brief_asset_summary(asset: AssetReview | None) -> str:
     if asset is None:
         return "missing"
-    price = _metric_value(asset.metrics, "Last price")
-    change = _metric_value(asset.metrics, "Daily change")
-    if price == "missing" and change == "missing":
-        return "present_without_price_change"
+    price = _metric_display_value(asset.metrics, "Last price")
+    change = _metric_display_value(asset.metrics, "Daily change")
+    if not price and not change:
+        return "missing"
     return f"price={price}; daily_change_pct={change}"
+
+
+def _has_market_observation(asset: AssetReview | None) -> bool:
+    return bool(
+        asset
+        and (
+            _metric_display_value(asset.metrics, "Last price")
+            or _metric_display_value(asset.metrics, "Daily change")
+        )
+    )
+
+
+def _metric_display_value(metrics: str, name: str) -> str:
+    match = re.search(rf"{re.escape(name)}:\s*([^;]+)", metrics, re.IGNORECASE)
+    if not match:
+        return ""
+    value = _table_safe(match.group(1).strip())
+    return value if _usable_context_value(value) else ""
+
+
+def _usable_context_value(value: str) -> bool:
+    return value.strip().lower() not in {
+        "",
+        "n/a",
+        "na",
+        "none",
+        "null",
+        "unknown",
+        "missing",
+        "not_verified",
+        "not_present_in_input",
+        "unavailable",
+    }
 
 
 def _coverage_universe_lines(assets: list[AssetReview]) -> list[str]:
@@ -1689,46 +1733,397 @@ def _asset_lines(assets: list[AssetReview]) -> list[str]:
 
 
 def _telegram_summary(
-    final_decision: str,
     assets: list[AssetReview],
     *,
-    report_data_grade: str,
-    trade_readiness: str,
+    confirmed_tradeables: list[AssetReview],
     market_brief_status: str,
+    market_context_markdown: str,
+    main_blocked: bool,
     input_incomplete: bool,
     main_diagnostic_lines: list[str] | None = None,
 ) -> str:
-    top_equities = _top_equities_to_watch(assets)
-    best_equity = top_equities[0] if top_equities else None
-    top_crypto = _top_crypto_to_watch(assets)
-    trade_block = "nenhum" if final_decision == "tradeable" else _trade_block_summary(assets, report_data_grade)
-    data_error = _data_error_summary(input_incomplete, main_diagnostic_lines or [])
-    lines = [
-        f"Decisao operacional: {final_decision}",
-        f"Report data grade: {report_data_grade}",
-        f"Trade readiness: {trade_readiness}",
-        f"Market brief: {market_brief_status}",
-        f"Top equities: {_format_top_ticker_list(top_equities) if top_equities else 'nenhum'}",
-        f"Top crypto: {_format_top_ticker_list(top_crypto) if top_crypto else 'nenhum'}",
-        f"Melhor equity: {_best_asset_summary(best_equity)}",
-        f"Melhor crypto: {_best_crypto_summary(top_crypto)}",
-        f"Bloqueio para trade: {trade_block}",
-        f"Erro de dados, se houver: {data_error}",
-        (
-            "Proximo passo: revisar stop/invalidation e sizing do main; decisao e execucao manuais"
-            if final_decision == "tradeable"
-            else "Proximo passo: aguardar proximo main decision-grade"
-        ),
+    confirmed_tickers = {asset.ticker for asset in confirmed_tradeables}
+
+    def observation_candidate(asset: AssetReview) -> bool:
+        source_state = asset.source_decision.lower()
+        return (
+            asset.ticker not in confirmed_tickers
+            and source_state not in {"blocked", "avoid", "rejected"}
+            and asset.decision not in {"blocked", "rejected"}
+        )
+
+    equities = [asset for asset in _top_equities_to_watch(assets) if observation_candidate(asset)][:3]
+    cryptos = [asset for asset in _top_crypto_to_watch(assets) if observation_candidate(asset)][:3]
+    rejected = [
+        asset
+        for asset in assets
+        if asset.ticker not in confirmed_tickers
+        and (
+            asset.source_decision.lower() in {"blocked", "avoid", "rejected"}
+            or asset.decision in {"blocked", "rejected"}
+        )
     ]
-    return "\n".join(lines)
+    diagnostics = main_diagnostic_lines or []
+    main_reason = (
+        "O main confirmou estes candidatos e eles passaram pelo gate de integridade existente."
+        if confirmed_tradeables
+        else _telegram_reason(main_blocked, diagnostics)
+    )
+    uncertainty = _telegram_uncertainty_lines(assets, input_incomplete)
+
+    variants = (
+        (2, 3, 3, 5, True),
+        (1, 3, 3, 5, True),
+        (0, 3, 3, 5, True),
+        (0, 1, 1, 5, True),
+        (0, 0, 0, 5, True),
+        (0, 0, 0, 1, True),
+        (0, 0, 0, 0, True),
+        (0, 0, 0, 0, False),
+    )
+
+    def compose(
+        detail_level: int,
+        equity_limit: int,
+        crypto_limit: int,
+        rejected_limit: int,
+        include_regimes: bool,
+        *,
+        include_terms: bool,
+    ) -> str:
+        lines = [
+            (
+                "Ha entrada aprovada pelo main para: "
+                + ", ".join(asset.ticker for asset in confirmed_tradeables)
+                + "."
+                if confirmed_tradeables
+                else "Nao ha entrada aprovada agora."
+            ),
+            f"Motivo principal: {main_reason}",
+            "",
+            *_telegram_market_lines(
+                market_context_markdown,
+                assets,
+                market_brief_status,
+                include_regimes=include_regimes,
+            ),
+        ]
+        if uncertainty:
+            lines.extend(["", *uncertainty])
+        if confirmed_tradeables:
+            lines.extend(["", "Trade candidates confirmados:"])
+            for asset in confirmed_tradeables:
+                lines.append(f"* Trade candidate confirmado pelo main: {asset.ticker}.")
+                if detail_level > 0:
+                    lines.extend(
+                        _telegram_asset_detail_lines(
+                            asset,
+                            detail_level,
+                            confirmed_tradeable=True,
+                        )
+                    )
+                if include_terms:
+                    lines.extend(_telegram_trade_term_lines(asset))
+            if not include_terms:
+                lines.append("Termos operacionais omitidos; consulte o relatorio completo.")
+        priorities = equities + cryptos
+        if priorities:
+            lines.extend(
+                [
+                    "",
+                    "Prioridades de observacao (ordem de revisao, sem ranking financeiro): "
+                    + ", ".join(asset.ticker for asset in priorities)
+                    + ".",
+                ]
+            )
+            for heading, candidates, limit in (
+                ("Acoes em observacao:", equities, equity_limit),
+                ("Cripto em observacao:", cryptos, crypto_limit),
+            ):
+                if not candidates or not limit:
+                    continue
+                lines.extend(["", heading])
+                for asset in candidates[:limit]:
+                    lines.append(f"* {asset.ticker}: {_telegram_asset_status(asset)}.")
+                    if detail_level > 0:
+                        lines.extend(_telegram_asset_detail_lines(asset, detail_level))
+        else:
+            lines.extend(["", "Nenhuma prioridade de observacao foi apoiada pelo review."])
+        if rejected_limit:
+            rejected_lines = _telegram_rejected_lines(rejected, rejected_limit)
+            if rejected_lines:
+                lines.extend(["", "Rejeitados/bloqueados:", *rejected_lines])
+        lines.extend(
+            [
+                "",
+                f"Chamada pratica: {_telegram_practical_call(confirmed_tradeables, priorities)}",
+                "Execucao manual; o bot nao envia ordens.",
+            ]
+        )
+        return "\n".join(lines)
+
+    for detail_level, equity_limit, crypto_limit, rejected_limit, include_regimes in variants:
+        message = compose(
+            detail_level,
+            equity_limit,
+            crypto_limit,
+            rejected_limit,
+            include_regimes,
+            include_terms=True,
+        )
+        if len(message) <= 3200:
+            return message
+
+    for detail_level, equity_limit, crypto_limit, rejected_limit, include_regimes in variants:
+        message = compose(
+            detail_level,
+            equity_limit,
+            crypto_limit,
+            rejected_limit,
+            include_regimes,
+            include_terms=False,
+        )
+        if len(message) <= 3200:
+            return message
+    return compose(0, 0, 0, 0, False, include_terms=False)
+
+
+def _telegram_market_lines(
+    markdown: str,
+    assets: list[AssetReview],
+    status: str,
+    *,
+    include_regimes: bool,
+) -> list[str]:
+    by_ticker = {asset.ticker: asset for asset in assets}
+    labels = {"SPY": "SPY", "QQQ": "QQQ", "SMH": "SMH", "BTC": "BTC", "ETH": "ETH"}
+    observed: list[str] = []
+    missing: list[str] = []
+    for ticker, label in labels.items():
+        asset = by_ticker.get(ticker)
+        price = _metric_display_value(asset.metrics, "Last price") if asset else ""
+        change = _metric_display_value(asset.metrics, "Daily change") if asset else ""
+        if not price and not change:
+            missing.append(label)
+            continue
+        facts = []
+        if price:
+            facts.append(f"preco {price}")
+        if change:
+            facts.append(f"variacao diaria {change}")
+        observed.append(f"{label}: {'; '.join(facts)}")
+    lines = [f"Contexto de mercado: {status}."]
+    if observed:
+        lines.append("  Observado: " + "; ".join(observed) + ".")
+    if missing:
+        lines.append("  Proxies ausentes: " + ", ".join(missing) + ".")
+    if include_regimes:
+        regimes = []
+        stock_regime = _field_any(markdown, "stock_regime", "Stock regime")
+        crypto_regime = _field_any(markdown, "crypto_regime", "Crypto regime")
+        if _usable_context_value(stock_regime):
+            regimes.append(f"acoes {stock_regime}")
+        if _usable_context_value(crypto_regime):
+            regimes.append(f"cripto {crypto_regime}")
+        if regimes:
+            lines.append("  Regimes observados: " + "; ".join(regimes) + ".")
+    return lines
+
+
+def _telegram_uncertainty_lines(assets: list[AssetReview], input_incomplete: bool) -> list[str]:
+    lines = []
+    if input_incomplete:
+        lines.append("Incerteza material: o input do nightly esta incompleto; campos ausentes nao foram inferidos.")
+    for asset in assets:
+        if asset.asset_type != "crypto":
+            continue
+        if asset.basic_data_status in {"live", "cache", "fallback"}:
+            basic = f"dados basicos disponiveis ({asset.basic_data_status})"
+        else:
+            basic = "dados basicos nao verificados"
+        if asset.flow_data_status in {"not_verified", "unavailable", ""}:
+            flow = "fluxo/derivativos nao verificados"
+        elif asset.flow_data_status == "partial":
+            flow = "fluxo/derivativos parciais"
+        else:
+            flow = "fluxo/derivativos observados"
+        if asset.flow_data_status != "live":
+            lines.append(f"Incerteza material: {asset.ticker}: {basic}; {flow}.")
+    return lines
+
+
+def _telegram_asset_status(asset: AssetReview) -> str:
+    source_state = asset.source_decision.lower()
+    if source_state == "blocked" or asset.decision == "blocked":
+        return "Bloqueado"
+    if source_state in {"avoid", "rejected"} or asset.decision == "rejected":
+        return "Rejeitado"
+    if source_state == "watch_buy":
+        return "Em observacao"
+    if asset.decision in {"research_only", "crypto_research_only"} or source_state in {"research", "research_only"}:
+        return "Research"
+    if asset.asset_type == "crypto" and asset.decision == "crypto_watch_context":
+        return "Contexto/observacao"
+    if source_state in {"technical_unvalidated", "wait"}:
+        return "Em observacao"
+    return "Em observacao"
+
+
+def _telegram_asset_detail_lines(
+    asset: AssetReview,
+    detail_level: int,
+    *,
+    confirmed_tradeable: bool = False,
+) -> list[str]:
+    lines = []
+    if not confirmed_tradeable:
+        lines.extend(
+            [
+                f"  Tese: {_telegram_human_text(asset.thesis)}",
+                f"  Confirma: {_telegram_human_text(asset.confirms)}",
+                f"  Risco/invalidation: {_telegram_human_text(asset.contradicts)}",
+                f"  Antes de reconsiderar: {_telegram_human_text(asset.path_to_operation)}",
+            ]
+        )
+    if detail_level >= 2:
+        metrics = _telegram_metric_summary(asset)
+        if metrics:
+            lines.append(f"  Dados observados: {metrics}")
+        valuation = _telegram_optional_text(asset.valuation)
+        events = _telegram_optional_text(asset.events_news)
+        recorded_risk = _telegram_recorded_reason(asset.risks)
+        if confirmed_tradeable and asset.risks.strip().lower() in {"observacao_pendente", "none", "nenhum"}:
+            recorded_risk = ""
+        if valuation:
+            lines.append(f"  Valuation: {valuation}")
+        if events:
+            lines.append(f"  Eventos/noticias: {events}")
+        if recorded_risk:
+            lines.append(f"  Motivo registrado: {recorded_risk}")
+    return lines
+
+
+def _telegram_metric_summary(asset: AssetReview) -> str:
+    names = (
+        ("Last price", "preco"),
+        ("Daily change", "variacao diaria"),
+        ("Relative strength", "forca relativa"),
+        ("RSI", "RSI"),
+        ("Average volume", "volume medio"),
+        ("Funding rate (8h normalized)", "funding rate (8h)"),
+        ("Open interest change", "variacao do open interest"),
+        ("CVD proxy", "CVD"),
+        ("Coinbase premium", "premium Coinbase"),
+        ("Liquidation imbalance", "desequilibrio de liquidacoes"),
+    )
+    values = [
+        f"{label} {value}"
+        for name, label in names
+        if (value := _metric_display_value(asset.metrics, name))
+    ]
+    return "; ".join(values)
+
+
+def _telegram_trade_term_lines(asset: AssetReview) -> list[str]:
+    terms = (
+        ("Entry (main)", asset.entry),
+        ("Stop/invalidation (main)", asset.stop_invalidation),
+        ("Sizing (main)", asset.position_sizing),
+    )
+    lines = []
+    for label, value in terms:
+        if _main_term_present(value):
+            lines.append(f"  {label}: {value}")
+        else:
+            field = label.split(" ")[0].lower()
+            lines.append(f"  {field} nao informado no main.")
+    return lines
+
+
+def _main_term_present(value: str) -> bool:
+    return value.strip().lower() not in {
+        "",
+        "not_present_in_input",
+        "not_verified",
+        "missing",
+        "unknown",
+        "n/a",
+        "none",
+    }
+
+
+def _telegram_rejected_lines(assets: list[AssetReview], limit: int) -> list[str]:
+    lines = []
+    for asset in assets[:limit]:
+        status = _telegram_asset_status(asset)
+        reason = _telegram_blocker_reason(asset)
+        lines.append(f"* {asset.ticker}: {status}. {reason}")
+    return lines
+
+
+def _telegram_blocker_reason(asset: AssetReview) -> str:
+    blocker = asset.blockers[0] if asset.blockers else ""
+    reasons = [
+        reason.strip()
+        for reason in re.split(r"[;,]", asset.risks)
+        if reason.strip() and reason.strip().lower() != "not_verified"
+    ]
+    if blocker:
+        detail = next((reason for reason in reasons if reason != blocker), "")
+        result = "bloqueio operacional: " + _telegram_human_text(blocker)
+        if detail:
+            result += "; motivo registrado: " + _telegram_human_text(detail)
+        return result + "."
+    if reasons:
+        return "motivo registrado: " + _telegram_human_text(reasons[0]) + "."
+    return "motivo: " + _telegram_human_text(asset.contradicts).rstrip(" .") + "."
+
+
+def _telegram_recorded_reason(value: str) -> str:
+    return _telegram_human_text(value.split(",", 1)[0].strip()) if value and value != "not_verified" else ""
+
+
+def _telegram_optional_text(value: str) -> str:
+    if not value or value.strip().lower() in {"not_verified", "not_present_in_input", "unknown", "n/a"}:
+        return ""
+    return _telegram_human_text(value)
+
+
+def _telegram_human_text(value: str) -> str:
+    return " ".join(
+        value.replace("not_present_in_input", "nao informado")
+        .replace("not_verified", "nao verificado")
+        .replace("not_collected", "nao coletado")
+        .replace("_", " ")
+        .split()
+    )
+
+
+def _telegram_practical_call(
+    confirmed_tradeables: list[AssetReview],
+    priorities: list[AssetReview],
+) -> str:
+    if confirmed_tradeables:
+        return "Conferir os termos fornecidos pelo main; qualquer execucao permanece manual."
+    if not priorities:
+        return "Nenhuma prioridade esta apoiada pelo review; aguardar novo main e verificacoes completas."
+    names = ", ".join(asset.ticker for asset in priorities)
+    if len(priorities) > 1:
+        return f"Manter {names} em observacao; cada ativo depende dos checks listados no respectivo card."
+    next_step = _telegram_human_text(priorities[0].path_to_operation).rstrip(" .")
+    risk = _telegram_human_text(priorities[0].contradicts).rstrip(" .")
+    return f"Manter {names} em observacao; reavaliar apos {next_step}. Risco/invalidation: {risk}."
 
 
 def _telegram_reason(main_not_decision_grade: bool, main_diagnostic_lines: list[str]) -> str:
     diagnostic = "\n".join(main_diagnostic_lines)
-    if "market_session_conflict: true" in diagnostic or "reason_codes: `market_session_conflict`" in diagnostic:
+    if "market_session_conflict" in diagnostic:
         sources = _field_any(diagnostic, "market_session_sources").strip("[]").replace(", ", "/")
-        return f"possivel bug de session detection; main veio {sources}."
-    return "main nao decision-grade" if main_not_decision_grade else "checks pendentes ainda nao liberam entrada"
+        source_note = f" (fontes: {sources})" if sources else ""
+        return f"A classificacao da sessao pode estar incorreta{source_note}; por seguranca, o main nao foi tratado como base de decisao."
+    if main_not_decision_grade:
+        return "O main nao passou pelo gate de integridade; nenhuma entrada foi aprovada."
+    return "O main nao confirmou um trade candidate pelo gate de integridade."
 
 
 def _trade_block_summary(assets: list[AssetReview], report_data_grade: str) -> str:

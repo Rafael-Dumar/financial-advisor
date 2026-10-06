@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from advisor.analyst_review import generate_analyst_final_review
+from advisor.telegram_notify import build_analyst_final_telegram_message, extract_telegram_summary
 
 
 NIGHTLY_INPUT = """# Nightly qualitative review input
@@ -317,6 +319,80 @@ FULL_UNIVERSE_INPUT = """# Nightly qualitative review input
 """
 
 
+def _telegram_text(review: str) -> str:
+    return extract_telegram_summary(review)
+
+
+def _source_asset(
+    ticker: str,
+    source_decision: str,
+    *,
+    asset_type: str = "stock",
+    entry: str = "",
+    stop: str = "",
+    sizing: str = "",
+    blocking_reasons: str = "",
+    reason_codes: str = "",
+    metrics: str = "Last price: 100.00; Daily change: 1.00%; Relative strength: 5.00%; Average volume: 1234567.00",
+    data_quality: str = "limited",
+    missing_data_severity: str = "low",
+) -> str:
+    provider = "coingecko" if asset_type == "crypto" else "fmp"
+    lines = [
+        f"## {ticker}",
+        f"- Ativo: {ticker}",
+        f"- Tipo: {asset_type}",
+        f"- decision_label: {source_decision}",
+        f"- Decisao: {source_decision}",
+        f"- blocking_reasons: {blocking_reasons or 'nenhum'}",
+        f"- reason_codes: {reason_codes or 'observacao_pendente'}",
+        f"- data_quality: {data_quality}",
+        f"- missing_data_severity: {missing_data_severity}",
+        "- Investment Quality Score: 70",
+        f"- Metricas principais: {metrics}",
+        "- news_status: not_verified",
+        f"- provider: {provider}",
+    ]
+    for label, value in (
+        ("Entrada ideal", entry),
+        ("Stop/invalidation", stop),
+        ("Tamanho maximo da posicao", sizing),
+    ):
+        if value:
+            lines.append(f"- {label}: {value}")
+    return "\n".join(lines)
+
+
+def _authoritative_main_review(*assets: str) -> str:
+    nightly = """# Nightly qualitative review input
+
+## Main summary
+
+- main: run_id=424242
+- main_head_sha: abcdef123456
+- brt_date: 2026-10-06
+- generated_at: 2026-10-06T21:00:00-03:00
+- report_type: main
+- Data mode: live
+- report_grade: decision_grade
+- market_session: regular
+- artifact_valid: true
+- blocking_reasons: nenhum
+- provider_rate_limit_status: ok
+- stale_asset_count_primary: 0
+"""
+    main = """# Investment and Swing Trade Advisor
+
+- report_type: main
+- generated_at: 2026-10-06T21:00:00-03:00
+- Data mode: live
+- report_grade: decision_grade
+- market_session: regular
+
+""" + "\n\n".join(assets)
+    return generate_analyst_final_review(nightly, extra_markdowns=[main])
+
+
 class AnalystReviewSemanticsTests(unittest.TestCase):
     def test_main_diagnostic_keeps_no_trade_but_allows_watch_pending_checks(self) -> None:
         review = generate_analyst_final_review(NIGHTLY_INPUT)
@@ -361,22 +437,263 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
     def test_telegram_summary_separates_operational_decision_from_observation(self) -> None:
         review = generate_analyst_final_review(NIGHTLY_INPUT)
 
-        telegram = review.split("## Telegram summary", 1)[1]
-        self.assertIn("Decisao operacional: no_trade", telegram)
-        self.assertIn("Report data grade:", telegram)
-        self.assertIn("Trade readiness: no_trade", telegram)
-        self.assertIn("Top equities: AMD", telegram)
-        self.assertIn("Top crypto: HYPE", telegram)
-        self.assertIn("Melhor equity: AMD - watch_pending_checks", telegram)
-        self.assertIn("Melhor crypto: HYPE - crypto_research_only", telegram)
-        self.assertIn("Bloqueio para trade:", telegram)
+        telegram = _telegram_text(review).lower()
+        self.assertIn("nao ha entrada aprovada agora", telegram)
+        self.assertIn("contexto de mercado: unavailable", telegram)
+        self.assertIn("amd", telegram)
+        self.assertIn("hype", telegram)
+        self.assertIn("prioridades de observacao", telegram)
+        self.assertIn("rejeitados/bloqueados", telegram)
+        self.assertNotIn("melhor equity", telegram)
+        self.assertNotIn("melhor crypto", telegram)
+
+    def test_v2_no_trade_brief_explains_decision_market_candidates_and_call(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+        telegram = build_analyst_final_telegram_message(_telegram_text(review))
+        lowered = telegram.lower()
+
+        self.assertRegex(lowered, r"nao ha entrada aprovada|nenhuma entrada esta aprovada")
+        self.assertIn("motivo principal", lowered)
+        self.assertIn("contexto de mercado", lowered)
+        self.assertIn("amd", lowered)
+        self.assertIn("tese", lowered)
+        self.assertIn("confirma", lowered)
+        self.assertRegex(lowered, r"risco|invalidacao|verificacoes pendentes")
+        self.assertIn("chamada pratica", lowered)
+        self.assertIn("execucao manual", lowered)
+
+    def test_v2_partial_market_context_keeps_crypto_facts_and_names_missing_proxies(self) -> None:
+        review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
+        telegram = _telegram_text(review).lower()
+
+        self.assertIn("contexto de mercado: partial", telegram)
+        self.assertIn("61500.00", telegram)
+        self.assertIn("1.20%", telegram)
+        self.assertIn("3400.00", telegram)
+        self.assertIn("0.80%", telegram)
+        for proxy in ("spy", "qqq", "smh"):
+            self.assertIn(proxy, telegram)
+        self.assertIn("ausentes", telegram)
+        self.assertIn("partial_data", review)
+        self.assertIn("trade_readiness", review)
+        self.assertIn("* no_trade", review)
+
+    def test_v2_crypto_summary_separates_basic_data_and_unverified_flow(self) -> None:
+        review = generate_analyst_final_review(CRYPTO_BASIC_WITH_BINANCE_RESTRICTED)
+        telegram = _telegram_text(review).lower()
+
+        self.assertIn("btc", telegram)
+        self.assertIn("dados basicos disponiveis", telegram)
+        self.assertIn("fluxo/derivativos nao verificados", telegram)
+        self.assertNotIn("trade candidate confirmado pelo main: btc", telegram)
+
+    def test_v2_confirmed_tradeable_displays_exact_main_terms_and_missing_terms(self) -> None:
+        entry = "MAIN_ENTRY_RIVER_147.26"
+        stop = "MAIN_STOP_CLIFF_138.04"
+        sizing = "MAIN_SIZE_2.35_PERCENT_NAV"
+        complete = _authoritative_main_review(
+            _source_asset("TST", "tradeable", entry=entry, stop=stop, sizing=sizing)
+        )
+        complete_telegram = _telegram_text(complete)
+
+        self.assertIn("trade candidate confirmado pelo main: tst", complete_telegram.lower())
+        for term in (entry, stop, sizing):
+            self.assertIn(term, complete_telegram)
+        self.assertNotIn("confidence", complete_telegram.lower())
+        self.assertNotIn("confianca", complete_telegram.lower())
+
+        missing = _authoritative_main_review(
+            _source_asset("MISS", "tradeable", entry="MAIN_ENTRY_ONLY_201.37", sizing="MAIN_SIZE_ONLY_1.10_PERCENT")
+        )
+        missing_telegram = _telegram_text(missing).lower()
+        self.assertIn("main_entry_only_201.37", missing_telegram)
+        self.assertIn("stop/invalidation nao informado no main", missing_telegram)
+        self.assertNotIn("confidence", missing_telegram)
+        self.assertNotIn("confianca", missing_telegram)
+
+    def test_v2_confirmed_tradeable_card_omits_observation_guidance_but_keeps_recorded_risk(self) -> None:
+        entry = "MAIN_ENTRY_CONFIRM_147.26"
+        stop = "MAIN_STOP_CONFIRM_138.04"
+        sizing = "MAIN_SIZE_CONFIRM_2.35_PERCENT_NAV"
+        operation_path = "Validar news e main decision-grade antes de qualquer entrada"
+        with patch("advisor.analyst_review._path_to_operation", return_value=operation_path):
+            review = _authoritative_main_review(
+                _source_asset(
+                    "TST",
+                    "tradeable",
+                    entry=entry,
+                    stop=stop,
+                    sizing=sizing,
+                    reason_codes="high_volatility",
+                )
+            )
+        payload = build_analyst_final_telegram_message(_telegram_text(review))
+        card = payload.split("Trade candidate confirmado pelo main: TST.", 1)[1].split(
+            "Nenhuma prioridade de observacao", 1
+        )[0]
+        lowered_card = card.lower()
+
+        self.assertIn("trade candidate confirmado pelo main: tst", payload.lower())
+        for term in (entry, stop, sizing):
+            self.assertIn(term, payload)
+        self.assertIn("motivo registrado: high volatility", lowered_card)
+        for phrase in (
+            "antes de reconsiderar",
+            "faltam validacoes",
+            "main decision-grade",
+            "antes de qualquer entrada",
+            "risco/invalidation: dados ainda",
+        ):
+            self.assertNotIn(phrase, lowered_card)
+
+    def test_v2_multi_priority_call_keeps_checks_and_risk_scoped_to_each_card(self) -> None:
+        equity_check = "EQUITY_CHECK_X"
+        crypto_check = "CRYPTO_CHECK_Y"
+        with patch(
+            "advisor.analyst_review._path_to_operation",
+            side_effect=lambda _decision, asset_type: equity_check if asset_type == "stock" else crypto_check,
+        ):
+            review = _authoritative_main_review(
+                _source_asset("AMD", "technical_unvalidated"),
+                _source_asset(
+                    "HYPE",
+                    "technical_unvalidated",
+                    asset_type="crypto",
+                    reason_codes="cvd_proxy_unavailable",
+                ),
+            )
+        payload = build_analyst_final_telegram_message(_telegram_text(review))
+        call = next(line for line in payload.splitlines() if line.startswith("Chamada pratica:"))
+        lowered_call = call.lower()
+
+        self.assertIn("prioridades de observacao (ordem de revisao, sem ranking financeiro): amd, hype.", payload.lower())
+        self.assertIn(f"Antes de reconsiderar: {equity_check.replace('_', ' ')}", payload)
+        self.assertIn(f"Antes de reconsiderar: {crypto_check.replace('_', ' ')}", payload)
+        self.assertIn("cada ativo depende dos checks listados no respectivo card", lowered_call)
+        self.assertNotIn(equity_check.lower(), lowered_call)
+        self.assertNotIn(crypto_check.lower(), lowered_call)
+        self.assertNotIn("risco/invalidation:", lowered_call)
+        self.assertNotIn("dados/eventos/noticias ainda nao verificados", lowered_call)
+
+    def test_v2_blocked_reason_prefers_operational_blocker_then_one_recorded_reason(self) -> None:
+        review = _authoritative_main_review(
+            _source_asset(
+                "BLK",
+                "blocked",
+                blocking_reasons="provider_price_missing",
+                reason_codes="fmp_request_timeout,secondary_reason_do_not_show",
+            )
+        )
+        telegram = _telegram_text(review).lower()
+
+        self.assertIn("provider price missing", telegram)
+        self.assertIn("fmp request timeout", telegram)
+        self.assertLess(telegram.index("provider price missing"), telegram.index("fmp request timeout"))
+        self.assertNotIn("secondary reason do not show", telegram)
+        self.assertNotIn("fabricated_cause", telegram)
+
+    def test_v2_observation_priorities_do_not_claim_an_authoritative_leader(self) -> None:
+        telegram = _telegram_text(generate_analyst_final_review(FULL_UNIVERSE_INPUT)).lower()
+
+        self.assertIn("prioridades de observacao", telegram)
+        self.assertNotIn("melhor equity", telegram)
+        self.assertNotIn("melhor crypto", telegram)
+        self.assertNotIn("melhor oportunidade", telegram)
+
+    def test_v2_session_detection_warning_keeps_uncertainty_and_safety_consequence(self) -> None:
+        telegram = _telegram_text(generate_analyst_final_review(FULL_UNIVERSE_INPUT)).lower()
+
+        self.assertIn("classificacao da sessao pode estar incorreta", telegram)
+        self.assertIn("nao foi tratado como base de decisao", telegram)
+        self.assertNotIn("bug confirmado", telegram)
+        self.assertNotIn("possible_session_detection_bug", telegram)
+
+    def test_v2_high_volume_brief_reduces_observation_detail_without_cutting_trade_terms(self) -> None:
+        trade1 = ("MAIN_ENTRY_TRADE1_101.25", "MAIN_STOP_TRADE1_97.40", "MAIN_SIZE_TRADE1_1.25_PERCENT")
+        trade2 = ("MAIN_ENTRY_TRADE2_204.50", "MAIN_STOP_TRADE2_198.00", "MAIN_SIZE_TRADE2_2.00_PERCENT")
+        assets = [
+            _source_asset("TRADE1", "tradeable", entry=trade1[0], stop=trade1[1], sizing=trade1[2]),
+            _source_asset("TRADE2", "tradeable", entry=trade2[0], stop=trade2[1], sizing=trade2[2]),
+        ]
+        for index in range(8):
+            detail = f" Last price: {80 + index}.00; Daily change: 1.00%; Relative strength: 8.00%; Average volume: 900000.00; Secondary evidence: " + (
+                f"optional-detail-{index}-" * 60
+            )
+            assets.append(
+                _source_asset(
+                    f"OBS{index}",
+                    "technical_unvalidated",
+                    metrics=detail.strip(),
+                    reason_codes="news_not_collected_confidence_limited",
+                )
+            )
+        assets.append(
+            _source_asset(
+                "BTC",
+                "blocked",
+                asset_type="crypto",
+                reason_codes="cvd_proxy_unavailable,open_interest_change_unavailable,news_not_collected",
+                metrics="Last price: 61500.00; Market cap: 1200000000000.00; Average volume: 35000000000.00; Daily change: 1.20%; Funding rate: -0.05%; Open interest change: n/a; CVD proxy: n/a; Coinbase premium: n/a; Liquidation imbalance: n/a",
+            )
+        )
+
+        telegram = _telegram_text(_authoritative_main_review(*assets))
+        payload = build_analyst_final_telegram_message(telegram)
+        lowered = payload.lower()
+
+        self.assertLessEqual(len(payload), 3500)
+        for ticker in ("TRADE1", "TRADE2"):
+            self.assertIn(ticker, payload)
+        for term in (*trade1, *trade2):
+            self.assertIn(term, payload)
+        self.assertIn("trade candidate confirmado pelo main", lowered)
+        self.assertIn("fluxo/derivativos nao verificados", lowered)
+        self.assertIn("chamada pratica", lowered)
+        self.assertIn("execucao manual", lowered)
+
+        oversized_terms = (
+            "ENTRY_OVERFLOW_" + ("E" * 1400),
+            "STOP_OVERFLOW_" + ("S" * 1400),
+            "SIZING_OVERFLOW_" + ("Z" * 1400),
+        )
+        oversized_review = _authoritative_main_review(
+            _source_asset(
+                "OVERFLOW",
+                "tradeable",
+                entry=oversized_terms[0],
+                stop=oversized_terms[1],
+                sizing=oversized_terms[2],
+            )
+        )
+        oversized_payload = build_analyst_final_telegram_message(_telegram_text(oversized_review))
+
+        self.assertLessEqual(len(oversized_payload), 3500)
+        self.assertIn("OVERFLOW", oversized_payload)
+        self.assertIn("relatorio completo", oversized_payload.lower())
+        for term in oversized_terms:
+            self.assertTrue(term in oversized_payload or term[:120] not in oversized_payload)
+
+    def test_v2_nontradeable_source_states_stay_unapproved_beside_a_confirmed_tradeable(self) -> None:
+        review = _authoritative_main_review(
+            _source_asset("APPROVED", "tradeable", entry="APPROVED_ENTRY_100.00", stop="APPROVED_STOP_95.00", sizing="APPROVED_SIZE_1.00_PERCENT"),
+            _source_asset("WATCH", "watch_buy"),
+            _source_asset("RESEARCH", "technical_unvalidated", metrics="RSI: 51.00"),
+            _source_asset("BLOCKED", "blocked", blocking_reasons="provider_not_configured"),
+            _source_asset("REJECTED", "avoid", reason_codes="negative_ev_with_high_data_severity"),
+        )
+        telegram = _telegram_text(review).lower()
+
+        self.assertIn("trade candidate confirmado pelo main: approved", telegram)
+        for ticker in ("watch", "research", "blocked", "rejected"):
+            self.assertNotIn(f"trade candidate confirmado pelo main: {ticker}", telegram)
+            self.assertNotIn(f"entrada aprovada agora: {ticker}", telegram)
 
     def test_duplicate_main_close_assets_are_listed_once(self) -> None:
         review = generate_analyst_final_review(NIGHTLY_INPUT + "\n\n" + NIGHTLY_INPUT)
 
-        telegram = review.split("## Telegram summary", 1)[1]
-        self.assertEqual(telegram.count("AMD"), 2)
-        self.assertEqual(telegram.count("HYPE"), 2)
+        telegram = _telegram_text(review)
+        self.assertEqual(telegram.count("* AMD:"), 1)
+        self.assertEqual(telegram.count("* HYPE:"), 1)
 
     def test_watch_and_research_labels_never_become_tradeable(self) -> None:
         review = generate_analyst_final_review(NIGHTLY_INPUT)
@@ -432,9 +749,11 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
     def test_telegram_summary_differentiates_basic_data_from_missing_flow(self) -> None:
         review = generate_analyst_final_review(CRYPTO_BASIC_WITH_BINANCE_RESTRICTED)
 
-        telegram = review.split("## Telegram summary", 1)[1]
-        self.assertIn("Melhor crypto: BTC/ETH/SOL - crypto_watch_context", telegram)
-        self.assertIn("flow/derivatives nao verificados", telegram)
+        telegram = _telegram_text(review).lower()
+        self.assertIn("btc", telegram)
+        self.assertIn("dados basicos disponiveis (live)", telegram)
+        self.assertIn("fluxo/derivativos nao verificados", telegram)
+        self.assertNotIn("trade candidate confirmado pelo main: btc", telegram)
 
     def test_crypto_basic_status_can_be_cache_or_fallback(self) -> None:
         cached_input = CRYPTO_BASIC_WITH_BINANCE_RESTRICTED.replace(
@@ -470,38 +789,39 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
 
         self.assertIn("flow_data_status: live", review)
 
-    def test_telegram_summary_lists_every_named_stock_and_crypto(self) -> None:
+    def test_telegram_summary_uses_bounded_observation_priorities_without_best_claims(self) -> None:
         review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
-        telegram = review.split("## Telegram summary", 1)[1]
+        telegram = _telegram_text(review).lower()
 
-        self.assertIn("Decisao operacional: no_trade", telegram)
-        self.assertIn("Report data grade:", telegram)
-        self.assertIn("Trade readiness: no_trade", telegram)
-        self.assertIn("Top equities: AMD", telegram)
-        self.assertIn("Top crypto: HYPE, BTC, ETH, SOL", telegram)
-        self.assertIn("Melhor equity: AMD - watch_pending_checks", telegram)
-        self.assertIn("Melhor crypto: HYPE - crypto_research_only", telegram)
-        self.assertIn("Bloqueio para trade: news/earnings/flow/crypto_flow_pending", telegram)
-        self.assertNotIn("NVDA", telegram)
-        self.assertNotIn("HIMS", telegram)
-        self.assertNotIn("MU", telegram)
-        self.assertNotIn("MSFT", telegram)
-        self.assertNotIn("USAR", telegram)
-        self.assertNotIn("CRDO", telegram)
-        self.assertNotIn("DELL", telegram)
-        self.assertNotIn("MRVL", telegram)
-        self.assertNotIn("HOOD", telegram)
+        self.assertIn("nao ha entrada aprovada agora", telegram)
+        self.assertIn("contexto de mercado: partial", telegram)
+        self.assertIn("prioridades de observacao", telegram)
+        self.assertIn("amd", telegram)
+        self.assertIn("hype", telegram)
+        self.assertIn("rejeitados/bloqueados", telegram)
+        self.assertNotIn("melhor equity", telegram)
+        self.assertNotIn("melhor crypto", telegram)
+        self.assertNotIn("nvda", telegram)
+        self.assertNotIn("hims", telegram)
+        self.assertNotIn("mu", telegram)
+        self.assertNotIn("msft", telegram)
+        self.assertNotIn("usar", telegram)
+        self.assertNotIn("crdo", telegram)
+        self.assertNotIn("dell", telegram)
+        self.assertNotIn("mrvl", telegram)
+        self.assertNotIn("hood", telegram)
 
-    def test_telegram_summary_explains_ranking_instead_of_only_listing_labels(self) -> None:
+    def test_telegram_summary_explains_decision_and_practical_call_without_raw_flags(self) -> None:
         review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
-        telegram = review.split("## Telegram summary", 1)[1]
+        telegram = _telegram_text(review).lower()
 
-        self.assertIn("Report data grade:", telegram)
-        self.assertIn("Market brief:", telegram)
-        self.assertIn("Top equities:", telegram)
-        self.assertIn("Top crypto:", telegram)
-        self.assertIn("Proximo passo: aguardar proximo main decision-grade", telegram)
-        self.assertNotIn("Status completo:", telegram)
+        self.assertIn("motivo principal", telegram)
+        self.assertIn("contexto de mercado: partial", telegram)
+        self.assertIn("chamada pratica", telegram)
+        self.assertIn("execucao manual", telegram)
+        self.assertNotIn("report data grade", telegram)
+        self.assertNotIn("trade readiness", telegram)
+        self.assertNotIn("melhor crypto", telegram)
 
     def test_final_review_starts_with_objective_reading(self) -> None:
         review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
@@ -534,7 +854,7 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
 
         self.assertIn("- report_data_grade: `decision_grade`", review)
         self.assertIn("- trade_readiness: `no_trade`", review)
-        self.assertIn("Bloqueio para trade: news/earnings/flow/crypto_flow_pending", review)
+        self.assertIn("nao ha entrada aprovada agora", _telegram_text(review).lower())
 
     def test_live_coverage_with_session_conflict_is_partial_not_blocked_data(self) -> None:
         review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
@@ -554,11 +874,11 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
         self.assertIn("- coverage_count: not_present_in_input", incomplete)
         self.assertIn("coverage_universe_missing", incomplete)
 
-    def test_market_brief_missing_when_proxy_data_is_missing(self) -> None:
+    def test_market_brief_is_partial_when_crypto_proxy_data_is_available(self) -> None:
         review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
         brief = _section(review, "## Market brief")
 
-        self.assertIn("- market_brief_status: missing", brief)
+        self.assertIn("- market_brief_status: partial", brief)
         self.assertIn("- SPY/S&P proxy: missing", brief)
         self.assertIn("- QQQ/Nasdaq proxy: missing", brief)
         self.assertIn("- SMH/semi proxy: missing", brief)
@@ -619,20 +939,21 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
         self.assertIn("label: crypto_watch_context", crypto_section)
         self.assertLessEqual(crypto_section.count("- ticker:"), 4)
 
-    def test_crypto_watch_context_is_best_crypto_when_research_only_absent(self) -> None:
+    def test_crypto_watch_context_is_observation_only_when_research_only_absent(self) -> None:
         no_hype = FULL_UNIVERSE_INPUT.replace("## HYPE\n- Ativo: `HYPE`", "## HYPE\n- ignored: `HYPE`")
         review = generate_analyst_final_review(no_hype)
-        telegram = review.split("## Telegram summary", 1)[1]
+        telegram = _telegram_text(review).lower()
 
-        self.assertIn("Melhor crypto: BTC/ETH/SOL - crypto_watch_context", telegram)
-        self.assertNotIn("Melhor crypto: nenhum", telegram)
+        self.assertIn("prioridades de observacao", telegram)
+        self.assertNotIn("melhor crypto", telegram)
+        self.assertNotIn("trade candidate confirmado pelo main: btc", telegram)
 
-    def test_best_crypto_is_none_only_without_eligible_crypto(self) -> None:
+    def test_equities_only_brief_does_not_claim_a_best_crypto(self) -> None:
         equities_only = FULL_UNIVERSE_INPUT.split("## BTC", 1)[0]
         review = generate_analyst_final_review(equities_only)
-        telegram = review.split("## Telegram summary", 1)[1]
+        telegram = _telegram_text(review).lower()
 
-        self.assertIn("Melhor crypto: nenhum", telegram)
+        self.assertNotIn("melhor crypto", telegram)
 
     def test_top_candidates_has_at_most_five_assets(self) -> None:
         review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
@@ -702,9 +1023,12 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
 
     def test_telegram_summary_mentions_session_conflict_when_present(self) -> None:
         review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
-        telegram = review.split("## Telegram summary", 1)[1]
+        telegram = _telegram_text(review).lower()
 
-        self.assertIn("Erro de dados, se houver: nightly_input_incomplete,possible_session_detection_bug,market_session_conflict", telegram)
+        self.assertIn("incerteza material", telegram)
+        self.assertIn("classificacao da sessao pode estar incorreta", telegram)
+        self.assertIn("nao foi tratado como base de decisao", telegram)
+        self.assertNotIn("market_session_conflict", telegram)
 
     def test_regular_session_with_not_regular_reason_marks_possible_session_bug(self) -> None:
         markdown = """# Nightly qualitative review input

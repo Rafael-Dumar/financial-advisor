@@ -63,12 +63,13 @@ def notify_from_report(
         return "telegram_skipped_missing_secrets"
     markdown = report_path.read_text(encoding="utf-8") if report_path.exists() else ""
     message = build_telegram_message(markdown, artifact_path=artifact_path, workflow_url=workflow_url)
+    _ensure_telegram_message_length(message)
     sender = send_json or _post_json
     sender(
         f"https://api.telegram.org/bot{token}/sendMessage",
         {
             "chat_id": chat_id,
-            "text": message[:3500],
+            "text": message,
             "disable_web_page_preview": "true",
         },
     )
@@ -84,15 +85,23 @@ def extract_telegram_summary(markdown: str) -> str:
 
 def build_analyst_final_telegram_message(summary: str) -> str:
     safe_summary = _remove_forbidden_trade_language(summary).strip()
-    safety_lines = [
-        "Analyst Final Review",
-        "decisao_final_conservadora: true",
-        "seguranca: sem broker; sem ordem automatica; sem compra automatica.",
-        "",
-        safe_summary,
-    ]
-    message = "\n".join(line for line in safety_lines if line is not None).strip()
-    return message[:TELEGRAM_MAX_CHARS]
+    lower_summary = safe_summary.lower()
+    safety_line = (
+        "Execucao manual; sem broker; sem ordem automatica; "
+        "sem compra automatica; sem venda automatica; o bot nao envia ordens."
+    )
+    if "execucao manual" not in lower_summary:
+        safe_summary = "\n".join(part for part in (safe_summary, safety_line) if part)
+    elif "sem broker" not in lower_summary:
+        safe_summary = "\n".join(
+            part
+            for part in (
+                safe_summary,
+                "Sem broker; sem ordem automatica; sem compra automatica; sem venda automatica.",
+            )
+            if part
+        )
+    return _ensure_telegram_message_length(safe_summary)
 
 
 def notify_from_analyst_final_review(
@@ -141,10 +150,30 @@ def _remove_forbidden_trade_language(text: str) -> str:
         "buy now": "do not buy automatically",
         "sell now": "do not sell automatically",
     }
-    cleaned = text
-    for forbidden, replacement in replacements.items():
-        cleaned = _replace_case_insensitive(cleaned, forbidden, replacement)
-    return cleaned
+    cleaned_lines = []
+    for line in text.splitlines():
+        if _is_critical_trade_term_line(line):
+            cleaned_lines.append(line)
+            continue
+        cleaned = line
+        for forbidden, replacement in replacements.items():
+            cleaned = _replace_case_insensitive(cleaned, forbidden, replacement)
+        cleaned_lines.append(cleaned)
+    return "\n".join(cleaned_lines)
+
+
+def _is_critical_trade_term_line(line: str) -> bool:
+    value = line.lstrip().lower()
+    for label in ("entry", "entrada", "stop/invalidation", "stop", "sizing", "tamanho maximo da posicao"):
+        if value.startswith(label) and (len(value) == len(label) or value[len(label)] in " :("):
+            return True
+    return False
+
+
+def _ensure_telegram_message_length(message: str) -> str:
+    if len(message) > TELEGRAM_MAX_CHARS:
+        raise ValueError(f"telegram_message_too_long:{len(message)}>{TELEGRAM_MAX_CHARS}")
+    return message
 
 
 def _replace_case_insensitive(text: str, old: str, new: str) -> str:

@@ -204,8 +204,8 @@ Sem ordem automatica, sem broker, sem compra automatica.
         url, payload = payloads[0]
         self.assertIn("123456:secret-token", url)
         self.assertEqual(payload["chat_id"], "999")
-        self.assertIn("Decisao final: no_trade", payload["text"])
-        self.assertIn("decisao_final_conservadora: true", payload["text"])
+        self.assertTrue(payload["text"].startswith("Decisao final: no_trade."))
+        self.assertNotIn("decisao_final_conservadora", payload["text"])
         self.assertIn("sem broker", payload["text"].lower())
         self.assertIn("sem ordem automatica", payload["text"].lower())
         self.assertIn("sem compra automatica", payload["text"].lower())
@@ -233,7 +233,71 @@ Sem ordem automatica, sem broker, sem compra automatica.
 
         self.assertNotIn("comprar agora", message.lower())
         self.assertNotIn("vender agora", message.lower())
-        self.assertIn("decisao_final_conservadora: true", message)
+        self.assertIn("execucao manual", message.lower())
+        self.assertNotIn("decisao_final_conservadora", message)
+
+    def test_final_wrapped_send_preserves_trade_terms_and_sanitizes_other_commands(self) -> None:
+        entry = "ENTRY_EXACT_RIVER_147.26"
+        stop = "STOP_EXACT_CLIFF_138.04; vender agora if below"
+        sizing = "SIZING_EXACT_2.35_PERCENT_NAV"
+        markdown = f"""# Analyst Final Review
+
+## Telegram summary
+
+Trade candidate confirmado pelo main: TST
+Entry from main: {entry}
+Stop/invalidation from main: {stop}
+Sizing from main: {sizing}
+comprar agora TST
+"""
+        payloads = []
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "analyst-final-review.md"
+            report_path.write_text(markdown, encoding="utf-8")
+            with patch.dict(
+                os.environ,
+                {
+                    "TELEGRAM_BOT_TOKEN": "123456:secret-token",
+                    "TELEGRAM_CHAT_ID": "999",
+                },
+                clear=True,
+            ):
+                status = notify_from_analyst_final_review(
+                    report_path=report_path,
+                    send_json=lambda url, payload: payloads.append((url, payload)) or {"ok": True},
+                )
+
+        self.assertEqual(status, "telegram_sent")
+        self.assertEqual(len(payloads), 1)
+        final_payload = payloads[0][1]["text"]
+        for term in (entry, stop, sizing):
+            self.assertIn(term, final_payload)
+        self.assertNotIn("comprar agora tst", final_payload.lower())
+        self.assertIn("nao comprar automaticamente tst", final_payload.lower())
+
+    def test_analyst_final_sender_fails_before_send_when_wrapped_payload_exceeds_cap(self) -> None:
+        payloads = []
+        markdown = "# Analyst Final Review\n\n## Telegram summary\n\n" + ("X" * 3501)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "analyst-final-review.md"
+            report_path.write_text(markdown, encoding="utf-8")
+            with patch.dict(
+                os.environ,
+                {
+                    "TELEGRAM_BOT_TOKEN": "123456:secret-token",
+                    "TELEGRAM_CHAT_ID": "999",
+                },
+                clear=True,
+            ):
+                with self.assertRaises(ValueError):
+                    notify_from_analyst_final_review(
+                        report_path=report_path,
+                        send_json=lambda url, payload: payloads.append((url, payload)) or {"ok": True},
+                    )
+
+        self.assertEqual(payloads, [])
 
 
 if __name__ == "__main__":

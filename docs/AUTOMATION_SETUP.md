@@ -246,7 +246,7 @@ When Binance is restricted in the GitHub runner, the crypto loader falls back to
 
 ## Optional Telegram for nightly analyst review
 
-The nightly Telegram step sends only the `## Telegram summary` section from `reports\analyst-final-review.md`. It does not send `latest.md`, does not send the full quantitative report, and does not print the bot token.
+The nightly Telegram step sends only the `## Telegram summary` section from `reports\analyst-final-review.md`. The brief leads with the main's approved-entry decision and reason, then shows available market facts and named gaps, supported observation priorities, and a practical call. Confirmed trade terms are displayed as supplied when present; missing terms are not filled in. Execution remains manual; the bot does not send orders. It does not send `latest.md`, does not send the full quantitative report, and does not print the bot token.
 
 Create a Telegram bot:
 
