@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from advisor.indicators import atr, ema, rsi, sma
-from advisor.models import AssetDecision, AssetSnapshot, BacktestStats, ScoredAsset
+from advisor.models import AssetDecision, AssetSnapshot, BacktestStats, DecisionEvidenceEffect, ScoredAsset
 from advisor.regime import HIGH_FUNDING_RATE_8H, recent_gap_percent
 from advisor.risk import calculate_trade_plan, rate_sample_quality
 from advisor.runtime_scoring_observability import (
@@ -46,6 +46,8 @@ def score_asset(
     alerts = list(risk_plan.alerts)
     limitations = list(snapshot.missing_data)
     _apply_provider_context(snapshot, alerts, limitations)
+    if _price_history_has_intraday_quote_conflict(snapshot) and "price_timeframe_incompatible" not in limitations:
+        limitations.append("price_timeframe_incompatible")
     recent_gap = recent_gap_percent(snapshot.candles)
     if recent_gap > 0.06:
         alerts.append("recent_gap_risk")
@@ -66,9 +68,10 @@ def score_asset(
         relative_strength_percent=relative_strength_percent,
     )
 
-    if snapshot.event:
-        if snapshot.asset_type == "stock" and snapshot.event.days_to_earnings is None:
+    if snapshot.asset_type == "stock" and not _has_verified_earnings_timing(snapshot):
+        if "earnings_data_missing" not in limitations:
             limitations.append("earnings_data_missing")
+    if snapshot.event:
         if snapshot.event.days_to_earnings is not None and snapshot.event.days_to_earnings <= 10:
             alerts.append("earnings_near")
             swing_score = max(0, swing_score - 18)
@@ -115,7 +118,7 @@ def score_asset(
         ),
         ideal_entry=round(latest_close, 2),
         alternative_entry=alternative_entry,
-        hold_suggestion="1-8 semanas",
+        hold_suggestion="1-8 semanas", evidence_effects=_scoring_evidence_effects(snapshot),
     )
 
 
@@ -398,6 +401,7 @@ def _classify_asset_observed(
     root_invocation = observation_context.begin_invocation("classify_asset") if observation_context is not None else None
     alerts = list(scored.alerts)
     limitations = list(scored.limitations)
+    classification_evidence_effects: list[DecisionEvidenceEffect] = []
     alerts_before = list(alerts)
     limitations_before = list(limitations)
     if observation_context is not None:
@@ -568,11 +572,48 @@ def _classify_asset_observed(
             )
             earnings_choice_matched = earnings_choice_token.matched
         max_decision = "wait" if earnings_choice_matched else "watch_buy"
+        hard_gate_capability = {
+            "low_liquidity": "liquidity",
+            "event_risk": "event_risk",
+            "earnings_imminent": "earnings_timing",
+            "earnings_near": "earnings_timing",
+            "market_risk_off": "market_regime",
+            "market_not_risk_on": "market_regime",
+            "position_too_small_for_risk": "risk_plan_feasibility",
+            "recent_gap_risk": "price_history",
+            "small_market_cap": "market_cap",
+        }
+        for alert in sorted(hard_gates.intersection(alerts)):
+            classification_evidence_effects.append(
+                DecisionEvidenceEffect(
+                    rule_id=f"classify_asset.hard_gate.{alert}",
+                    capability=hard_gate_capability[alert],
+                    scope="specific_rule",
+                    criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                    status="available",
+                    evaluation="failed_observed_signal",
+                    decision_effect="cap_to_wait" if earnings_choice_matched else "cap_to_watch",
+                    reason_code=alert,
+                )
+            )
         if observation_context is not None and earnings_choice_token is not None:
             _finish_token(earnings_choice_token, observation_context)
     elif (initial_low_sample_cap_matched := bool(has_low_sample)):
         max_decision = "watch_buy"
         limitations.append("backtest_sample_low")
+        sample_collected = backtest_stats is not None and backtest_stats.sample_size > 0
+        classification_evidence_effects.append(
+            DecisionEvidenceEffect(
+                rule_id="classify_asset.backtest_sample_size",
+                capability="backtest.sample_size",
+                scope="specific_rule",
+                criticality="REQUIRED_FOR_DECISION",
+                status="available" if sample_collected else "not_collected",
+                evaluation="failed_observed_signal" if sample_collected else "unresolved_required_evidence",
+                decision_effect="cap_to_watch",
+                reason_code="backtest_sample_below_30",
+            )
+        )
     else:
         max_decision = "tradeable"
 
@@ -628,6 +669,18 @@ def _classify_asset_observed(
         high_severity_matched = high_severity_token.matched
     if high_severity_matched:
         alerts.append("high_severity_data_not_watchlist")
+        classification_evidence_effects.append(
+            DecisionEvidenceEffect(
+                rule_id="classify_asset.high_severity_cap",
+                capability="data_quality.missing_data_severity",
+                scope="specific_rule",
+                criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                status="available",
+                evaluation="failed_observed_signal",
+                decision_effect="cap_to_technical_unvalidated",
+                reason_code="high_severity_data_not_watchlist",
+            )
+        )
         if observation_context is not None and high_severity_token is not None:
             high_severity_token.finish(alerts_added=["high_severity_data_not_watchlist"])
         max_decision = _weaker_cap(max_decision, "technical_unvalidated", observation_context=observation_context)
@@ -649,10 +702,31 @@ def _classify_asset_observed(
         if observation_context is not None and stale_cap_token is not None:
             _finish_token(stale_cap_token, observation_context)
         max_decision = _weaker_cap(max_decision, "wait", observation_context=observation_context)
+        price_metadata = scored.snapshot.data_fetch_metadata
+        price_source = price_metadata.provider if price_metadata is not None else scored.snapshot.data_source
+        price_observed_at = (
+            (price_metadata.source_timestamp or price_metadata.fetched_at)
+            if price_metadata is not None
+            else scored.snapshot.data_timestamp
+        )
+        classification_evidence_effects.append(
+            DecisionEvidenceEffect(
+                rule_id="classify_asset.stale_cap",
+                capability="price_freshness",
+                scope=f"{scored.snapshot.asset_type}_asset",
+                criticality="REQUIRED_FOR_DECISION",
+                status="stale",
+                evaluation="unresolved_required_evidence",
+                decision_effect="cap_to_wait",
+                reason_code="stale_price_data",
+                source=price_source if price_source != "unknown" else None,
+                observed_at=price_observed_at,
+            )
+        )
     else:
         if observation_context is not None and stale_cap_token is not None:
             _finish_token(stale_cap_token, observation_context)
-
+    backtest_evidence_effects, max_decision = _prepare_backtest_evidence_gate(backtest_stats, has_low_sample, limitations, alerts, max_decision, observation_context)
     backtest_branch_token = None
     backtest_branch_matched = bool(not has_low_sample and backtest_stats and backtest_stats.win_rate_2r is not None)
     if observation_context is not None:
@@ -710,15 +784,77 @@ def _classify_asset_observed(
                 new_cap,
                 observation_context=observation_context,
             )
+            win_rate_valid = 0 <= win_rate <= 1
+            classification_evidence_effects.append(
+                DecisionEvidenceEffect(
+                    rule_id="classify_asset.win_rate_below_35",
+                    capability="backtest.win_rate_2r",
+                    scope="specific_rule",
+                    criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                    status="available" if win_rate_valid else "invalid",
+                    evaluation="failed_observed_signal" if win_rate_valid else "unresolved_required_evidence",
+                    decision_effect="avoid" if new_cap == "avoid" else "cap_to_technical_unvalidated",
+                    reason_code="weak_setup_win_rate",
+                )
+            )
         elif (win_rate_below_40_matched := bool(win_rate < 0.40)):
             alerts.append("weak_setup_win_rate")
             max_decision = _weaker_cap(max_decision, "wait", observation_context=observation_context)
+            win_rate_valid = 0 <= win_rate <= 1
+            classification_evidence_effects.append(
+                DecisionEvidenceEffect(
+                    rule_id="classify_asset.win_rate_below_40",
+                    capability="backtest.win_rate_2r",
+                    scope="specific_rule",
+                    criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                    status="available" if win_rate_valid else "invalid",
+                    evaluation="failed_observed_signal" if win_rate_valid else "unresolved_required_evidence",
+                    decision_effect="cap_to_wait",
+                    reason_code="weak_setup_win_rate",
+                )
+            )
         elif (win_rate_below_45_nonpositive_ev_matched := bool(win_rate < 0.45 and ev is not None and ev <= 0)):
             alerts.append("weak_or_negative_expected_value")
             max_decision = _weaker_cap(max_decision, "wait", observation_context=observation_context)
+            classification_evidence_effects.extend(
+                [
+                    DecisionEvidenceEffect(
+                        rule_id="classify_asset.win_rate_below_45_nonpositive_ev",
+                        capability="backtest.win_rate_2r",
+                        scope="specific_rule",
+                        criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                        status="available" if 0 <= win_rate <= 1 else "invalid",
+                        evaluation="failed_observed_signal" if 0 <= win_rate <= 1 else "unresolved_required_evidence",
+                        decision_effect="cap_to_wait",
+                        reason_code="weak_or_negative_expected_value",
+                    ),
+                    DecisionEvidenceEffect(
+                        rule_id="classify_asset.win_rate_below_45_nonpositive_ev",
+                        capability="backtest.expected_value_r",
+                        scope="specific_rule",
+                        criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                        status="available",
+                        evaluation="failed_observed_signal",
+                        decision_effect="cap_to_wait",
+                        reason_code="weak_or_negative_expected_value",
+                    ),
+                ]
+            )
         elif (nonpositive_ev_matched := bool(ev is not None and ev <= 0)):
             alerts.append("weak_or_negative_expected_value")
             max_decision = _weaker_cap(max_decision, "wait", observation_context=observation_context)
+            classification_evidence_effects.append(
+                DecisionEvidenceEffect(
+                    rule_id="classify_asset.nonpositive_ev",
+                    capability="backtest.expected_value_r",
+                    scope="specific_rule",
+                    criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                    status="available",
+                    evaluation="failed_observed_signal",
+                    decision_effect="cap_to_wait",
+                    reason_code="weak_or_negative_expected_value",
+                )
+            )
         else:
             pass
         if observation_context is not None and win_rate_below_40_matched is not None:
@@ -781,6 +917,18 @@ def _classify_asset_observed(
             negative_ev_matched = negative_ev_token.matched
         if negative_ev_matched:
             alerts.append("negative_ev_with_high_data_severity")
+            classification_evidence_effects.append(
+                DecisionEvidenceEffect(
+                    rule_id="classify_asset.negative_ev_high_severity",
+                    capability="backtest.expected_value_r",
+                    scope="specific_rule",
+                    criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                    status="available",
+                    evaluation="failed_observed_signal",
+                    decision_effect="cap_to_technical_unvalidated",
+                    reason_code="negative_ev_with_high_data_severity",
+                )
+            )
             if observation_context is not None and negative_ev_token is not None:
                 negative_ev_token.finish(alerts_added=["negative_ev_with_high_data_severity"])
             max_decision = _weaker_cap(max_decision, "technical_unvalidated", observation_context=observation_context)
@@ -790,7 +938,6 @@ def _classify_asset_observed(
     else:
         if observation_context is not None and backtest_branch_token is not None:
             _finish_token(backtest_branch_token, observation_context)
-
     intc_like_token = None
     intc_like_matched = bool(_is_intc_like_case(scored, alerts, backtest_stats, observation_context=observation_context))
     if observation_context is not None:
@@ -806,6 +953,18 @@ def _classify_asset_observed(
         )
         intc_like_matched = intc_like_token.matched
     if intc_like_matched:
+        classification_evidence_effects.append(
+            DecisionEvidenceEffect(
+                rule_id="classify_asset.intc_like_cap",
+                capability="backtest.win_rate_2r",
+                scope="specific_rule",
+                criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                status="available",
+                evaluation="failed_observed_signal",
+                decision_effect="cap_to_technical_unvalidated",
+                reason_code="intc_like_case",
+            )
+        )
         if observation_context is not None and intc_like_token is not None:
             _finish_token(intc_like_token, observation_context)
         max_decision = _weaker_cap(max_decision, "technical_unvalidated", observation_context=observation_context)
@@ -840,6 +999,18 @@ def _classify_asset_observed(
         )
         confidence_cap_matched = confidence_cap_token.matched
     if confidence_cap_matched:
+        classification_evidence_effects.append(
+            DecisionEvidenceEffect(
+                rule_id="classify_asset.confidence_below_65",
+                capability="decision_confidence.score",
+                scope="specific_rule",
+                criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                status="available",
+                evaluation="failed_observed_signal",
+                decision_effect="cap_to_watch",
+                reason_code="decision_confidence_below_65",
+            )
+        )
         if observation_context is not None and confidence_cap_token is not None:
             _finish_token(confidence_cap_token, observation_context)
         max_decision = _weaker_cap(max_decision, "watch_buy", observation_context=observation_context)
@@ -872,6 +1043,18 @@ def _classify_asset_observed(
         )
         technical_cap_matched = technical_cap_token.matched
     if technical_cap_matched:
+        classification_evidence_effects.append(
+            DecisionEvidenceEffect(
+                rule_id="classify_asset.technical_unvalidated_cap",
+                capability="technical_setup",
+                scope="specific_rule",
+                criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                status="available",
+                evaluation="failed_observed_signal",
+                decision_effect="cap_to_technical_unvalidated",
+                reason_code="technical_unvalidated",
+            )
+        )
         if observation_context is not None and technical_cap_token is not None:
             _finish_token(technical_cap_token, observation_context)
         max_decision = _weaker_cap(max_decision, "technical_unvalidated", observation_context=observation_context)
@@ -892,6 +1075,18 @@ def _classify_asset_observed(
     if minimum_cap_matched:
         before_decision = decision
         decision = "avoid"
+        classification_evidence_effects.append(
+            DecisionEvidenceEffect(
+                rule_id="classify_asset.minimum_market_cap_override",
+                capability="market_cap",
+                scope="specific_rule",
+                criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                status="available",
+                evaluation="failed_observed_signal",
+                decision_effect="avoid",
+                reason_code="below_minimum_market_cap",
+            )
+        )
         if observation_context is not None:
             _finish_decision_change(minimum_cap_token, observation_context, before_decision, "avoid", decision)
     else:
@@ -911,6 +1106,18 @@ def _classify_asset_observed(
     if earnings_wait_matched:
         before_decision = decision
         decision = "wait"
+        classification_evidence_effects.append(
+            DecisionEvidenceEffect(
+                rule_id="classify_asset.earnings_imminent_wait",
+                capability="earnings_timing",
+                scope="stock_asset",
+                criticality="REQUIRED_FOR_DECISION",
+                status="available",
+                evaluation="failed_observed_signal",
+                decision_effect="cap_to_wait",
+                reason_code="earnings_imminent",
+            )
+        )
         if observation_context is not None:
             _finish_decision_change(earnings_wait_token, observation_context, before_decision, "wait", decision)
     else:
@@ -1078,7 +1285,7 @@ def _classify_asset_observed(
         squeeze_risk="unknown",
         gap_risk=gap_risk,
         borrow_data_available=False,
-        short_status=short_status,
+        short_status=short_status, evidence_effects=_finalize_evidence_effects([*scored.evidence_effects, *backtest_evidence_effects, *classification_evidence_effects], decision),
     )
     trace = None
     if observation_context is not None:
@@ -1374,7 +1581,7 @@ def _has_confidence_limiting_data_gap(
 ) -> bool:
     context = _ensure_observation_context(observation_context)
     non_blocking = {"cvd_proxy_uses_taker_buy_sell_volume", "fmp_price_light_fallback"}
-    explicitly_limiting = {"earnings_data_missing", "mixed_provider_data", "news_rumor_not_confirmed", "news_confidence_low"}
+    explicitly_limiting = {"earnings_data_missing", "news_rumor_not_confirmed", "news_confidence_low"}
     for limitation in limitations:
         token = None
         matched = bool(limitation in non_blocking)
@@ -1428,8 +1635,8 @@ def _has_confidence_limiting_data_gap(
             matched = token.matched
         if matched:
             if context is not None and token is not None:
-                _finish_token(token, context, terminated=True, termination_kind="return")
-            return True
+                _finish_token(token, context)
+            continue
         if context is not None and token is not None:
             _finish_token(token, context)
     return False
@@ -1548,7 +1755,7 @@ def _missing_data_severity(
             terminate_if_matched=True,
         )
         matched = token.matched
-    if matched:
+    if matched and "earnings_data_missing" in limitations:
         if context is not None and token is not None:
             _finish_token(token, context, terminated=True, termination_kind="return")
         return "high"
@@ -1867,7 +2074,7 @@ def _is_technical_unvalidated(
         and (
             missing_severity in {"high", "critical"}
             or data_quality == "limited"
-            or _has_fundamental_validation_gap(limitations, observation_context=context)
+            or any(effect.criticality == "REQUIRED_FOR_SPECIFIC_RULE" and effect.evaluation == "unresolved_required_evidence" for effect in scored.evidence_effects)
             or (ev is not None and ev <= 0)
             or sample_quality == "low"
         )
@@ -2114,10 +2321,10 @@ def _decision_confidence_score(
         )
         matched = token.matched
     if matched:
-        before_score = score
-        score = min(score, 55)
-        if context is not None:
-            _finish_state_change(token, context, "decision_confidence_score", before_score, 55, score)
+        # Provider mixing remains visible without a measured incompatibility.
+        # Keep the observation, but do not alter decision confidence from provider names alone.
+        if context is not None and token is not None:
+            _finish_token(token, context)
     else:
         if context is not None and token is not None:
             _finish_token(token, context)
@@ -2204,10 +2411,10 @@ def _decision_confidence_score(
         )
         matched = token.matched
     if matched:
-        before_score = score
-        score = min(score, 80)
-        if context is not None:
-            _finish_state_change(token, context, "decision_confidence_score", before_score, 80, score)
+        # An uncollected news feed remains diagnostic context.
+        # It does not reduce confidence without a consuming rule.
+        if context is not None and token is not None:
+            _finish_token(token, context)
     else:
         if context is not None and token is not None:
             _finish_token(token, context)
@@ -2222,10 +2429,10 @@ def _decision_confidence_score(
         )
         matched = token.matched
     if matched:
-        before_score = score
-        score = min(score, 75)
-        if context is not None:
-            _finish_state_change(token, context, "decision_confidence_score", before_score, 75, score)
+        # Missing macro context remains visible in limitations.
+        # It does not reduce confidence without a consuming rule.
+        if context is not None and token is not None:
+            _finish_token(token, context)
     else:
         if context is not None and token is not None:
             _finish_token(token, context)
@@ -2240,10 +2447,10 @@ def _decision_confidence_score(
         )
         matched = token.matched
     if matched:
-        before_score = score
-        score = min(score, 70)
-        if context is not None:
-            _finish_state_change(token, context, "decision_confidence_score", before_score, 70, score)
+        # Missing sector context remains visible in limitations.
+        # It does not reduce confidence without a consuming rule.
+        if context is not None and token is not None:
+            _finish_token(token, context)
     else:
         if context is not None and token is not None:
             _finish_token(token, context)
@@ -2258,10 +2465,9 @@ def _decision_confidence_score(
         )
         matched = token.matched
     if matched:
-        before_score = score
-        score = min(score, 60)
-        if context is not None:
-            _finish_state_change(token, context, "decision_confidence_score", before_score, 60, score)
+        # Missing average decomposition stays diagnostic when consumed metrics are valid.
+        if context is not None and token is not None:
+            _finish_token(token, context)
     else:
         if context is not None and token is not None:
             _finish_token(token, context)
@@ -2294,7 +2500,7 @@ def _event_check_status(
     if context is not None and token is not None:
         _finish_token(token, context)
     token = None
-    matched = bool("earnings_unavailable" in limitations)
+    matched = bool("earnings_unavailable" in limitations or _unverified_earnings_status(snapshot.earnings_status) == "source_unavailable")
     if context is not None:
         token = _observe(
             context,
@@ -2311,7 +2517,13 @@ def _event_check_status(
     if context is not None and token is not None:
         _finish_token(token, context)
     token = None
-    matched = bool("earnings_data_missing" in limitations)
+    matched = bool(
+        "earnings_data_missing" in limitations
+        or (
+            _unverified_earnings_status(snapshot.earnings_status) in {"not_collected", "not_implemented", "invalid"}
+            and not _has_verified_earnings_timing(snapshot)
+        )
+    )
     if context is not None:
         token = _observe(
             context,
@@ -2324,11 +2536,11 @@ def _event_check_status(
     if matched:
         if context is not None and token is not None:
             _finish_token(token, context, terminated=True, termination_kind="return")
-        return "not_collected"
+        return _unverified_earnings_status(snapshot.earnings_status)
     if context is not None and token is not None:
         _finish_token(token, context)
     token = None
-    matched = bool(snapshot.event is not None and snapshot.event.days_to_earnings is not None)
+    matched = bool(_has_verified_earnings_timing(snapshot))
     if context is not None:
         token = _observe(
             context,
@@ -2347,7 +2559,7 @@ def _event_check_status(
         return "verified"
     if context is not None and token is not None:
         _finish_token(token, context)
-    return "not_collected"
+    return _unverified_earnings_status(snapshot.earnings_status)
 
 
 @observed_helper("_bucket_for_decision")
@@ -2876,3 +3088,318 @@ def _format_bool(value: bool | None) -> str:
     if value is None:
         return "n/a"
     return "yes" if value else "no"
+
+
+def _scoring_evidence_effects(snapshot: AssetSnapshot) -> list[DecisionEvidenceEffect]:
+    effects: list[DecisionEvidenceEffect] = []
+    metadata = snapshot.data_fetch_metadata
+    price_source = metadata.provider if metadata is not None else snapshot.data_source
+    price_timestamp = (
+        (metadata.source_timestamp or metadata.fetched_at)
+        if metadata is not None
+        else snapshot.data_timestamp
+    )
+    if len(snapshot.candles) < 200:
+        effects.append(
+            DecisionEvidenceEffect(
+                rule_id="swing_trade_score.sma200_history",
+                capability="sma200_history",
+                scope=f"{snapshot.asset_type}_asset",
+                criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                status="not_collected",
+                evaluation="unresolved_required_evidence",
+                decision_effect="none",
+                reason_code="insufficient_sma200_history",
+                source=price_source if price_source != "unknown" else None,
+                observed_at=price_timestamp,
+            )
+        )
+
+    if snapshot.asset_type == "crypto":
+        optional_flow_capabilities = {
+            "cvd_proxy_unavailable": (
+                "cvd",
+                "crypto.cvd_proxy",
+                "score_asset.cvd_proxy_disclosure",
+                "OPTIONAL_CONTEXT",
+                snapshot.cvd_proxy,
+            ),
+            "open_interest_change_unavailable": (
+                "open_interest_change",
+                "crypto.open_interest_change",
+                "score_asset.leverage_risk_open_interest",
+                "OPTIONAL_CONTEXT",
+                snapshot.open_interest_change,
+            ),
+            "liquidations_unavailable": (
+                "liquidations",
+                "crypto.liquidations",
+                "score_asset.liquidation_pressure",
+                "UNSUPPORTED",
+                snapshot.liquidation_imbalance,
+            ),
+            "coinbase_premium_unavailable": (
+                "premium",
+                "crypto.coinbase_premium",
+                "score_asset.crypto_metrics_summary",
+                "OPTIONAL_CONTEXT",
+                snapshot.coinbase_premium,
+            ),
+        }
+        status_map = {
+            "available": "available",
+            "temporary_provider_failure": "temporary_provider_failure",
+            "provider_unavailable": "temporary_provider_failure",
+            "provider_restriction": "provider_restriction",
+            "provider_restricted": "provider_restriction",
+            "not_collected": "not_collected",
+            "unsupported": "unsupported",
+            "not_implemented": "not_implemented",
+            "not_applicable": "not_applicable",
+            "invalid": "invalid",
+            "incompatible_time": "invalid",
+            "stale": "stale",
+        }
+        for reason_code, (metric, capability, rule_id, criticality, observed_value) in optional_flow_capabilities.items():
+            if reason_code not in snapshot.missing_data or observed_value is not None:
+                continue
+            provenance = snapshot.crypto_metric_provenance.get(metric, {})
+            raw_status = provenance.get("status", "not_collected")
+            status = status_map.get(str(raw_status), "not_collected")
+            source = provenance.get("provider")
+            observed_at = provenance.get("source_timestamp") or provenance.get("observed_at")
+            effects.append(
+                DecisionEvidenceEffect(
+                    rule_id=rule_id,
+                    capability=capability,
+                    scope="crypto_asset",
+                    criticality=criticality,
+                    status=status,
+                    evaluation="not_applicable",
+                    decision_effect="none",
+                    reason_code=reason_code,
+                    source=source if isinstance(source, str) and source else None,
+                    observed_at=observed_at if isinstance(observed_at, str) and observed_at else None,
+                )
+            )
+
+    if _price_history_has_intraday_quote_conflict(snapshot):
+        effects.append(
+            DecisionEvidenceEffect(
+                rule_id="score_asset.price_history_timeframe",
+                capability="price_history",
+                scope="specific_rule",
+                criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                status="invalid",
+                evaluation="unresolved_required_evidence",
+                decision_effect="none",
+                reason_code="price_timeframe_incompatible",
+                source=price_source if price_source != "unknown" else None,
+                observed_at=price_timestamp,
+            )
+        )
+
+    if snapshot.asset_type == "stock":
+        earnings_verified = _has_verified_earnings_timing(snapshot)
+        earnings_provider = next(
+            (
+                capability.provider
+                for capability in snapshot.provider_capabilities
+                if capability.capability == "earnings"
+            ),
+            None,
+        )
+        effects.append(
+            DecisionEvidenceEffect(
+                rule_id="classify_asset.stock_earnings_timing",
+                capability="earnings_timing",
+                scope="stock_asset",
+                criticality="REQUIRED_FOR_DECISION",
+                status="available" if earnings_verified else _earnings_effect_status(snapshot),
+                evaluation="passed" if earnings_verified else "unresolved_required_evidence",
+                decision_effect="none",
+                reason_code="earnings_timing_verified" if earnings_verified else "earnings_data_missing",
+                source=earnings_provider,
+            )
+        )
+
+    guidance_status = snapshot.guidance_status
+    if (
+        guidance_status in {"not_collected", "unsupported", "not_implemented", "temporary_provider_failure", "provider_restriction", "invalid", "stale"}
+        and (snapshot.event is None or snapshot.event.guidance_recent is None)
+    ):
+        guidance_source = next(
+            (
+                capability.provider
+                for capability in snapshot.provider_capabilities
+                if capability.capability == "guidance"
+            ),
+            None,
+        )
+        effects.append(
+            DecisionEvidenceEffect(
+                rule_id="score_asset.guidance_recent",
+                capability="guidance",
+                scope=f"{snapshot.asset_type}_asset",
+                criticality="OPTIONAL_CONTEXT",
+                status=guidance_status,
+                evaluation="not_applicable",
+                decision_effect="none",
+                reason_code="guidance_recent_not_collected",
+                source=guidance_source,
+            )
+        )
+    return effects
+
+
+def _finalize_evidence_effects(
+    effects: list[DecisionEvidenceEffect],
+    decision: str,
+) -> list[DecisionEvidenceEffect]:
+    finalized: list[DecisionEvidenceEffect] = []
+    for effect in effects:
+        decision_effect = effect.decision_effect
+        if (
+            effect.rule_id == "swing_trade_score.sma200_history"
+            and effect.evaluation == "unresolved_required_evidence"
+            and decision == "technical_unvalidated"
+        ):
+            decision_effect = "cap_to_technical_unvalidated"
+        elif (
+            effect.rule_id == "score_asset.price_history_timeframe"
+            and effect.evaluation == "unresolved_required_evidence"
+            and decision == "technical_unvalidated"
+        ):
+            decision_effect = "cap_to_technical_unvalidated"
+        elif (
+            effect.rule_id == "classify_asset.stock_earnings_timing"
+            and effect.evaluation == "unresolved_required_evidence"
+        ):
+            decision_effect = "cap_to_watch"
+        finalized.append(
+            DecisionEvidenceEffect(
+                rule_id=effect.rule_id,
+                capability=effect.capability,
+                scope=effect.scope,
+                criticality=effect.criticality,
+                status=effect.status,
+                evaluation=effect.evaluation,
+                decision_effect=decision_effect,
+                reason_code=effect.reason_code,
+                source=effect.source,
+                observed_at=effect.observed_at,
+            )
+        )
+    return finalized
+
+
+def _has_verified_earnings_timing(snapshot: AssetSnapshot) -> bool:
+    if snapshot.event is None or snapshot.event.days_to_earnings is None or snapshot.event.days_to_earnings < 0:
+        return False
+    return _unverified_earnings_status(snapshot.earnings_status) == "verified"
+
+
+def _unverified_earnings_status(status: str) -> str:
+    return {
+        "verified": "verified",
+        "provider_unavailable": "source_unavailable",
+        "plan_restricted": "source_unavailable",
+        "unsupported_by_plan": "source_unavailable",
+        "source_unavailable": "source_unavailable",
+        "temporarily_unavailable": "source_unavailable",
+        "rate_limited": "source_unavailable",
+        "not_collected": "not_collected",
+        "no_upcoming_event_found": "not_collected",
+        "not_implemented": "not_implemented",
+        "not_applicable": "not_applicable",
+        "schema_error": "invalid",
+        "invalid": "invalid",
+    }.get(status, "not_collected")
+
+
+def _price_history_has_intraday_quote_conflict(snapshot: AssetSnapshot) -> bool:
+    metadata = snapshot.data_fetch_metadata
+    return bool(
+        metadata is not None
+        and metadata.endpoint == "historical_prices"
+        and metadata.market_data_kind == "intraday_quote"
+    )
+
+
+def _earnings_effect_status(snapshot: AssetSnapshot) -> str:
+    normalized_status = _unverified_earnings_status(snapshot.earnings_status)
+    if normalized_status == "source_unavailable":
+        if snapshot.earnings_status in {"plan_restricted", "unsupported_by_plan"}:
+            return "provider_restriction"
+        return "temporary_provider_failure"
+    if snapshot.earnings_status == "verified":
+        return "available" if _has_verified_earnings_timing(snapshot) else "invalid"
+    return {
+        "not_collected": "not_collected",
+        "no_upcoming_event_found": "not_collected",
+        "not_implemented": "not_implemented",
+        "not_applicable": "not_applicable",
+        "schema_error": "invalid",
+        "invalid": "invalid",
+    }.get(snapshot.earnings_status, "not_collected")
+
+
+def _prepare_backtest_evidence_gate(
+    backtest_stats: BacktestStats | None,
+    has_low_sample: bool,
+    limitations: list[str],
+    alerts: list[str],
+    max_decision: str,
+    observation_context: ObservationContext | None,
+) -> tuple[list[DecisionEvidenceEffect], str]:
+    effects: list[DecisionEvidenceEffect] = []
+    sample_adequate = backtest_stats is not None and backtest_stats.sample_size >= 30
+    win_rate = backtest_stats.win_rate_2r if backtest_stats else None
+    expected_value = backtest_stats.expected_value_r if backtest_stats else None
+    win_rate_valid = win_rate is not None and 0 <= win_rate <= 1
+    expected_value_valid = (
+        expected_value is not None
+        and expected_value == expected_value
+        and expected_value not in {float("inf"), float("-inf")}
+    )
+
+    if sample_adequate and not win_rate_valid:
+        status = "not_collected" if win_rate is None else "invalid"
+        reason_code = "backtest_win_rate_missing" if win_rate is None else "backtest_win_rate_invalid"
+        limitations.append(reason_code)
+        max_decision = _weaker_cap(max_decision, "watch_buy", observation_context=observation_context)
+        effects.append(
+            DecisionEvidenceEffect(
+                rule_id="classify_asset.win_rate_2r",
+                capability="backtest.win_rate_2r",
+                scope="specific_rule",
+                criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                status=status,
+                evaluation="unresolved_required_evidence",
+                decision_effect="cap_to_watch",
+                reason_code=reason_code,
+            )
+        )
+    if sample_adequate and not expected_value_valid:
+        status = "not_collected" if expected_value is None else "invalid"
+        reason_code = "backtest_expected_value_missing" if expected_value is None else "backtest_expected_value_invalid"
+        limitations.append(reason_code)
+        max_decision = _weaker_cap(max_decision, "watch_buy", observation_context=observation_context)
+        effects.append(
+            DecisionEvidenceEffect(
+                rule_id="classify_asset.nonpositive_ev",
+                capability="backtest.expected_value_r",
+                scope="specific_rule",
+                criticality="REQUIRED_FOR_SPECIFIC_RULE",
+                status=status,
+                evaluation="unresolved_required_evidence",
+                decision_effect="cap_to_watch",
+                reason_code=reason_code,
+            )
+        )
+
+    if sample_adequate and win_rate is None and expected_value_valid and expected_value <= 0:
+        alerts.append("weak_or_negative_expected_value")
+        max_decision = _weaker_cap(max_decision, "wait", observation_context=observation_context)
+
+    return effects, max_decision

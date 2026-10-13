@@ -494,9 +494,9 @@ _RULE_METADATA_OVERRIDES: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "classify_asset.confidence_risk_off": ("confidence", "cap", ("market.regime",)),
     "classify_asset.confidence_stale": ("confidence", "cap", ("technical.price_stale",)),
     "classify_asset.confidence_news_low": ("confidence", "cap", ("news.confirmed_status", "news.confidence")),
-    "classify_asset.confidence_news_not_collected": ("confidence", "cap", ("provider.news.status",)),
-    "classify_asset.confidence_macro_not_collected": ("confidence", "cap", ("market.regime",)),
-    "classify_asset.confidence_sector_not_collected": ("confidence", "cap", ("asset.theme",)),
+    "classify_asset.confidence_news_not_collected": ("confidence", "annotation", ("provider.news.status",)),
+    "classify_asset.confidence_macro_not_collected": ("confidence", "annotation", ("market.regime",)),
+    "classify_asset.confidence_sector_not_collected": ("confidence", "annotation", ("asset.theme",)),
     "classify_asset.confidence_ev_components": ("confidence", "cap", ("backtest.expected_value_r",)),
 }
 

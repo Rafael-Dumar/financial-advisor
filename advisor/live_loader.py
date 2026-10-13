@@ -527,6 +527,9 @@ class LiveDataLoader:
                                 "status": "available" if coingecko_klines else "provider_unavailable",
                                 "granularity": "daily",
                                 "market_data_kind": "eod_candle",
+                            "fallback_from": "binance",
+                            "fallback_to": "coingecko",
+                            "fallback_reason": "binance_restricted_location",
                             },
                             "spot": {
                                 "provider": "coingecko",
@@ -534,6 +537,9 @@ class LiveDataLoader:
                                 "status": "available" if coingecko_klines else "provider_unavailable",
                                 "granularity": "daily",
                                 "market_data_kind": "eod_candle",
+                            "fallback_from": "binance",
+                            "fallback_to": "coingecko",
+                            "fallback_reason": "binance_restricted_location",
                             },
                         },
                     )
@@ -703,7 +709,13 @@ class LiveDataLoader:
             fallback_reason=fallback_reason,
             symbol=symbol,
         )
-        return hyperliquid_crypto_flow_from_payload(payload, symbol=symbol)
+        flow = hyperliquid_crypto_flow_from_payload(payload, symbol=symbol)
+        if fallback_from:
+            for provenance in flow["metric_provenance"].values():
+                provenance["fallback_from"] = fallback_from
+                provenance["fallback_to"] = "hyperliquid"
+                provenance["fallback_reason"] = fallback_reason
+        return flow
 
     def _coinbase_payload(self, symbol: str) -> dict[str, Any]:
         return self._fetch_optional(

@@ -2,9 +2,10 @@ import unittest
 from dataclasses import replace
 
 from advisor.backtest import summarize_backtest_setups
-from advisor.models import AssetDecision, AssetSnapshot, BacktestStats, Candle, EventInfo, Fundamentals, RiskPlan, ScoredAsset
+from advisor.models import AssetDecision, AssetSnapshot, BacktestStats, Candle, EventInfo, Fundamentals, ProviderCapability, RiskPlan, ScoredAsset
 from advisor.regime import classify_crypto_regime, classify_stock_regime
 from advisor.report import render_markdown_report
+from advisor.scan_engine import derive_market_regimes
 from advisor.scoring import classify_asset, score_asset
 
 
@@ -17,6 +18,47 @@ def uptrend_candles(symbol_prefix="", count=80):
 
 
 class ScoringRegimeReportTests(unittest.TestCase):
+    def test_missing_crypto_funding_is_not_reported_as_balanced(self):
+        def regime_for(funding_rate, open_interest_change):
+            snapshots = [
+                AssetSnapshot(
+                    symbol=symbol,
+                    asset_type="crypto",
+                    theme="crypto",
+                    candles=uptrend_candles(count=count),
+                    fundamentals=Fundamentals(
+                        pe=None,
+                        peg=None,
+                        historical_pe=None,
+                        revenue_growth=None,
+                        eps_growth=None,
+                        margin_trend=None,
+                        free_cash_flow_positive=None,
+                        market_cap=1_000_000_000,
+                        average_volume=1_000_000,
+                    ),
+                    funding_rate=funding_rate,
+                    open_interest_change=open_interest_change,
+                )
+                for symbol, count in (("BTC", 220), ("ETH", 31), ("SOL", 31))
+            ]
+            return derive_market_regimes(snapshots=snapshots, benchmarks={}).crypto
+
+        absent_flow = regime_for(None, None)
+        absent_funding_with_measured_open_interest = regime_for(None, 0.30)
+        observed_zero_funding = regime_for(0.0, None)
+        observed_hot_flow = regime_for(0.0015, 0.30)
+
+        with self.subTest(flow="all_absent"):
+            self.assertNotIn("funding_balanced", absent_flow.reasons)
+        with self.subTest(flow="funding_absent_open_interest_observed"):
+            self.assertNotIn("funding_balanced", absent_funding_with_measured_open_interest.reasons)
+            self.assertNotIn("leverage_hot", absent_funding_with_measured_open_interest.reasons)
+        with self.subTest(flow="observed_zero_funding"):
+            self.assertIn("funding_balanced", observed_zero_funding.reasons)
+        with self.subTest(flow="observed_hot_funding_and_open_interest"):
+            self.assertIn("leverage_hot", observed_hot_flow.reasons)
+
     def test_market_regime_classifies_stock_risk_on(self):
         spy = uptrend_candles(count=220)
         qqq = uptrend_candles(count=220)
@@ -70,6 +112,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
                 average_volume=20_000_000,
             ),
             event=EventInfo(days_to_earnings=5, guidance_recent=False, post_earnings_gap_percent=0.0),
+            earnings_status="verified",
         )
 
         scored = score_asset(snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral")
@@ -95,6 +138,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
                 average_volume=20_000_000,
             ),
             event=EventInfo(days_to_earnings=30, guidance_recent=None, post_earnings_gap_percent=None),
+            earnings_status="verified",
         )
 
         first = score_asset(snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral")
@@ -151,6 +195,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
                 average_volume=20_000_000,
             ),
             event=EventInfo(days_to_earnings=5, guidance_recent=True, post_earnings_gap_percent=0.09),
+            earnings_status="verified",
         )
         scored = score_asset(snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral")
         classified = classify_asset(scored, BacktestStats(sample_size=90, win_rate_2r=0.64, win_rate_3r=0.41))
@@ -186,6 +231,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
                 average_volume=35_000_000,
             ),
             event=EventInfo(days_to_earnings=45, guidance_recent=False, post_earnings_gap_percent=0.0),
+            earnings_status="verified",
         )
 
         leading = score_asset(
@@ -213,6 +259,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
             theme="software",
             candles=uptrend_candles(count=220),
             event=EventInfo(days_to_earnings=45, guidance_recent=False, post_earnings_gap_percent=0.0),
+            earnings_status="verified",
         )
         negative = score_asset(
             AssetSnapshot(
@@ -303,6 +350,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
                     average_volume=5_000_000,
                 ),
                 event=EventInfo(days_to_earnings=45, guidance_recent=False, post_earnings_gap_percent=0.0),
+                earnings_status="verified",
             ),
             stock_regime_label="risk_on",
             crypto_regime_label="neutral",
@@ -343,6 +391,13 @@ class ScoringRegimeReportTests(unittest.TestCase):
 
         self.assertEqual(decision.decision, "avoid")
         self.assertIn("below_minimum_market_cap", decision.alerts)
+        minimum_cap_effect = next(
+            (effect for effect in decision.evidence_effects if effect.rule_id == "classify_asset.minimum_market_cap_override"),
+            None,
+        )
+        self.assertIsNotNone(minimum_cap_effect)
+        self.assertEqual(minimum_cap_effect.capability, "market_cap")
+        self.assertEqual(minimum_cap_effect.decision_effect, "avoid")
 
     def test_market_risk_off_blocks_strong_buy_even_with_high_scores(self):
         scored = ScoredAsset(
@@ -363,6 +418,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
                     average_volume=35_000_000,
                 ),
                 event=EventInfo(days_to_earnings=45, guidance_recent=False, post_earnings_gap_percent=0.0),
+                earnings_status="verified",
             ),
             investment_quality_score=92,
             swing_trade_score=92,
@@ -399,6 +455,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
                 average_volume=35_000_000,
             ),
             event=EventInfo(days_to_earnings=45, guidance_recent=False, post_earnings_gap_percent=0.0),
+            earnings_status="verified",
         )
 
         scored = score_asset(snapshot, stock_regime_label="neutral", crypto_regime_label="risk_on")
@@ -426,6 +483,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
                     average_volume=20_000_000,
                 ),
                 event=EventInfo(days_to_earnings=45, guidance_recent=False, post_earnings_gap_percent=0.0),
+                earnings_status="verified",
             ),
             investment_quality_score=92,
             swing_trade_score=92,
@@ -470,16 +528,136 @@ class ScoringRegimeReportTests(unittest.TestCase):
 
         missing_data_decision = classify_asset(
             scored_with_missing_data,
-            BacktestStats(sample_size=120, win_rate_2r=0.66, win_rate_3r=0.44),
+            BacktestStats(sample_size=120, win_rate_2r=0.66, win_rate_3r=0.44, expected_value_r=0.55),
         )
         cvd_proxy_decision = classify_asset(
             scored_with_cvd_proxy_only,
-            BacktestStats(sample_size=120, win_rate_2r=0.66, win_rate_3r=0.44),
+            BacktestStats(sample_size=120, win_rate_2r=0.66, win_rate_3r=0.44, expected_value_r=0.55),
         )
 
-        self.assertEqual(missing_data_decision.decision, "technical_unvalidated")
-        self.assertIn("data_incomplete_confidence_limited", missing_data_decision.limitations)
+        self.assertEqual(missing_data_decision.decision, "tradeable")
+        self.assertIn("missing_revenue_growth", missing_data_decision.limitations)
         self.assertEqual(cvd_proxy_decision.decision, "tradeable")
+
+    def test_optional_uncollected_context_does_not_cap_and_has_auditable_effect(self):
+        snapshot = AssetSnapshot(
+            symbol="MSFT",
+            asset_type="stock",
+            theme="software",
+            candles=uptrend_candles(count=220),
+            fundamentals=Fundamentals(
+                pe=32,
+                peg=1.8,
+                historical_pe=35,
+                revenue_growth=0.18,
+                eps_growth=0.18,
+                margin_trend=0.05,
+                free_cash_flow_positive=True,
+                market_cap=3_000_000_000_000,
+                average_volume=20_000_000,
+            ),
+            event=EventInfo(days_to_earnings=45, guidance_recent=None, post_earnings_gap_percent=0.0),
+            earnings_status="verified",
+            missing_data=["guidance_recent_not_collected"],
+            guidance_status="not_collected",
+            provider_capabilities=[
+                ProviderCapability(
+                    provider="fmp",
+                    capability="guidance",
+                    configured=True,
+                    supported_by_plan=True,
+                    implemented=True,
+                    last_status="not_collected",
+                    fallback_available=False,
+                )
+            ],
+            data_source="fmp",
+            data_timestamp="2026-10-10T12:00:00Z",
+        )
+        stats = BacktestStats(
+            sample_size=120,
+            win_rate_2r=0.66,
+            win_rate_3r=0.44,
+            expected_value_r=0.5,
+            avg_win_r=1.2,
+            avg_loss_r=-0.5,
+        )
+        decision = classify_asset(
+            score_asset(snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral"), stats
+        )
+        control = classify_asset(
+            score_asset(replace(snapshot, missing_data=[]), stock_regime_label="risk_on", crypto_regime_label="neutral"),
+            stats,
+        )
+
+        self.assertEqual(decision.decision, "tradeable")
+        self.assertEqual(decision.decision, control.decision)
+        self.assertEqual(decision.data_quality, control.data_quality)
+        self.assertEqual(decision.decision_confidence_score, control.decision_confidence_score)
+        evidence_effects = getattr(decision, "evidence_effects", None)
+        self.assertIsNotNone(evidence_effects, "optional context must be represented separately from its effect")
+        guidance_effect = next((effect for effect in evidence_effects if effect.capability == "guidance"), None)
+        self.assertIsNotNone(guidance_effect)
+        self.assertEqual(guidance_effect.rule_id, "score_asset.guidance_recent")
+        self.assertEqual(guidance_effect.criticality, "OPTIONAL_CONTEXT")
+        self.assertEqual(guidance_effect.status, "not_collected")
+        self.assertEqual(guidance_effect.decision_effect, "none")
+        self.assertEqual(guidance_effect.source, "fmp")
+
+    def test_unavailable_required_technical_capability_is_an_unresolved_rule_effect(self):
+        snapshot = AssetSnapshot(
+            symbol="MSFT",
+            asset_type="stock",
+            theme="software",
+            candles=uptrend_candles(count=80),
+            fundamentals=Fundamentals(
+                pe=32,
+                peg=1.8,
+                historical_pe=35,
+                revenue_growth=0.18,
+                eps_growth=0.18,
+                margin_trend=0.05,
+                free_cash_flow_positive=True,
+                market_cap=3_000_000_000_000,
+                average_volume=20_000_000,
+            ),
+            event=EventInfo(days_to_earnings=45, guidance_recent=False, post_earnings_gap_percent=0.0),
+            earnings_status="verified",
+            data_source="fmp",
+            data_timestamp="2026-10-10T12:00:00Z",
+        )
+        scored = replace(
+            score_asset(snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral"),
+            swing_trade_score=85,
+            investment_quality_score=90,
+        )
+        self.assertIn("insufficient_sma200_history", scored.limitations)
+
+        decision = classify_asset(
+            scored,
+            BacktestStats(
+                sample_size=120,
+                win_rate_2r=0.66,
+                win_rate_3r=0.44,
+                expected_value_r=0.5,
+                avg_win_r=1.2,
+                avg_loss_r=-0.5,
+            ),
+        )
+
+        self.assertEqual(decision.decision, "technical_unvalidated")
+        evidence_effects = getattr(decision, "evidence_effects", None)
+        self.assertIsNotNone(evidence_effects, "required missing evidence must be visible as a rule effect")
+        sma_effect = next((effect for effect in evidence_effects if effect.capability == "sma200_history"), None)
+        self.assertIsNotNone(sma_effect)
+        self.assertEqual(sma_effect.rule_id, "swing_trade_score.sma200_history")
+        self.assertEqual(sma_effect.criticality, "REQUIRED_FOR_SPECIFIC_RULE")
+        self.assertEqual(sma_effect.status, "not_collected")
+        self.assertEqual(sma_effect.evaluation, "unresolved_required_evidence")
+        self.assertEqual(sma_effect.decision_effect, "cap_to_technical_unvalidated")
+        self.assertEqual(sma_effect.reason_code, "insufficient_sma200_history")
+        self.assertEqual(sma_effect.source, "fmp")
+        self.assertEqual(sma_effect.observed_at, "2026-10-10T12:00:00Z")
 
     def test_missing_sma200_history_limits_aggressive_recommendation(self):
         scored = score_asset(
@@ -500,6 +678,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
                     average_volume=20_000_000,
                 ),
                 event=EventInfo(days_to_earnings=45, guidance_recent=False, post_earnings_gap_percent=0.0),
+                earnings_status="verified",
             ),
             stock_regime_label="risk_on",
             crypto_regime_label="neutral",
@@ -510,7 +689,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
 
         self.assertEqual(decision.decision, "watch_buy")
         self.assertIn("insufficient_sma200_history", decision.limitations)
-        self.assertIn("data_incomplete_confidence_limited", decision.limitations)
+        self.assertNotIn("data_incomplete_confidence_limited", decision.limitations)
 
     def test_missing_sma200_history_does_not_receive_full_trend_score(self):
         fundamentals = Fundamentals(
@@ -532,6 +711,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
                 candles=uptrend_candles(count=80),
                 fundamentals=fundamentals,
                 event=EventInfo(days_to_earnings=45, guidance_recent=False, post_earnings_gap_percent=0.0),
+                earnings_status="verified",
             ),
             stock_regime_label="risk_on",
             crypto_regime_label="neutral",
@@ -544,6 +724,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
                 candles=uptrend_candles(count=220),
                 fundamentals=fundamentals,
                 event=EventInfo(days_to_earnings=45, guidance_recent=False, post_earnings_gap_percent=0.0),
+                earnings_status="verified",
             ),
             stock_regime_label="risk_on",
             crypto_regime_label="neutral",
@@ -580,6 +761,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
                 average_volume=35_000_000,
             ),
             event=EventInfo(days_to_earnings=45, guidance_recent=False, post_earnings_gap_percent=0.0),
+            earnings_status="verified",
         )
 
         scored = score_asset(snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral")
@@ -656,7 +838,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
 
         self.assertIn("Data mode: `live`", report)
 
-    def test_report_hides_win_rate_when_data_is_not_live(self):
+    def test_report_shows_valid_win_rate_despite_demo_reason_code(self):
         base = _decision("MSFT", "watch_buy", swing=74, investment=91)
         decision = AssetDecision(
             symbol=base.symbol,
@@ -683,10 +865,10 @@ class ScoringRegimeReportTests(unittest.TestCase):
             data_mode="demo",
         )
 
-        self.assertIn("win rate oculto", report)
-        self.assertIn("Setup win rate estimado: oculto por dados incompletos ou nao-live", report)
-        self.assertNotIn("Setup win rate estimado: 62%", report)
-        self.assertNotIn("win rate +2R 62%", report)
+        self.assertIn("Data mode: `demo`", report)
+        self.assertIn("Setup win rate estimado: 62%", report)
+        self.assertNotIn("Setup win rate estimado: oculto por dados incompletos ou nao-live", report)
+        self.assertIn("win rate +2R 62%", report)
 
     def test_report_uses_historical_hold_when_backtest_sample_has_timing(self):
         snapshot = AssetSnapshot(
@@ -829,7 +1011,7 @@ class ScoringRegimeReportTests(unittest.TestCase):
             report_type="main",
         )
 
-        self.assertIn("event_check_status: `not_verified`", report)
+        self.assertIn("event_check_status: `not_collected`", report)
         self.assertIn("news_status: `not_verified`", report)
         self.assertNotIn("sem risco de noticia", report.lower())
         self.assertNotIn("sem risco de evento", report.lower())

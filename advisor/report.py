@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
+import math
 import re
 from datetime import date, datetime, time, timedelta, timezone
 from dataclasses import dataclass
 from html import escape
 from typing import Any
 
-from advisor.models import AssetDecision, AssetSnapshot
+from advisor.models import AssetDecision, AssetSnapshot, Candle
 from advisor.risk import evaluate_leverage_policy
 
 
@@ -17,6 +19,7 @@ BRT = timezone(timedelta(hours=-3))
 CLOSE_WINDOW_AFTER_REGULAR_CLOSE = timedelta(hours=2, minutes=30)
 ALLOWED_MARKET_SESSIONS = {"pre_market", "regular", "after_hours", "closed", "unknown"}
 MARKET_SESSION_PRIORITY = {"regular": 0, "pre_market": 1, "after_hours": 2, "closed": 3, "unknown": 4}
+EVIDENCE_TRACE_V1_MAX_BYTES = 4096
 
 
 @dataclass(frozen=True)
@@ -34,6 +37,166 @@ class ReportGradeInputs:
     decisions: list[AssetDecision]
     required_benchmark_sessions: tuple[str, ...] = ()
     enforce_regular_window: bool = False
+
+
+def build_market_context_v1(
+    *,
+    snapshots_by_symbol: dict[str, AssetSnapshot],
+    benchmarks: dict[str, list[Candle]],
+    stock_regime: str,
+    crypto_regime: str,
+    data_mode: str,
+    regime_statuses: dict[str, str] | None = None,
+    regime_sources: dict[str, str] | None = None,
+) -> dict[str, dict[str, Any]]:
+    benchmark_source = "fmp" if data_mode == "live" else "fixture" if data_mode == "fixture" else data_mode
+    context: dict[str, dict[str, Any]] = {}
+    for symbol in ("SPY", "QQQ", "SMH"):
+        context[symbol] = _market_context_candles_entry(
+            benchmarks.get(symbol, []),
+            source=benchmark_source if benchmarks.get(symbol) else None,
+            observed_at=None,
+            price_currency="USD",
+            granularity="daily",
+            time_basis="eod_candle",
+        )
+    for symbol in ("BTC", "ETH"):
+        snapshot = snapshots_by_symbol.get(symbol)
+        if snapshot is None:
+            context[symbol] = _market_context_candles_entry(
+                [],
+                source=None,
+                observed_at=None,
+                price_currency=None,
+                granularity="daily",
+                time_basis="eod_candle",
+            )
+            continue
+        metadata = snapshot.data_fetch_metadata
+        candle_provenance = snapshot.crypto_metric_provenance.get("candles", {})
+        source = (
+            metadata.provider
+            if metadata is not None and metadata.provider
+            else candle_provenance.get("provider")
+            if isinstance(candle_provenance.get("provider"), str)
+            else snapshot.data_source
+        )
+        context[symbol] = _market_context_candles_entry(
+            snapshot.candles,
+            source=source,
+            observed_at=(metadata.source_timestamp if metadata is not None else None) or snapshot.data_timestamp,
+            price_currency=_market_context_price_currency(str(source or "")),
+            granularity=(metadata.granularity if metadata is not None else None) or "daily",
+            time_basis=(metadata.market_data_kind if metadata is not None else None) or "eod_candle",
+        )
+    regime_sources = regime_sources or {}
+    regime_statuses = regime_statuses or {}
+    context["stock_regime"] = _market_context_regime_entry(
+        stock_regime,
+        regime_sources.get("stock_regime", "advisor.scan_engine"),
+        status=regime_statuses.get("stock_regime"),
+    )
+    context["crypto_regime"] = _market_context_regime_entry(
+        crypto_regime,
+        regime_sources.get("crypto_regime", "advisor.scan_engine"),
+        status=regime_statuses.get("crypto_regime"),
+    )
+    return context
+
+
+def _market_context_candles_entry(
+    candles: list[Candle],
+    *,
+    source: object,
+    observed_at: object,
+    price_currency: str | None,
+    granularity: str,
+    time_basis: str,
+) -> dict[str, Any]:
+    source_text = _bounded_context_text(source, 80)
+    observed_at_text = _bounded_context_text(observed_at, 64)
+    entry: dict[str, Any] = {
+        "status": "unavailable",
+        "source": source_text,
+        "observed_at": observed_at_text,
+        "price_currency": price_currency,
+        "daily_change_pct_unit": "percent",
+        "granularity": granularity,
+        "time_basis": time_basis,
+    }
+    if not candles:
+        return entry
+    latest = candles[-1]
+    price = latest.close
+    if not isinstance(price, (int, float)) or isinstance(price, bool) or not math.isfinite(price) or price <= 0:
+        return entry
+    entry["price"] = round(float(price), 8)
+    entry["observed_at"] = _bounded_context_text(observed_at, 64) or _bounded_context_text(latest.date, 64)
+    daily_change_pct = None
+    if len(candles) >= 2:
+        previous_close = candles[-2].close
+        if (
+            isinstance(previous_close, (int, float))
+            and not isinstance(previous_close, bool)
+            and math.isfinite(previous_close)
+            and previous_close > 0
+        ):
+            daily_change_pct = (float(price) / float(previous_close) - 1) * 100
+    if daily_change_pct is not None and math.isfinite(daily_change_pct):
+        entry["daily_change_pct"] = round(daily_change_pct, 8)
+        entry["status"] = "available"
+    else:
+        entry["status"] = "partial"
+    return entry
+
+
+def _market_context_price_currency(source: str) -> str | None:
+    normalized = source.strip().lower()
+    if normalized == "binance" or normalized.startswith("binance/"):
+        return "USDT"
+    if "coingecko" in normalized:
+        return "USD"
+    if normalized in {"fmp", "yahoo", "stooq", "alphavantage"}:
+        return "USD"
+    return None
+
+
+def _market_context_regime_entry(label: str, source: str, *, status: str | None = None) -> dict[str, Any]:
+    usable = isinstance(label, str) and bool(label.strip()) and label.strip().lower() not in {
+        "not_verified",
+        "unavailable",
+        "unknown",
+    }
+    if status == "unavailable":
+        usable = False
+    entry: dict[str, Any] = {
+        "status": "available" if usable else "unavailable",
+        "source": _bounded_context_text(source, 80),
+        "observed_at": None,
+    }
+    if usable:
+        entry["label"] = label.strip()
+    return entry
+
+
+def _bounded_context_text(value: object, max_length: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value[:max_length] if value else None
+
+
+def _market_context_section(context: dict[str, dict[str, Any]] | None) -> list[str]:
+    if context is None:
+        return []
+    serialized = json.dumps(context, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
+    return [
+        "## Market context observations v1",
+        "",
+        "- market_context_version: `1`",
+        f"- market_context_v1: `{serialized}`",
+        "",
+    ]
 
 
 @dataclass(frozen=True)
@@ -63,6 +226,7 @@ def render_markdown_report(
     coverage_universe: list[dict[str, Any]] | None = None,
     deep_analysis_candidates: list[str] | None = None,
     snapshots_by_symbol: dict[str, AssetSnapshot] | None = None,
+    market_context_v1: dict[str, dict[str, Any]] | None = None,
     required_benchmark_sessions: tuple[str, ...] = (),
     enforce_regular_window: bool = False,
 ) -> str:
@@ -146,6 +310,7 @@ def render_markdown_report(
         f"- Alertas de carteira: {_format_list(portfolio_alerts or [])}",
         "",
     ]
+    lines.extend(_market_context_section(market_context_v1))
     if report_type == "main" and report_grade != "decision_grade":
         lines.extend(
             _main_decision_grade_diagnostic_section(
@@ -232,6 +397,7 @@ def render_analyst_review_input(
     crypto_regime: str,
     generated_at: str | None = None,
     snapshots_by_symbol: dict[str, AssetSnapshot] | None = None,
+    market_context_v1: dict[str, dict[str, Any]] | None = None,
     required_benchmark_sessions: tuple[str, ...] = (),
     enforce_regular_window: bool = False,
 ) -> str:
@@ -336,6 +502,7 @@ def render_analyst_review_input(
         f"- crypto_regime: `{crypto_regime}`",
         "",
     ]
+    lines.extend(_market_context_section(market_context_v1))
     lines.extend(_analyst_decision_inventory_section(ranked))
     if report_type == "main" and report_grade != "decision_grade":
         lines.extend(
@@ -1183,7 +1350,7 @@ def _analyst_candidate_lines(decision: AssetDecision, snapshot: AssetSnapshot | 
         f"  - reason: {_display_thesis(decision)}",
         f"  - risks: {_format_list(sorted(set([*decision.alerts, *decision.limitations])))}",
         f"  - valuation_summary: {'; '.join(decision.metrics_summary) if decision.metrics_summary else 'not_verified'}",
-        f"  - earnings_guidance_status: `{_verification_status(decision.event_check_status)}`",
+        f"  - earnings_guidance_status: `{_verification_status(decision.event_check_status, preserve_not_collected=True)}`",
         f"  - news_catalyst_status: `{_verification_status(decision.news_status)}`",
     ]
     return [*lines, *[f"  {line}" for line in _snapshot_provenance_lines(snapshot)]]
@@ -1196,6 +1363,7 @@ def _analyst_decision_inventory_section(decisions: list[AssetDecision]) -> list[
             [
                 f"### {decision.symbol}",
                 f"- source_decision: `{decision.decision}`",
+                *_evidence_trace_lines(decision),
                 f"- source_bucket: `{decision.bucket}`",
                 f"- source_report: `main`",
                 f"- universe_origin: `{decision.universe_origin}`",
@@ -1207,6 +1375,50 @@ def _analyst_decision_inventory_section(decisions: list[AssetDecision]) -> list[
             ]
         )
     return lines
+
+
+def _evidence_trace_lines(decision: AssetDecision) -> list[str]:
+    if decision.universe_origin in {"discovery", "benchmark"}:
+        return []
+    effects = [
+        {
+            "rule_id": effect.rule_id,
+            "capability": effect.capability,
+            "scope": effect.scope,
+            "criticality": effect.criticality,
+            "status": effect.status,
+            "evaluation": effect.evaluation,
+            "decision_effect": effect.decision_effect,
+            "reason_code": effect.reason_code,
+            "source": effect.source,
+            "observed_at": effect.observed_at,
+        }
+        for effect in sorted(
+            decision.evidence_effects,
+            key=lambda effect: (
+                effect.rule_id,
+                effect.capability,
+                effect.scope,
+                effect.criticality,
+                effect.status,
+                effect.evaluation,
+                effect.decision_effect,
+                effect.reason_code or "",
+                effect.source or "",
+                effect.observed_at or "",
+            ),
+        )
+    ]
+    payload = {
+        "source_decision": decision.decision,
+        "asset_symbol": decision.symbol,
+        "universe_origin": decision.universe_origin,
+        "effects": effects,
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    if len(serialized.encode("utf-8")) > EVIDENCE_TRACE_V1_MAX_BYTES:
+        raise ValueError(f"evidence_trace_v1 exceeds {EVIDENCE_TRACE_V1_MAX_BYTES} bytes for {decision.symbol}")
+    return ["- evidence_trace_version: 1", f"- evidence_trace_v1: {serialized}"]
 
 
 def _snapshot_or_legacy_status(snapshot: AssetSnapshot | None, field: str, legacy: str) -> str:
@@ -1581,6 +1793,7 @@ def _asset_section(
         f"- universe_origin: `{decision.universe_origin}`",
         f"- decision_label: `{decision.decision}`",
         f"- Decisao: `{decision.decision}`",
+        *_evidence_trace_lines(decision),
         f"- reason_codes: {_format_list(decision.reason_codes or sorted(set([*decision.alerts, *decision.limitations])))}",
         f"- data_quality: `{decision.data_quality}`",
         f"- missing_data_severity: `{decision.missing_data_severity}`",
@@ -1602,7 +1815,7 @@ def _asset_section(
         f"- Tese: {_display_thesis(decision)}",
         f"- Metricas principais: {'; '.join(decision.metrics_summary)}",
         f"- Event risk: {_event_risk(decision)}",
-        f"- event_check_status: `{_verification_status(decision.event_check_status)}`",
+        f"- event_check_status: `{_verification_status(decision.event_check_status, preserve_not_collected=True)}`",
         f"- News/catalyst summary: {decision.news_summary or 'not_collected'}",
         f"- news_status: `{_verification_status(decision.news_status)}`",
         f"- macro_regime: `{decision.macro_regime}`",
@@ -1658,23 +1871,8 @@ def _can_show_backtest_stats(decision: AssetDecision) -> bool:
 
 
 def _has_confidence_limiting_limitation(limitations: list[str]) -> bool:
-    non_blocking = {"cvd_proxy_uses_taker_buy_sell_volume", "fmp_price_light_fallback"}
     explicitly_limiting = {"earnings_data_missing", "news_rumor_not_confirmed", "news_confidence_low"}
-    for limitation in limitations:
-        if limitation in non_blocking:
-            continue
-        if limitation in explicitly_limiting:
-            return True
-        if (
-            limitation.startswith("missing_")
-            or limitation.startswith("insufficient_")
-            or limitation.endswith("_unavailable")
-            or limitation.endswith("_not_live")
-            or limitation.endswith("_demo")
-            or limitation == "data_incomplete_confidence_limited"
-        ):
-            return True
-    return False
+    return bool(explicitly_limiting & set(limitations))
 
 
 def _format_optional(value: float | None) -> str:
@@ -1688,10 +1886,7 @@ def _format_optional_metric(value: float | None) -> str:
 def _format_expected_value(stats) -> str:
     if stats is None or stats.expected_value_r is None:
         return "n/a"
-    value = f"{stats.expected_value_r:.2f}"
-    if stats.avg_win_r is None or stats.avg_loss_r is None:
-        return f"{value} (limited/model_estimate)"
-    return value
+    return f"{stats.expected_value_r:.2f}"
 
 
 def _format_list(values: list[str]) -> str:
@@ -1714,8 +1909,8 @@ def _format_position_units(plan) -> str:
     return f"{plan.max_position_units:.4f}".rstrip("0").rstrip(".")
 
 
-def _verification_status(status: str) -> str:
-    if status in {"", "unknown", "not_collected"}:
+def _verification_status(status: str, *, preserve_not_collected: bool = False) -> str:
+    if status in {"", "unknown"} or (status == "not_collected" and not preserve_not_collected):
         return "not_verified"
     return status
 

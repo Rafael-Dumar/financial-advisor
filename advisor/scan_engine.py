@@ -73,8 +73,14 @@ def _derive_crypto_regime(snapshots: list[AssetSnapshot]) -> MarketRegime:
         or len(sol.candles) < 31
     ):
         return MarketRegime("neutral", ["insufficient_crypto_regime_data"])
-    funding = max(abs(snapshot.funding_rate or 0.0) for snapshot in crypto.values())
-    open_interest_change = max(abs(snapshot.open_interest_change or 0.0) for snapshot in crypto.values())
+    funding_values = [abs(snapshot.funding_rate) for snapshot in crypto.values() if snapshot.funding_rate is not None]
+    open_interest_values = [
+        abs(snapshot.open_interest_change)
+        for snapshot in crypto.values()
+        if snapshot.open_interest_change is not None
+    ]
+    funding = max(funding_values) if funding_values else None
+    open_interest_change = max(open_interest_values) if open_interest_values else None
     return classify_crypto_regime(
         btc_candles=btc.candles,
         eth_btc_relative_strength=relative_strength(eth.candles, btc.candles),

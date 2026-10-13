@@ -41,6 +41,7 @@ def _nightly(*, primary_grade: str = "decision_grade", artifact_valid: bool = Tr
 - primary_report_grade: `{primary_grade}`
 - overall_report_grade: `diagnostic_not_decision_grade`
 - primary_market_session: `regular`
+- market_session_conflict: false
 - discovery_coverage_grade: `degraded`
 - stale_asset_count_primary: 0
 - provider_rate_limit_status: `ok`
@@ -60,11 +61,19 @@ def _asset(
     origin: str = "primary_watchlist",
     report_type: str = "main",
     extra: str = "",
+    evidence_trace: str | None = None,
 ) -> str:
     session = "regular" if report_type == "main" else "after_hours"
+    conflict = "false" if report_type == "main" else "unknown"
+    trace_lines = (
+        f"\n- evidence_trace_version: 1\n- evidence_trace_v1: {evidence_trace}"
+        if evidence_trace is not None
+        else ""
+    )
     return f"""# Investment and Swing Trade Advisor
 
 - report_type: `{report_type}`
+- market_session_conflict: `{conflict}`
 
 ## {ticker}
 
@@ -87,7 +96,26 @@ def _asset(
 - Stop/invalidation: 95.00
 - Tamanho maximo da posicao: 10 unidades / 1000.00
 - Dados ausentes ou limitacoes: {extra or 'nenhum'}
+{trace_lines}
 """
+
+
+def _evidence_trace(
+    ticker: str,
+    source_decision: str,
+    *,
+    effect: dict[str, object] | None = None,
+    origin: str = "primary_watchlist",
+) -> str:
+    return json.dumps(
+        {
+            "source_decision": source_decision,
+            "asset_symbol": ticker,
+            "universe_origin": origin,
+            "effects": [effect] if effect else [],
+        },
+        separators=(",", ":"),
+    )
 
 
 def _runtime_entry(
@@ -621,6 +649,137 @@ class Phase25FinalReviewTests(unittest.TestCase):
         self.assertNotIn("source_decision: `research_only`", review)
         self.assertIn("legacy_label:", review)
 
+    def test_no_trade_basis_distinguishes_thesis_data_and_integrity_limits(self) -> None:
+        observed_avoid = {
+            "rule_id": "classify_asset.negative_expected_value",
+            "capability": "backtest.expected_value_r",
+            "scope": "stock_asset",
+            "criticality": "REQUIRED_FOR_DECISION",
+            "status": "available",
+            "evaluation": "failed_observed_signal",
+            "decision_effect": "avoid",
+            "reason_code": "negative_ev",
+            "source": "local_backtest",
+            "observed_at": "2026-10-10T12:00:00Z",
+        }
+        unresolved_earnings = {
+            "rule_id": "classify_asset.stock_earnings_timing",
+            "capability": "earnings_timing",
+            "scope": "stock_asset",
+            "criticality": "REQUIRED_FOR_DECISION",
+            "status": "not_collected",
+            "evaluation": "unresolved_required_evidence",
+            "decision_effect": "cap_to_watch",
+            "reason_code": "earnings_data_missing",
+            "source": "fmp",
+            "observed_at": None,
+        }
+        thesis_review = generate_analyst_final_review(
+            _nightly(),
+            extra_markdowns=[_asset("AMD", "avoid", evidence_trace=_evidence_trace("AMD", "avoid", effect=observed_avoid))],
+        )
+        data_review = generate_analyst_final_review(
+            _nightly(),
+            extra_markdowns=[
+                _asset(
+                    "AMD",
+                    "technical_unvalidated",
+                    evidence_trace=_evidence_trace("AMD", "technical_unvalidated", effect=unresolved_earnings),
+                )
+            ],
+        )
+        integrity_review = generate_analyst_final_review(
+            _nightly(artifact_valid=False),
+            extra_markdowns=[_asset("AMD", "wait", evidence_trace=_evidence_trace("AMD", "wait"))],
+        )
+
+        self.assertIn("no_trade_basis: `thesis_based`", thesis_review)
+        self.assertIn("no_trade_basis: `data_limited`", data_review)
+        self.assertIn("no_trade_basis: `report_integrity_limited`", integrity_review)
+
+    def test_legacy_trace_is_unknown_without_inferred_criticality(self) -> None:
+        review = generate_analyst_final_review(_nightly(), extra_markdowns=[_asset("AMD", "wait")])
+        asset = review.split("### AMD", 1)[1].split("## Comparacao main vs close", 1)[0]
+
+        self.assertIn("evidence_trace_status: `legacy_unknown`", asset)
+        self.assertNotIn("criticality:", asset)
+
+    def test_malformed_or_source_conflicting_trace_cannot_confirm_tradeable(self) -> None:
+        malformed = '{"source_decision":"tradeable","source_decision":"wait","asset_symbol":"AMD","universe_origin":"primary_watchlist","effects":[]}'
+        conflicting = _evidence_trace("AMD", "wait")
+
+        for trace in (malformed, conflicting):
+            with self.subTest(trace=trace[:32]):
+                review = generate_analyst_final_review(
+                    _nightly(),
+                    extra_markdowns=[_asset("AMD", "tradeable", evidence_trace=trace)],
+                )
+                self.assertIn("data_contract_invalid", review)
+                self.assertIn("* no_trade", review)
+                self.assertNotIn("review_status: `tradeable_confirmed_from_main`", review)
+
+    def test_raw_main_diagnostic_grade_cannot_be_promoted_by_nightly_summary(self) -> None:
+        raw_main = _asset("AMD", "tradeable").replace(
+            "- market_session_conflict: `false`",
+            "- market_session_conflict: `false`\n- primary_report_grade: `diagnostic_not_decision_grade`",
+        )
+
+        review = generate_analyst_final_review(
+            _nightly(primary_grade="decision_grade"),
+            extra_markdowns=[raw_main],
+        )
+
+        self.assertIn("- main_primary_blocked: true", review)
+        self.assertIn("main_primary_not_decision_grade", review)
+        self.assertIn("* no_trade", review)
+        self.assertNotIn("review_status: `tradeable_confirmed_from_main`", review)
+
+    def test_tradeable_with_unresolved_required_decision_evidence_is_invalid(self) -> None:
+        unresolved_required = {
+            "rule_id": "classify_asset.stock_earnings_timing",
+            "capability": "earnings_timing",
+            "scope": "stock_asset",
+            "criticality": "REQUIRED_FOR_DECISION",
+            "status": "not_collected",
+            "evaluation": "unresolved_required_evidence",
+            "decision_effect": "none",
+            "reason_code": "earnings_data_missing",
+            "source": "fmp",
+            "observed_at": None,
+        }
+        review = generate_analyst_final_review(
+            _nightly(),
+            extra_markdowns=[
+                _asset(
+                    "AMD",
+                    "tradeable",
+                    evidence_trace=_evidence_trace("AMD", "tradeable", effect=unresolved_required),
+                )
+            ],
+        )
+
+        self.assertIn("data_contract_invalid", review)
+        self.assertIn("* no_trade", review)
+        self.assertNotIn("review_status: `tradeable_confirmed_from_main`", review)
+
+    def test_unrecognized_or_benchmark_origin_cannot_be_confirmed_as_primary(self) -> None:
+        for origin in ("unknown", "benchmark"):
+            with self.subTest(origin=origin):
+                review = generate_analyst_final_review(
+                    _nightly(),
+                    extra_markdowns=[
+                        _asset(
+                            "AMD",
+                            "tradeable",
+                            origin=origin,
+                            evidence_trace=_evidence_trace("AMD", "tradeable", origin=origin),
+                        )
+                    ],
+                )
+
+                self.assertIn("* no_trade", review)
+                self.assertNotIn("review_status: `tradeable_confirmed_from_main`", review)
+
     def test_tradeable_from_valid_main_reaches_final_review(self) -> None:
         review = generate_analyst_final_review(_nightly(), extra_markdowns=[_asset("AMD", "tradeable")])
 
@@ -655,6 +814,15 @@ class Phase25FinalReviewTests(unittest.TestCase):
 
         self.assertIn("- tradeable_count: 0", review)
         self.assertIn("Nenhum tradeable no main selecionado", review)
+
+    def test_usable_decision_grade_no_trade_uses_the_asset_decision(self) -> None:
+        review = generate_analyst_final_review(_nightly(), extra_markdowns=[_asset("AMD", "wait")])
+
+        self.assertIn("- primary_report_grade: `decision_grade`", review)
+        self.assertIn("- main_primary_blocked: false", review)
+        self.assertIn("source_decision: `wait`", review)
+        self.assertIn("main utilizavel", review.lower())
+        self.assertNotIn("esperar main decision-grade", review.lower())
 
     def test_missing_legacy_provenance_fails_closed_even_with_tradeable_text(self) -> None:
         legacy = """# Nightly qualitative review input

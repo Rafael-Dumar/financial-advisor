@@ -51,8 +51,8 @@ def classify_crypto_regime(
     btc_candles: list[Candle],
     eth_btc_relative_strength: float,
     sol_btc_relative_strength: float,
-    funding_rate: float,
-    open_interest_change: float,
+    funding_rate: float | None,
+    open_interest_change: float | None,
 ) -> MarketRegime:
     reasons: list[str] = []
     score = 0
@@ -78,10 +78,15 @@ def classify_crypto_regime(
         score -= 1
         reasons.append("SOLBTC_relative_strength_weak")
 
-    if abs(funding_rate) > HIGH_FUNDING_RATE_8H and open_interest_change > 0.25:
+    if (
+        funding_rate is not None
+        and open_interest_change is not None
+        and abs(funding_rate) > HIGH_FUNDING_RATE_8H
+        and open_interest_change > 0.25
+    ):
         score -= 2
         reasons.append("leverage_hot")
-    elif abs(funding_rate) < BALANCED_FUNDING_RATE_8H:
+    elif funding_rate is not None and abs(funding_rate) < BALANCED_FUNDING_RATE_8H:
         score += 1
         reasons.append("funding_balanced")
 

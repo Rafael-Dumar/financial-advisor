@@ -152,6 +152,7 @@ def _base_snapshot(
     theme: str = "software",
     event: EventInfo | None = None,
     cache_age_seconds: int | None = 0,
+    earnings_status: str | None = None,
 ) -> AssetSnapshot:
     fundamentals = Fundamentals(
         pe=28,
@@ -176,13 +177,17 @@ def _base_snapshot(
             market_cap=1_500_000_000_000,
             average_volume=5_000_000_000,
         )
+    selected_event = event if event is not None else (None if asset_type == "crypto" else EventInfo(45, False, 0.0))
+    if earnings_status is None:
+        earnings_status = "verified" if asset_type == "stock" and selected_event is not None else "not_applicable"
     return AssetSnapshot(
         symbol=symbol,
         asset_type=asset_type,
         theme=theme,
         candles=_candles(),
         fundamentals=fundamentals,
-        event=event if event is not None else (None if asset_type == "crypto" else EventInfo(45, False, 0.0)),
+        event=selected_event,
+        earnings_status=earnings_status,
         missing_data=[],
         news_events=[],
         data_source="fmp",
@@ -259,8 +264,16 @@ def _characterization_cases() -> dict[str, tuple[ScoredAsset, BacktestStats | No
         alerts=["earnings_imminent"],
         snapshot=_base_snapshot("EARN", event=EventInfo(3, False, 0.0)),
     )
-    high_severity = _base_scored("HIGH", limitations=["earnings_data_missing"])
-    no_op = _base_scored("NOOP", limitations=["earnings_data_missing"])
+    high_severity = _base_scored(
+        "HIGH",
+        limitations=["earnings_data_missing"],
+        snapshot=_base_snapshot("HIGH", earnings_status="not_implemented"),
+    )
+    no_op = _base_scored(
+        "NOOP",
+        limitations=["earnings_data_missing"],
+        snapshot=_base_snapshot("NOOP", earnings_status="not_implemented"),
+    )
     return {
         "equity_tradeable_base": (_base_scored("TRADE"), _stats()),
         "equity_watch_buy": (_base_scored("WATCH", investment=75, swing=72), _stats()),
@@ -294,25 +307,25 @@ def _characterization_cases() -> dict[str, tuple[ScoredAsset, BacktestStats | No
     }
 
 
-# Frozen from the pre-instrumentation behavior at HEAD 64abb26.
+# Frozen outputs with optional context diagnostic and stock earnings timing explicit.
 CHARACTERIZATION_SHA256 = {
-    "equity_tradeable_base": "67fa54a4e740bf0cb52a33a3b7630e99baf520fe48f5132605d9bec9bb7936ca",
-    "equity_watch_buy": "f005190242fecaae2000752d5505fcb200ef9beb0e2abb90e7c9b90584951153",
+    "equity_tradeable_base": "2696bc5bb84bc10c8542abee2dd9145a9b2f7d44223fa3ca866272c5554f3f86",
+    "equity_watch_buy": "4b16b7b116b77240b867e5cfabe18b5c676b09022817392b3dc5a8b180fa34da",
     "equity_wait": "07a59ac3031314975cd3943cfab8fc6eadf815675f42a26f9de822ce63f82ed9",
     "equity_avoid": "e3f2c4bbd9263cc9bf4231bfc15dc29afad70de3bf7996d7f4cc02b00cc56174",
-    "equity_technical_unvalidated": "1aec90b0656cfbbce416d2f4682b929cda566c138b10332b7171839e2782ac75",
-    "crypto_tradeable": "0158677beea8ba12c8bf5c70d1f94ac35a2d8ee27233451d85d20c2733cde1a4",
+    "equity_technical_unvalidated": "3837ea987652fe749bafb80e433a7ae49ee4b58d8c8f10bb4def4fddde4d2c63",
+    "crypto_tradeable": "1359f24049d6c7c3ebf1f293a4e6e251b823308e82995470d524c86708a6b56e",
     "low_sample": "5a3f6942571754563bec8c6ca822814c2714aa7439da6a9a6ec0099ca9a870c3",
     "stale_data": "1b996142b788fca052c1d70bd5f41e6729d6908ef1b88029311e23eef9773f85",
-    "missing_data_severity_high": "89c280193c943732f03e447609cbfc1135fffd70df3cbf8d06cd3c0f7abf2de5",
+    "missing_data_severity_high": "ed7f72f3d53a34f7cb8680f09bb864db231e6ba2e4ec51cc6130bfd9dac801da",
     "confidence_below_65": "4f8ffcf091b69bef4dbacf3cd9646f4b49004730d9815c6a3421ea2ef12a0f6f",
-    "liquidity_gate": "da780a7b73f4c36ebc129af36e4ba69d173e9b2b7ab693490f1c4f856365003c",
-    "earnings_event": "05ef2580638eed97ff76cd13dea06641fd7734bf10373e9467c3c29242f732f6",
+    "liquidity_gate": "34dd1df96f0f231cce1c26739374a5af23d54ac52d6e1133c0c4882fafca2f66",
+    "earnings_event": "d8189707db364379b10814706b17113cf90d110f5be683f9fe9c3a5455e12e4f",
     "market_regime": "7d581c0cdf38adb8481a1080afbf630a4b1c90d16165cd27f1e914fe1be3a810",
-    "below_minimum_market_cap": "75dc7e04ff6bd8e2adf7d4174c57e0596a2770d05fb5e3808f933b8d9fdfed0c",
-    "no_op_weaker_cap": "03f9d4ff2df2b370223048c9f7cc7bf4feace60b89f48187404b449652cc5205",
-    "explicit_market_cap_override": "160b7d3b68400e77f904e15eeae5ab546c824f97aa4161be4516135858c95dd8",
-    "early_return_helper": "11b969efc725933a48b8df823101f7403cfaf35f4769a89e580d56532952c5bd",
+    "below_minimum_market_cap": "2fbf854d958c7cdf7a3f2351ce48e4991e5b02a419618acedd8d37907ba8d707",
+    "no_op_weaker_cap": "618634441fe3370ac6806d90bd73e9911a8c7fd46accfeb240184a27763e6250",
+    "explicit_market_cap_override": "5866169b85e78067f10193e45800ecd1df144e327e9330f32512fc406a0b0e68",
+    "early_return_helper": "ec763f67465a83928d51bdfeece558c413362d3778e0bcec19732a4288aa59d2",
 }
 
 

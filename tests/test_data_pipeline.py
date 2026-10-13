@@ -1,5 +1,6 @@
 import unittest
 
+from advisor.cli import _unscorable_decision
 from advisor.data_pipeline import (
     binance_crypto_flow_from_payloads,
     crypto_snapshot_from_payloads,
@@ -10,6 +11,32 @@ from advisor.models import DataFetchMetadata
 
 
 class DataPipelineTests(unittest.TestCase):
+    def test_unscorable_price_history_records_required_decision_effect(self):
+        snapshot = stock_snapshot_from_payloads(
+            symbol="AMD",
+            theme="semiconductors",
+            historical_payload={"historical": []},
+            profile_payload=[],
+            ratios_payload=[],
+            metrics_payload=[],
+            historical_metrics_payload=[],
+            growth_payload=[],
+            earnings_payload=[],
+            today="2026-07-10",
+        )
+
+        decision = _unscorable_decision(snapshot, "insufficient_price_history")
+
+        price_effect = next(
+            (effect for effect in decision.evidence_effects if effect.capability == "price_history"),
+            None,
+        )
+        self.assertIsNotNone(price_effect)
+        self.assertEqual(price_effect.criticality, "REQUIRED_FOR_DECISION")
+        self.assertEqual(price_effect.status, "not_collected")
+        self.assertEqual(price_effect.evaluation, "unresolved_required_evidence")
+        self.assertEqual(price_effect.decision_effect, "blocked")
+
     def test_stock_snapshot_keeps_eod_candles_separate_from_timestamped_quote(self):
         snapshot = stock_snapshot_from_payloads(
             symbol="AMD",

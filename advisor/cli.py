@@ -35,8 +35,14 @@ from advisor.evidence_schema import (
 from advisor.fixtures import benchmarks_from_fixture, load_scan_fixture, snapshots_from_fixture
 from advisor.http_client import fetch_json
 from advisor.live_loader import LiveDataLoader
-from advisor.models import AssetDecision, AssetSnapshot, BacktestStats, Candle, RiskPlan
-from advisor.report import render_analyst_review_input, render_blocked_report, render_html_report, render_markdown_report
+from advisor.models import AssetDecision, AssetSnapshot, BacktestStats, Candle, DecisionEvidenceEffect, RiskPlan
+from advisor.report import (
+    build_market_context_v1,
+    render_analyst_review_input,
+    render_blocked_report,
+    render_html_report,
+    render_markdown_report,
+)
 from advisor.risk import detect_return_correlation, detect_theme_concentration, rate_sample_quality
 from advisor.runtime_scoring_artifact import ArtifactAssetInput, validate_runtime_scoring_artifact, write_runtime_scoring_artifact
 from advisor.runtime_scoring_observability import RULE_CATALOG, RuntimeTrace
@@ -348,6 +354,37 @@ def _scan(args: argparse.Namespace) -> int:
     provider_budget["deep_analysis_limited_by_budget"] = bool(deep_skipped)
     provider_budget["deep_analysis_skipped"] = deep_skipped
     snapshots_by_symbol = {snapshot.symbol: snapshot for snapshot in snapshots}
+    market_context_v1 = build_market_context_v1(
+        snapshots_by_symbol=snapshots_by_symbol,
+        benchmarks=benchmarks,
+        stock_regime=stock_regime,
+        crypto_regime=crypto_regime,
+        data_mode=data_mode,
+        regime_statuses={
+            "stock_regime": (
+                "available"
+                if "stock_regime" in payload or "insufficient_stock_regime_data" not in regimes.stock.reasons
+                else "unavailable"
+            ),
+            "crypto_regime": (
+                "available"
+                if "crypto_regime" in payload or "insufficient_crypto_regime_data" not in regimes.crypto.reasons
+                else "unavailable"
+            ),
+        },
+        regime_sources={
+            "stock_regime": (
+                "scan_fixture" if data_mode == "fixture" and "stock_regime" in payload
+                else "default_scan_payload" if "stock_regime" in payload
+                else "advisor.scan_engine"
+            ),
+            "crypto_regime": (
+                "scan_fixture" if data_mode == "fixture" and "crypto_regime" in payload
+                else "default_scan_payload" if "crypto_regime" in payload
+                else "advisor.scan_engine"
+            ),
+        },
+    )
     markdown = render_markdown_report(
         decisions,
         stock_regime=stock_regime,
@@ -359,6 +396,7 @@ def _scan(args: argparse.Namespace) -> int:
         coverage_universe=coverage_universe,
         deep_analysis_candidates=deep_analysis_candidates,
         snapshots_by_symbol=snapshots_by_symbol,
+        market_context_v1=market_context_v1,
         enforce_regular_window=True,
     )
     analyst_markdown = render_analyst_review_input(
@@ -368,6 +406,7 @@ def _scan(args: argparse.Namespace) -> int:
         stock_regime=stock_regime,
         crypto_regime=crypto_regime,
         snapshots_by_symbol=snapshots_by_symbol,
+        market_context_v1=market_context_v1,
         enforce_regular_window=True,
     )
     html = render_html_report(markdown)
@@ -1659,6 +1698,13 @@ def _unscorable_decision(snapshot: AssetSnapshot, reason: str) -> AssetDecision:
     if "fmp_price_unavailable" in limitations:
         limitations.append("probable_cause:fmp_plan_or_price_endpoint_unavailable")
     limitations = sorted(set(limitations))
+    price_metadata = snapshot.data_fetch_metadata
+    price_source = price_metadata.provider if price_metadata is not None else snapshot.data_source
+    price_observed_at = (
+        (price_metadata.source_timestamp or price_metadata.fetched_at)
+        if price_metadata is not None
+        else snapshot.data_timestamp
+    )
     return AssetDecision(
         symbol=snapshot.symbol,
         asset_type=snapshot.asset_type,
@@ -1694,6 +1740,20 @@ def _unscorable_decision(snapshot: AssetSnapshot, reason: str) -> AssetDecision:
         data_source=snapshot.data_source,
         data_timestamp=snapshot.data_timestamp,
         cache_age_seconds=snapshot.cache_age_seconds,
+        evidence_effects=[
+            DecisionEvidenceEffect(
+                rule_id="scan.price_history_minimum",
+                capability="price_history",
+                scope=f"{snapshot.asset_type}_asset",
+                criticality="REQUIRED_FOR_DECISION",
+                status="not_collected" if not snapshot.candles else "invalid",
+                evaluation="unresolved_required_evidence",
+                decision_effect="blocked",
+                reason_code=reason,
+                source=price_source if price_source != "unknown" else None,
+                observed_at=price_observed_at,
+            )
+        ],
     )
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from unittest.mock import patch
 
@@ -342,6 +343,7 @@ def _source_asset(
         f"## {ticker}",
         f"- Ativo: {ticker}",
         f"- Tipo: {asset_type}",
+        "- universe_origin: primary_watchlist",
         f"- decision_label: {source_decision}",
         f"- Decisao: {source_decision}",
         f"- blocking_reasons: {blocking_reasons or 'nenhum'}",
@@ -376,10 +378,13 @@ def _authoritative_main_review(*assets: str) -> str:
 - Data mode: live
 - report_grade: decision_grade
 - market_session: regular
+- market_session_conflict: false
 - artifact_valid: true
 - blocking_reasons: nenhum
 - provider_rate_limit_status: ok
 - stale_asset_count_primary: 0
+- fresh_price_count: 4
+- missing_price_count: 0
 """
     main = """# Investment and Swing Trade Advisor
 
@@ -388,8 +393,110 @@ def _authoritative_main_review(*assets: str) -> str:
 - Data mode: live
 - report_grade: decision_grade
 - market_session: regular
+- market_session_conflict: false
 
 """ + "\n\n".join(assets)
+    return generate_analyst_final_review(nightly, extra_markdowns=[main])
+
+
+def _market_context_v1(*, missing_smh: bool = False) -> dict[str, dict[str, object]]:
+    context: dict[str, dict[str, object]] = {}
+    for symbol, price, change, source, currency in (
+        ("SPY", 500.0, 1.0, "fmp", "USD"),
+        ("QQQ", 600.0, 1.1, "fmp", "USD"),
+        ("SMH", 300.0, 1.2, "fmp", "USD"),
+        ("BTC", 61500.0, 1.2, "binance", "USDT"),
+        ("ETH", 3400.0, 0.8, "coingecko", "USD"),
+    ):
+        if symbol == "SMH" and missing_smh:
+            context[symbol] = {
+                "status": "unavailable",
+                "source": None,
+                "observed_at": None,
+                "price_currency": currency,
+                "daily_change_pct_unit": "percent",
+                "granularity": "daily",
+                "time_basis": "eod_candle",
+            }
+            continue
+        context[symbol] = {
+            "status": "available",
+            "source": source,
+            "observed_at": "2026-10-09T20:00:00Z",
+            "price_currency": currency,
+            "daily_change_pct_unit": "percent",
+            "granularity": "daily",
+            "time_basis": "eod_candle",
+            "price": price,
+            "daily_change_pct": change,
+        }
+    context["stock_regime"] = {
+        "status": "available",
+        "source": "advisor.scan_engine",
+        "observed_at": None,
+        "label": "neutral",
+    }
+    context["crypto_regime"] = {
+        "status": "available",
+        "source": "advisor.scan_engine",
+        "observed_at": None,
+        "label": "risk_on",
+    }
+    return context
+
+
+def _market_context_section(context: dict[str, dict[str, object]]) -> str:
+    serialized = json.dumps(context, separators=(",", ":"), allow_nan=False)
+    return "\n".join(
+        [
+            "## Market context observations v1",
+            "",
+            "- market_context_version: `1`",
+            f"- market_context_v1: `{serialized}`",
+        ]
+    )
+
+
+def _market_context_main(context: dict[str, dict[str, object]]) -> str:
+    return "\n\n".join(
+        [
+            "# Investment and Swing Trade Advisor\n\n- report_type: `main`\n- generated_at: `2026-10-10T10:00:00-03:00`\n- Data mode: `live`\n- report_grade: `decision_grade`\n- primary_report_grade: `decision_grade`\n- overall_report_grade: `decision_grade`\n- market_session: `regular`\n- market_session_conflict: false",
+            _market_context_section(context),
+            _source_asset("NVDA", "wait"),
+        ]
+    )
+
+
+def _market_context_nightly(context: dict[str, dict[str, object]] | None = None) -> str:
+    sections = [
+        "# Nightly qualitative review input\n\n## Main summary\n\n- main: run_id=424242\n- main_head_sha: abcdef123456\n- brt_date: 2026-10-10\n- generated_at: 2026-10-10T10:00:00-03:00\n- report_type: main\n- Data mode: live\n- report_grade: decision_grade\n- primary_report_grade: decision_grade\n- overall_report_grade: decision_grade\n- market_session: regular\n- market_session_conflict: false\n- artifact_valid: true\n- blocking_reasons: nenhum\n- provider_rate_limit_status: ok\n\n## Close summary\n\n- report_type: close\n- Data mode: live\n- report_grade: close_decision_grade",
+    ]
+    if context is not None:
+        sections.append(_market_context_section(context))
+    return "\n\n".join(sections)
+
+
+def _session_gate_review(conflict: str | None, *, blocking_reason: str = "nenhum") -> str:
+    conflict_line = f"- market_session_conflict: {conflict}\n" if conflict is not None else ""
+    nightly = (
+        "# Nightly qualitative review input\n\n## Main summary\n\n"
+        "- main: run_id=424242\n- main_head_sha: abcdef123456\n- brt_date: 2026-10-10\n"
+        "- generated_at: 2026-10-10T10:00:00-03:00\n- report_type: main\n- Data mode: live\n"
+        "- report_grade: decision_grade\n- primary_report_grade: decision_grade\n"
+        "- overall_report_grade: decision_grade\n- market_session: regular\n"
+        "- fresh_price_count: 15\n- missing_price_count: 0\n"
+        + conflict_line
+        + f"- artifact_valid: true\n- blocking_reasons: {blocking_reason}\n- provider_rate_limit_status: ok\n\n"
+        "## Close summary\n\n- report_type: close\n- Data mode: live\n- report_grade: close_decision_grade"
+    )
+    main = (
+        "# Investment and Swing Trade Advisor\n\n- report_type: `main`\n- generated_at: `2026-10-10T10:00:00-03:00`\n"
+        "- Data mode: `live`\n- report_grade: `decision_grade`\n- primary_report_grade: `decision_grade`\n"
+        "- overall_report_grade: `decision_grade`\n- market_session: `regular`\n"
+        + conflict_line
+        + "\n"
+        + _source_asset("NVDA", "wait")
+    )
     return generate_analyst_final_review(nightly, extra_markdowns=[main])
 
 
@@ -409,7 +516,8 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
 
         self.assertIn("AMD tem sinais tecnicos/fundamentais parciais", review)
         self.assertIn("watch_pending_checks", review)
-        self.assertIn("news, earnings/guidance, valuation, risco de gap", review)
+        self.assertIn("source_decision=technical_unvalidated permanece a decisao do main", review)
+        self.assertNotIn("news, earnings/guidance, valuation, risco de gap", review)
         self.assertNotIn("AMD segue technical_unvalidated/blocked", review)
 
     def test_negative_ev_or_bad_thesis_is_rejected_not_watch(self) -> None:
@@ -424,7 +532,9 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
 
         self.assertIn("HYPE", review)
         self.assertIn("crypto_research_only", review)
-        self.assertIn("flow/news not_verified", review)
+        self.assertIn("flow_data_status: not_verified", review)
+        self.assertIn("ausentes neste artifact; ausencia nao e observacao adversa", review)
+        self.assertNotIn("flow/news not_verified impedem trade", review)
         self.assertNotIn("HYPE: tradeable", review)
 
     def test_provider_blocked_or_missing_price_remains_blocked(self) -> None:
@@ -603,8 +713,8 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
     def test_v2_session_detection_warning_keeps_uncertainty_and_safety_consequence(self) -> None:
         telegram = _telegram_text(generate_analyst_final_review(FULL_UNIVERSE_INPUT)).lower()
 
-        self.assertIn("classificacao da sessao pode estar incorreta", telegram)
-        self.assertIn("nao foi tratado como base de decisao", telegram)
+        self.assertNotIn("classificacao da sessao pode estar incorreta", telegram)
+        self.assertNotIn("nao foi tratado como base de decisao", telegram)
         self.assertNotIn("bug confirmado", telegram)
         self.assertNotIn("possible_session_detection_bug", telegram)
 
@@ -833,28 +943,50 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
         self.assertIn("Proximo passo pratico:", objective)
 
     def test_news_earnings_flow_not_verified_does_not_block_report_data_grade(self) -> None:
-        clean_main = FULL_UNIVERSE_INPUT.replace(
-            "- report_grade: `diagnostic_not_decision_grade`",
-            "- report_grade: `decision_grade`",
-        ).replace(
-            "- market_session: `regular,unknown`",
-            "- market_session: `regular`",
-        ).replace(
-            "- WARNING: blocked_or_diagnostic\n",
-            "",
-        ).replace(
-            "- missing_price_count: 11",
-            "- missing_price_count: 0",
-        ).replace(
-            "- reason_codes: `market_session_not_regular`",
-            "- reason_codes: `news_not_collected_confidence_limited,earnings_data_missing,crypto_flow_missing`",
+        review = _authoritative_main_review(
+            _source_asset(
+                "AMD",
+                "technical_unvalidated",
+                reason_codes="news_not_collected_confidence_limited,earnings_data_missing",
+            ),
+            _source_asset(
+                "BTC",
+                "technical_unvalidated",
+                asset_type="crypto",
+                reason_codes="crypto_flow_missing,cvd_proxy_unavailable",
+            ),
         )
-
-        review = generate_analyst_final_review(clean_main)
 
         self.assertIn("- report_data_grade: `decision_grade`", review)
         self.assertIn("- trade_readiness: `no_trade`", review)
         self.assertIn("nao ha entrada aprovada agora", _telegram_text(review).lower())
+        self.assertIn("news_not_collected_confidence_limited", review)
+        self.assertIn("cvd_proxy_unavailable", review)
+
+    def test_diagnostic_primary_grade_cannot_be_promoted_by_final_data_grade(self) -> None:
+        diagnostic_main = FULL_UNIVERSE_INPUT.replace(
+            "- market_session: `regular,unknown`",
+            "- market_session: `regular`",
+        ).replace(
+            "- missing_price_count: 11",
+            "- missing_price_count: 0",
+        )
+        review = generate_analyst_final_review(diagnostic_main)
+
+        self.assertIn("- report_data_grade: `partial_data`", review)
+        self.assertIn("- primary_report_grade: `diagnostic_not_decision_grade`", review)
+        self.assertIn("- main_primary_blocked: true", review)
+
+    def test_decision_grade_no_trade_is_explained_by_the_asset_decision(self) -> None:
+        review = _session_gate_review("false")
+        objective = _section(review, "## Leitura objetiva")
+
+        self.assertIn("- primary_report_grade: `decision_grade`", review)
+        self.assertIn("- report_data_grade: `decision_grade`", review)
+        self.assertIn("- main_primary_blocked: false", review)
+        self.assertIn("source_decision: `wait`", review)
+        self.assertIn("main utilizavel", objective.lower())
+        self.assertNotIn("esperar main decision-grade", review.lower())
 
     def test_live_coverage_with_session_conflict_is_partial_not_blocked_data(self) -> None:
         review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
@@ -884,6 +1016,76 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
         self.assertIn("- SMH/semi proxy: missing", brief)
         self.assertIn("- BTC: price=61500.00", brief)
         self.assertIn("- ETH: price=3400.00", brief)
+
+    def test_market_context_v1_reaches_final_review_from_selected_main(self) -> None:
+        context = _market_context_v1()
+        review = generate_analyst_final_review(
+            _market_context_nightly(context),
+            extra_markdowns=[_market_context_main(context)],
+        )
+        brief = _section(review, "## Market brief")
+        telegram = _telegram_text(review)
+
+        self.assertIn("- market_context_contract_status: `observed`", brief)
+        self.assertIn("- market_brief_status: complete", brief)
+        for line in (
+            "- BTC: price=61500.00 USDT; daily_change_pct=1.20%; source=binance; observed_at=2026-10-09T20:00:00Z",
+            "- ETH: price=3400.00 USD; daily_change_pct=0.80%; source=coingecko; observed_at=2026-10-09T20:00:00Z",
+            "- SPY/S&P proxy: price=500.00 USD; daily_change_pct=1.00%; source=fmp; observed_at=2026-10-09T20:00:00Z",
+            "- QQQ/Nasdaq proxy: price=600.00 USD; daily_change_pct=1.10%; source=fmp; observed_at=2026-10-09T20:00:00Z",
+            "- SMH/semi proxy: price=300.00 USD; daily_change_pct=1.20%; source=fmp; observed_at=2026-10-09T20:00:00Z",
+        ):
+            self.assertIn(line, brief)
+        self.assertIn("- stock_regime: `neutral`", brief)
+        self.assertIn("- crypto_regime: `risk_on`", brief)
+        self.assertIn("BTC: price=61500.00 USDT", telegram)
+        self.assertIn("source=binance", telegram)
+
+    def test_market_context_copy_conflict_hides_conflicting_main_value(self) -> None:
+        main_context = _market_context_v1()
+        copied_context = _market_context_v1()
+        copied_context["BTC"] = {**copied_context["BTC"], "price": 62000.0}
+        review = generate_analyst_final_review(
+            _market_context_nightly(copied_context),
+            extra_markdowns=[_market_context_main(main_context)],
+        )
+        brief = _section(review, "## Market brief")
+
+        self.assertIn("- market_context_contract_status: `transport_conflict`", brief)
+        self.assertIn("- BTC: transport_conflict", brief)
+        self.assertIn("- ETH: price=3400.00 USD", brief)
+        self.assertNotIn("61500.00", brief)
+        self.assertNotIn("62000.00", brief)
+        self.assertIn("Context copy conflicts with selected main: BTC.", brief)
+
+    def test_market_context_unavailable_and_missing_copy_remain_truthful(self) -> None:
+        context = _market_context_v1(missing_smh=True)
+        review = generate_analyst_final_review(
+            _market_context_nightly(context),
+            extra_markdowns=[_market_context_main(context)],
+        )
+        brief = _section(review, "## Market brief")
+
+        self.assertIn("- SMH/semi proxy: unavailable", brief)
+        self.assertNotIn("price=300.00", brief)
+        self.assertIn("Proxies unavailable in the selected main: SMH.", brief)
+        self.assertIn("- market_brief_status: partial", brief)
+
+    def test_market_context_without_raw_main_is_conflict_but_legacy_stays_unknown(self) -> None:
+        context = _market_context_v1()
+        main_without_context = (
+            "# Investment and Swing Trade Advisor\n\n- report_type: `main`\n- Data mode: `live`\n- report_grade: `decision_grade`\n\n"
+            + _source_asset("NVDA", "wait")
+        )
+        copied_only = generate_analyst_final_review(
+            _market_context_nightly(context),
+            extra_markdowns=[main_without_context],
+        )
+        old_artifact = generate_analyst_final_review(NIGHTLY_INPUT)
+
+        self.assertIn("- market_context_contract_status: `transport_conflict`", _section(copied_only, "## Market brief"))
+        self.assertIn("- BTC: transport_conflict", _section(copied_only, "## Market brief"))
+        self.assertIn("- market_context_contract_status: `legacy_unknown`", _section(old_artifact, "## Market brief"))
 
     def test_coverage_universe_includes_all_configured_tickers(self) -> None:
         review = generate_analyst_final_review("## Main summary\n\n- Data mode: `live`\n")
@@ -970,7 +1172,7 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
         self.assertIn("- market_session: `regular`", diagnostic)
         self.assertIn("- market_session_primary: `regular`", diagnostic)
         self.assertIn("- market_session_sources: `[regular, unknown]`", diagnostic)
-        self.assertIn("- market_session_conflict: true", diagnostic)
+        self.assertIn("- market_session_conflict: unknown", diagnostic)
         self.assertIn("- generated_at BRT: `2026-06-22T12:00:00-03:00`", diagnostic)
         self.assertIn("- generated_at UTC: `2026-06-22T15:00:00+00:00`", diagnostic)
         self.assertIn("- expected market window: `2026-06-22T10:30:00-03:00 to 2026-06-22T17:00:00-03:00`", diagnostic)
@@ -986,7 +1188,7 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
         self.assertNotIn("market_session_not_regular", diagnostic)
         self.assertIn("- possible_session_detection_bug: true", diagnostic)
         self.assertIn(
-            "Main foi bloqueado porque a sessao veio conflitante: sources=[regular, unknown].",
+            "Main nao foi decision-grade pelos reason_codes acima.",
             diagnostic,
         )
 
@@ -1021,14 +1223,38 @@ class AnalystReviewSemanticsTests(unittest.TestCase):
         self.assertIn("- fmp_status: `not_present_in_input`", diagnostic)
         self.assertIn("- coingecko_status: `not_present_in_input`", diagnostic)
 
-    def test_telegram_summary_mentions_session_conflict_when_present(self) -> None:
+    def test_missing_session_conflict_does_not_make_telegram_claim_conflict(self) -> None:
         review = generate_analyst_final_review(FULL_UNIVERSE_INPUT)
         telegram = _telegram_text(review).lower()
 
         self.assertIn("incerteza material", telegram)
+        self.assertNotIn("classificacao da sessao pode estar incorreta", telegram)
+        self.assertNotIn("nao foi tratado como base de decisao", telegram)
+        self.assertIn("market_session_conflict_unknown", telegram)
+
+    def test_false_market_session_conflict_does_not_warn(self) -> None:
+        review = _session_gate_review("false")
+        telegram = _telegram_text(review).lower()
+
+        self.assertIn("- main_primary_blocked: false", review)
+        self.assertNotIn("classificacao da sessao pode estar incorreta", telegram)
+        self.assertNotIn("por seguranca, o main nao foi tratado como base de decisao", telegram)
+
+    def test_true_market_session_conflict_remains_a_gate(self) -> None:
+        review = _session_gate_review("true", blocking_reason="market_session_conflict")
+        telegram = _telegram_text(review).lower()
+
+        self.assertIn("- main_primary_blocked: true", review)
         self.assertIn("classificacao da sessao pode estar incorreta", telegram)
-        self.assertIn("nao foi tratado como base de decisao", telegram)
-        self.assertNotIn("market_session_conflict", telegram)
+        self.assertIn("por seguranca, o main nao foi tratado como base de decisao", telegram)
+
+    def test_missing_market_session_conflict_is_unknown(self) -> None:
+        review = _session_gate_review(None, blocking_reason="unrelated_existing_blocker")
+        diagnostic = _section(review, "## Por que o main nao foi decision-grade")
+
+        self.assertIn("- market_session_conflict: unknown", diagnostic)
+        self.assertNotIn("- market_session_conflict: true", diagnostic)
+        self.assertNotIn("- market_session_conflict: false", diagnostic)
 
     def test_regular_session_with_not_regular_reason_marks_possible_session_bug(self) -> None:
         markdown = """# Nightly qualitative review input

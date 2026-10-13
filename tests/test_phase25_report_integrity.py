@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 from advisor.cli import _assign_universe_origins
 from advisor.config import AdvisorConfig
@@ -214,7 +214,7 @@ class Phase25ReportIntegrityTests(unittest.TestCase):
     def test_discovery_tradeable_never_changes_primary_operational_sections(self) -> None:
         decisions = [
             _decision("AMD", origin="primary_watchlist", decision="wait"),
-            _decision("AVAX", origin="discovery", decision="tradeable"),
+            _decision("AVAX", origin="discovery", session="unknown", decision="tradeable", provider="unknown"),
         ]
 
         report = render_markdown_report(
@@ -234,8 +234,12 @@ class Phase25ReportIntegrityTests(unittest.TestCase):
         )
 
         self.assertIn("- Decisao geral: `no_trade_day`", report)
+        self.assertIn("- primary_report_grade: `decision_grade`", report)
+        self.assertIn("- overall_report_grade: `diagnostic_not_decision_grade`", report)
+        self.assertIn("- discovery_coverage_grade: `degraded`", report)
         self.assertNotIn("AVAX", _section(report, "## Tradeable hoje"))
         self.assertNotIn("AVAX", _section(report, "## Ranking de oportunidades"))
+        self.assertIn("AVAX", _section(report, "## Discovery coverage"))
         self.assertIn("- bot_general_decision: `no_trade_day`", analyst_input)
         self.assertNotIn("`AVAX`", _section(analyst_input, "## Crypto review needed"))
 
@@ -259,6 +263,32 @@ class Phase25ReportIntegrityTests(unittest.TestCase):
         self.assertIn("- Decisao geral: `operate`", report)
         self.assertIn("`AMD`", _section(report, "## Tradeable hoje"))
         self.assertNotIn("AVAX", _section(report, "## Ranking de oportunidades"))
+
+    def test_unknown_stock_earnings_does_not_downgrade_primary_report_or_other_stock(self) -> None:
+        unknown_event = replace(
+            _decision("AMD", origin="primary_watchlist", decision="wait"),
+            limitations=["earnings_data_missing"],
+            event_check_status="not_collected",
+        )
+        unaffected = replace(
+            _decision("NVDA", origin="primary_watchlist", decision="tradeable"),
+            event_check_status="verified",
+        )
+
+        report = render_markdown_report(
+            [unknown_event, unaffected],
+            stock_regime="risk_on",
+            crypto_regime="neutral",
+            data_mode="live",
+            generated_at="2026-07-14T15:46:49+00:00",
+            enforce_regular_window=True,
+        )
+
+        self.assertIn("- primary_report_grade: `decision_grade`", report)
+        self.assertEqual(unknown_event.event_check_status, "not_collected")
+        self.assertEqual(unaffected.event_check_status, "verified")
+        self.assertIn("`NVDA`", _section(report, "## Tradeable hoje"))
+        self.assertIn("event_check_status: `not_collected`", _section(report, "## AMD"))
 
     def test_stale_discovery_same_session_is_warning_not_session_conflict(self) -> None:
         report = render_markdown_report(

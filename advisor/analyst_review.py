@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from advisor.report import (
+    EVIDENCE_TRACE_V1_MAX_BYTES,
     _expected_regular_market_window,
     _format_market_session_sources,
     _format_datetime_diagnostic,
@@ -30,6 +32,61 @@ RUNTIME_MANIFEST_MAX_BYTES = 256 * 1024
 _RUNTIME_MANIFEST_SCHEMA_VERSION = "1.0"
 _RUNTIME_INTAKE_STATUSES = {"validated", "missing", "invalid", "unavailable"}
 _RUNTIME_ARTIFACT_STATUSES = {"complete", "partial", "failed"}
+MARKET_CONTEXT_V1_MAX_BYTES = 8192
+EVIDENCE_TRACE_V1_MAX_EFFECTS = 32
+_EVIDENCE_TRACE_DECISIONS = {
+    "tradeable",
+    "watch_buy",
+    "technical_unvalidated",
+    "wait",
+    "avoid",
+    "blocked",
+}
+_EVIDENCE_TRACE_SCOPES = {
+    "primary_report",
+    "stock_asset",
+    "crypto_asset",
+    "specific_rule",
+    "market_context",
+    "discovery",
+}
+_EVIDENCE_TRACE_CRITICALITIES = {
+    "REQUIRED_FOR_DECISION",
+    "REQUIRED_FOR_SPECIFIC_RULE",
+    "OPTIONAL_CONTEXT",
+    "DIAGNOSTIC_ONLY",
+    "NOT_APPLICABLE",
+    "UNSUPPORTED",
+}
+_EVIDENCE_TRACE_STATUSES = {
+    "available",
+    "temporary_provider_failure",
+    "provider_restriction",
+    "not_collected",
+    "unsupported",
+    "not_implemented",
+    "not_applicable",
+    "invalid",
+    "stale",
+}
+_EVIDENCE_TRACE_EVALUATIONS = {
+    "passed",
+    "failed_observed_signal",
+    "unresolved_required_evidence",
+    "not_applicable",
+}
+_EVIDENCE_TRACE_EFFECTS = {
+    "none",
+    "score_change",
+    "confidence_only",
+    "cap_to_watch",
+    "cap_to_technical_unvalidated",
+    "cap_to_wait",
+    "avoid",
+    "blocked",
+}
+MARKET_CONTEXT_V1_PROXY_KEYS = ("SPY", "QQQ", "SMH", "BTC", "ETH")
+MARKET_CONTEXT_V1_REGIME_KEYS = ("stock_regime", "crypto_regime")
 
 
 @dataclass(frozen=True)
@@ -246,6 +303,8 @@ class AssetReview:
     entry: str = "not_present_in_input"
     stop_invalidation: str = "not_present_in_input"
     position_sizing: str = "not_present_in_input"
+    evidence_trace_status: str = "legacy_unknown"
+    evidence_effects: tuple[dict[str, object], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -263,6 +322,13 @@ class MainReviewContext:
     provider_status: str
     artifact_valid: bool
     blocking_reasons: tuple[str, ...]
+    market_session_conflict: str = "unknown"
+
+
+@dataclass(frozen=True)
+class MarketContextReview:
+    status: str
+    entries: dict[str, dict[str, object]]
 
 
 @dataclass(frozen=True)
@@ -330,6 +396,7 @@ def _parse_close_review_context(nightly_markdown: str, close_markdown: str) -> M
         or _field_any(close_markdown, "overall_report_grade")
         or report_grade,
         primary_market_session=session,
+        market_session_conflict=_market_session_conflict_status(close_markdown or summary),
         discovery_coverage_grade=_field_any(summary, "discovery_coverage_grade")
         or _field_any(close_markdown, "discovery_coverage_grade")
         or "not_present_in_input",
@@ -357,9 +424,9 @@ def _parse_main_review_context(
         context_text, "generated_at", "Generated at"
     )
     data_mode = _field_any(summary, "Data mode", "data_mode") or _field_any(main_markdown, "Data mode", "data_mode")
-    primary_grade = _field_any(summary, "primary_report_grade") or _field_any(
-        summary, "report_grade"
-    ) or _field_any(main_markdown, "primary_report_grade", "report_grade")
+    raw_primary_grade = _field_any(main_markdown, "primary_report_grade", "report_grade")
+    summary_primary_grade = _field_any(summary, "primary_report_grade") or _field_any(summary, "report_grade")
+    primary_grade = (raw_primary_grade or summary_primary_grade) if raw_main_available else (summary_primary_grade or raw_primary_grade)
     overall_grade = _field_any(summary, "overall_report_grade") or _field_any(
         main_markdown, "overall_report_grade"
     ) or primary_grade
@@ -367,6 +434,9 @@ def _parse_main_review_context(
         main_markdown, "primary_market_session", "market_session_primary", "market_session"
     )
     primary_session = normalize_market_session(primary_session_raw or "unknown").primary
+    market_session_conflict = _market_session_conflict_status(
+        main_markdown if raw_main_available else summary
+    )
     discovery_grade = _field_any(summary, "discovery_coverage_grade") or _field_any(
         main_markdown, "discovery_coverage_grade"
     ) or "not_present_in_input"
@@ -388,6 +458,10 @@ def _parse_main_review_context(
         reasons.append("main_primary_not_decision_grade")
     if primary_session != "regular":
         reasons.append("invalid_market_session")
+    if market_session_conflict == "true":
+        reasons.append("market_session_conflict")
+    elif market_session_conflict == "unknown":
+        reasons.append("market_session_conflict_unknown")
     if stale_primary > 0:
         reasons.append("stale_primary_data")
     if provider_status not in {"ok", "not_used"}:
@@ -405,6 +479,7 @@ def _parse_main_review_context(
         primary_report_grade=primary_grade,
         overall_report_grade=overall_grade,
         primary_market_session=primary_session,
+        market_session_conflict=market_session_conflict,
         discovery_coverage_grade=discovery_grade,
         stale_asset_count_primary=stale_primary,
         provider_status=provider_status,
@@ -421,24 +496,160 @@ def _parse_source_assets(markdown: str, source_report: str) -> list[AssetReview]
             continue
         source_decision = (_field(block, "decision_label") or _field(block, "Decisao")).lower()
         blockers = _structured_asset_blockers(block)
-        parsed.append(
-            replace(
-                legacy,
+        universe_origin = _field(block, "universe_origin") or "unknown"
+        evidence_trace_status, evidence_effects = _parse_evidence_trace(
+            block,
+            ticker=legacy.ticker,
+            source_decision=source_decision,
+            universe_origin=universe_origin,
+        )
+        if evidence_trace_status == "invalid":
+            blockers.append("data_contract_invalid")
+        source_asset = replace(
+            legacy,
                 source_decision=source_decision,
                 review_status=_review_status_from_source(source_decision),
                 review_reason=_review_reason_from_source(source_decision),
                 blockers=tuple(blockers),
                 source_report=source_report,
-                universe_origin=_field(block, "universe_origin") or "unknown",
+                universe_origin=universe_origin,
                 is_stale=_field(block, "is_stale").lower() in {"yes", "true"},
                 provider=_field(block, "provider") or _field(block, "Data source") or "unknown",
                 collection_status=_collection_status(block, source_decision),
                 entry=_field(block, "Entrada ideal") or "not_present_in_input",
                 stop_invalidation=_field(block, "Stop/invalidation") or "not_present_in_input",
                 position_sizing=_field(block, "Tamanho maximo da posicao") or "not_present_in_input",
+                evidence_trace_status=evidence_trace_status,
+                evidence_effects=evidence_effects,
+            )
+        parsed.append(
+            replace(
+                source_asset,
+                path_to_operation=_path_to_operation(
+                    source_decision,
+                    source_asset.asset_type,
+                ),
             )
         )
     return _dedupe_source_assets(parsed)
+
+
+def _parse_evidence_trace(
+    block: str,
+    *,
+    ticker: str,
+    source_decision: str,
+    universe_origin: str,
+) -> tuple[str, tuple[dict[str, object], ...]]:
+    version_lines = re.findall(r"(?m)^-\s*evidence_trace_version:\s*(.*?)\s*$", block)
+    trace_lines = re.findall(r"(?m)^-\s*evidence_trace_v1:\s*(.*?)\s*$", block)
+    if not version_lines and not trace_lines:
+        return "legacy_unknown", ()
+    if len(version_lines) != 1 or len(trace_lines) != 1:
+        return "invalid", ()
+    if version_lines[0].strip().strip("` ") != "1":
+        return "invalid", ()
+    serialized = trace_lines[0].strip().strip("` ")
+    try:
+        serialized_size = len(serialized.encode("utf-8"))
+    except UnicodeEncodeError:
+        return "invalid", ()
+    if serialized_size > EVIDENCE_TRACE_V1_MAX_BYTES:
+        return "invalid", ()
+    try:
+        payload = json.loads(
+            serialized,
+            object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_nonfinite_json,
+        )
+    except (ValueError, TypeError, RecursionError):
+        return "invalid", ()
+    if not isinstance(payload, dict) or set(payload) != {
+        "source_decision",
+        "asset_symbol",
+        "universe_origin",
+        "effects",
+    }:
+        return "invalid", ()
+    declared_decision = payload.get("source_decision")
+    if (
+        not isinstance(declared_decision, str)
+        or declared_decision not in _EVIDENCE_TRACE_DECISIONS
+        or declared_decision != source_decision
+        or payload.get("asset_symbol") != ticker
+        or payload.get("universe_origin") != universe_origin
+    ):
+        return "invalid", ()
+    effects = payload.get("effects")
+    if not isinstance(effects, list) or len(effects) > EVIDENCE_TRACE_V1_MAX_EFFECTS:
+        return "invalid", ()
+    validated_effects: list[dict[str, object]] = []
+    semantic_keys: set[tuple[str, str, str]] = set()
+    unresolved_decision_requirement = False
+    expected_fields = {
+        "rule_id",
+        "capability",
+        "scope",
+        "criticality",
+        "status",
+        "evaluation",
+        "decision_effect",
+        "reason_code",
+        "source",
+        "observed_at",
+    }
+    nullable_text_fields = {"reason_code": 256, "source": 256, "observed_at": 128}
+    for effect in effects:
+        if not isinstance(effect, dict) or set(effect) != expected_fields:
+            return "invalid", ()
+        for name in ("rule_id", "capability"):
+            value = effect.get(name)
+            if not isinstance(value, str) or not value.strip() or len(value) > 256:
+                return "invalid", ()
+        if not isinstance(effect.get("scope"), str) or effect["scope"] not in _EVIDENCE_TRACE_SCOPES:
+            return "invalid", ()
+        if not isinstance(effect.get("criticality"), str) or effect["criticality"] not in _EVIDENCE_TRACE_CRITICALITIES:
+            return "invalid", ()
+        if not isinstance(effect.get("status"), str) or effect["status"] not in _EVIDENCE_TRACE_STATUSES:
+            return "invalid", ()
+        if not isinstance(effect.get("evaluation"), str) or effect["evaluation"] not in _EVIDENCE_TRACE_EVALUATIONS:
+            return "invalid", ()
+        if not isinstance(effect.get("decision_effect"), str) or effect["decision_effect"] not in _EVIDENCE_TRACE_EFFECTS:
+            return "invalid", ()
+        for name, max_length in nullable_text_fields.items():
+            value = effect.get(name)
+            if value is not None and (not isinstance(value, str) or len(value) > max_length):
+                return "invalid", ()
+        status = effect["status"]
+        evaluation = effect["evaluation"]
+        if evaluation in {"passed", "failed_observed_signal"} and status != "available":
+            return "invalid", ()
+        if evaluation == "passed" and effect["criticality"] in {
+            "REQUIRED_FOR_DECISION",
+            "REQUIRED_FOR_SPECIFIC_RULE",
+        } and status != "available":
+            return "invalid", ()
+        if evaluation == "unresolved_required_evidence" and status == "available":
+            return "invalid", ()
+        if evaluation == "unresolved_required_evidence" and effect["criticality"] not in {
+            "REQUIRED_FOR_DECISION",
+            "REQUIRED_FOR_SPECIFIC_RULE",
+        }:
+            return "invalid", ()
+        if (
+            declared_decision == "tradeable"
+            and effect["criticality"] == "REQUIRED_FOR_DECISION"
+            and evaluation == "unresolved_required_evidence"
+        ):
+            unresolved_decision_requirement = True
+        semantic_key = (effect["rule_id"], effect["capability"], effect["scope"])
+        if semantic_key in semantic_keys:
+            return "invalid", ()
+        semantic_keys.add(semantic_key)
+        validated_effects.append(effect)
+    if unresolved_decision_requirement:
+        return "invalid", ()
+    return "v1", tuple(validated_effects)
 
 
 def _dedupe_source_assets(assets: list[AssetReview]) -> list[AssetReview]:
@@ -534,7 +745,11 @@ def generate_analyst_final_review(
             review_reason="decisao originada no scoring do main e confirmada pela integridade do artefato",
         )
         for asset in primary_assets
-        if asset.source_decision == "tradeable" and not asset.blockers and not asset.is_stale and not main_primary_blocked
+        if asset.universe_origin == "primary_watchlist"
+        and asset.source_decision == "tradeable"
+        and not asset.blockers
+        and not asset.is_stale
+        and not main_primary_blocked
     ]
     confirmed_tickers = {asset.ticker for asset in confirmed_tradeables}
     rendered_primary = [
@@ -542,6 +757,7 @@ def generate_analyst_final_review(
         for asset in primary_assets
     ]
     final_decision = "tradeable" if confirmed_tradeables else "no_trade"
+    no_trade_basis = _no_trade_basis(context, primary_assets) if final_decision == "no_trade" else "not_applicable"
     tradeable_assets = ",".join(asset.ticker for asset in confirmed_tradeables) or "nenhum"
     decision_counts = _source_decision_counts(package.main_assets)
     public_equity_note = (
@@ -571,6 +787,8 @@ def generate_analyst_final_review(
         f"- discovery_coverage_grade: `{context.discovery_coverage_grade or 'missing'}`",
         f"- artifact_valid: {str(context.artifact_valid).lower()}",
         f"- blocking_reasons: `{','.join(context.blocking_reasons) or 'nenhum'}`",
+        f"- no_trade_basis: `{no_trade_basis}`",
+        f"Bloqueio para trade: {_trade_block_summary(package.main_assets, context, confirmed_tradeables)}",
         "",
         (
             "Tradeables confirmados: " + ", ".join(asset.ticker for asset in confirmed_tradeables) + "."
@@ -587,6 +805,7 @@ def generate_analyst_final_review(
         f"- generated_at: `{context.generated_at or 'missing'}`",
         f"- data_mode: `{context.data_mode or 'missing'}`",
         f"- primary_market_session: `{context.primary_market_session or 'missing'}`",
+        f"- market_session_conflict: `{context.market_session_conflict}`",
         f"- stale_asset_count_primary: {context.stale_asset_count_primary}",
         f"- provider_status: `{context.provider_status or 'missing'}`",
         "",
@@ -658,12 +877,14 @@ def _legacy_compatibility_lines(
     context_markdown = nightly_markdown
     if package.main_markdown != nightly_markdown:
         context_markdown += "\n\n" + package.main_markdown
-    report_data_grade = _report_data_grade(context_markdown, assets)
+    market_context_review = _resolve_market_context(package.main_markdown, nightly_markdown)
+    main_context = package.main_context
+    main_blocked = main_blocks_operation(main_context)
+    report_data_grade = _report_data_grade(context_markdown, assets, main_context)
     trade_readiness = "tradeable" if final_decision == "tradeable" else "no_trade"
     input_completeness = _nightly_input_completeness(nightly_markdown, equities, cryptos)
-    market_brief_status = _market_brief_status(assets, context_markdown)
+    market_brief_status = _market_brief_status(assets, context_markdown, market_context_review)
     main_diagnostic_lines = _main_decision_grade_diagnostic_lines(context_markdown)
-    main_blocked = main_blocks_operation(package.main_context)
     lines = [
         "## Data/readiness summary",
         "",
@@ -674,7 +895,13 @@ def _legacy_compatibility_lines(
         "",
         "## Leitura objetiva",
         "",
-        *_objective_reading_lines(final_decision, assets, top_candidates, main_blocked, input_completeness["incomplete"]),
+        *_objective_reading_lines(
+            final_decision,
+            assets,
+            top_candidates,
+            main_context,
+            input_completeness["incomplete"],
+        ),
         "",
         "## Resumo do dia",
         "",
@@ -686,7 +913,7 @@ def _legacy_compatibility_lines(
         "",
         *_nightly_input_completeness_lines(input_completeness),
         "",
-        *_market_brief_lines(context_markdown, assets),
+        *_market_brief_lines(context_markdown, assets, market_context_review),
         "",
         *_coverage_universe_lines(assets),
         "",
@@ -707,9 +934,9 @@ def _legacy_compatibility_lines(
                     confirmed_tradeables=confirmed_tradeables,
                     market_brief_status=market_brief_status,
                     market_context_markdown=context_markdown,
-                    main_blocked=main_blocked,
+                    market_context_review=market_context_review,
+                    main_context=main_context,
                     input_incomplete=input_completeness["incomplete"],
-                    main_diagnostic_lines=main_diagnostic_lines,
                 ),
             ]
         )
@@ -757,9 +984,9 @@ def _legacy_compatibility_lines(
                 confirmed_tradeables=confirmed_tradeables,
                 market_brief_status=market_brief_status,
                 market_context_markdown=context_markdown,
-                main_blocked=main_blocked,
+                market_context_review=market_context_review,
+                main_context=main_context,
                 input_incomplete=input_completeness["incomplete"],
-                main_diagnostic_lines=main_diagnostic_lines,
             ),
         ]
     )
@@ -785,10 +1012,39 @@ def _structured_asset_lines(assets: list[AssetReview], confirmed_tickers: set[st
                 f"- entry_from_main: `{asset.entry}`",
                 f"- stop_invalidation_from_main: `{asset.stop_invalidation}`",
                 f"- sizing_from_main: `{asset.position_sizing}`",
+                f"- evidence_trace_status: `{asset.evidence_trace_status}`",
+                *_evidence_trace_audit_lines(asset),
                 "",
             ]
         )
     return lines or ["Nenhum ativo primario encontrado no main."]
+
+
+def _evidence_trace_audit_lines(asset: AssetReview) -> list[str]:
+    if asset.evidence_trace_status != "v1":
+        return []
+    lines = ["- evidence_trace_audit:"]
+    if not asset.evidence_effects:
+        lines.append("  - effects: `none_recorded`")
+        return lines
+    for effect in asset.evidence_effects:
+        provenance = (
+            f", source={_trace_audit_value(effect['source'])}, "
+            f"observed_at={_trace_audit_value(effect['observed_at'])}"
+        )
+        lines.append(
+            "  - "
+            f"rule={_trace_audit_value(effect['rule_id'])} -> "
+            f"capability={_trace_audit_value(effect['capability'])}; "
+            f"criticality={effect['criticality']}; status={effect['status']}; "
+            f"evaluation={effect['evaluation']}; effect={effect['decision_effect']}; "
+            f"reason={_trace_audit_value(effect['reason_code'])}{provenance}"
+        )
+    return lines
+
+
+def _trace_audit_value(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _discovery_asset_lines(assets: list[AssetReview]) -> list[str]:
@@ -879,7 +1135,7 @@ def _objective_reading_lines(
     final_decision: str,
     assets: list[AssetReview],
     top_candidates: list[AssetReview],
-    main_not_decision_grade: bool,
+    main_context: MainReviewContext,
     input_incomplete: bool,
 ) -> list[str]:
     if final_decision == "tradeable":
@@ -891,7 +1147,13 @@ def _objective_reading_lines(
             "* Stop/invalidation e sizing: usar exatamente os campos preservados do main.",
             "* Proximo passo pratico: revisar o plano do main e decidir manualmente; sem broker ou compra automatica.",
         ]
-    reason = "main nao decision-grade e dados de news/earnings/flow ainda nao verificados" if main_not_decision_grade else "checks pendentes ainda nao liberam entrada"
+    main_blocked = main_blocks_operation(main_context)
+    if main_blocked:
+        reason = f"main bloqueado pelos gates registrados: {_main_gate_block_summary(main_context)}"
+        next_step = "Resolver os gates registrados no main e revisar novamente as decisoes originais dos ativos."
+    else:
+        reason = f"main utilizavel; {_primary_asset_no_trade_summary(assets)}"
+        next_step = "Revisar as source_decision e limitacoes registradas no main; esta revisao nao recalcula elegibilidade."
     if top_candidates:
         ranking = _telegram_candidate_summary(top_candidates)
     elif input_incomplete:
@@ -903,8 +1165,59 @@ def _objective_reading_lines(
         f"* Por que nao operar: {reason}.",
         f"* Ranking inicial: {ranking}.",
         f"* Evitar/rejeitados: {_telegram_rejected_summary(assets)}.",
-        f"* Proximo passo pratico: esperar main decision-grade, validar noticias/eventos e liberar fluxo cripto antes de transformar watch/research em operacao manual.",
+        f"* Proximo passo pratico: {next_step}",
     ]
+
+
+def _primary_asset_no_trade_summary(assets: list[AssetReview]) -> str:
+    primary_assets = [asset for asset in assets if asset.universe_origin != "discovery"]
+    if not primary_assets:
+        return "nenhum ativo primario tem source_decision disponivel"
+    details = []
+    for asset in primary_assets:
+        source_decision = asset.source_decision or "unknown"
+        item = f"{asset.ticker}={source_decision}"
+        if asset.blockers:
+            item += f" (blocking_reasons={','.join(asset.blockers[:2])})"
+        elif asset.risks and asset.risks.lower() not in {"not_verified", "nenhum", "none"}:
+            item += f" (reason_codes={','.join(_split_compact_field(asset.risks)[:2])})"
+        material_effects = [
+            f"{effect['capability']}:{effect['reason_code'] or effect['decision_effect']}"
+            for effect in asset.evidence_effects
+            if effect["decision_effect"] != "none"
+            and effect["evaluation"] in {"failed_observed_signal", "unresolved_required_evidence"}
+        ]
+        if material_effects:
+            item += f" (evidence_effects={','.join(material_effects[:2])})"
+        details.append(item)
+    return "nenhum ativo primario tem source_decision=tradeable; " + "; ".join(details[:5])
+
+
+def _no_trade_basis(context: MainReviewContext, primary_assets: list[AssetReview]) -> str:
+    if main_blocks_operation(context) or any(asset.evidence_trace_status == "invalid" for asset in primary_assets):
+        return "report_integrity_limited"
+    if any(
+        effect["criticality"] in {"REQUIRED_FOR_DECISION", "REQUIRED_FOR_SPECIFIC_RULE"}
+        and effect["evaluation"] == "unresolved_required_evidence"
+        and effect["decision_effect"] != "none"
+        for asset in primary_assets
+        for effect in asset.evidence_effects
+    ):
+        return "data_limited"
+    if primary_assets and all(asset.evidence_trace_status == "v1" for asset in primary_assets):
+        return "thesis_based"
+    return "legacy_unknown"
+
+
+def _main_gate_block_summary(context: MainReviewContext) -> str:
+    reasons = list(context.blocking_reasons)
+    if not context.artifact_valid and "artifact_mismatch" not in reasons:
+        reasons.append("artifact_mismatch")
+    if context.market_session_conflict == "true" and "market_session_conflict" not in reasons:
+        reasons.append("market_session_conflict")
+    if context.market_session_conflict == "unknown" and "market_session_conflict_unknown" not in reasons:
+        reasons.append("market_session_conflict_unknown")
+    return ",".join(dict.fromkeys(reasons)) or "main_not_operational"
 
 
 def _top_equities_to_watch(assets: list[AssetReview]) -> list[AssetReview]:
@@ -947,15 +1260,20 @@ def _top_candidate_lines(asset: AssetReview) -> list[str]:
 
 
 def _missing_check_for(asset: AssetReview) -> str:
-    if asset.asset_type == "crypto":
-        return "flow/derivatives, news e regime cripto ainda precisam ser confirmados."
-    return "news, earnings/guidance, valuation, risco de gap e main decision-grade."
+    if asset.blockers:
+        return "blocking_reasons registrados no main: " + ", ".join(asset.blockers[:4])
+    reason_codes = _split_compact_field(asset.risks)
+    if reason_codes:
+        return "reason_codes registrados no main: " + ", ".join(reason_codes[:4])
+    return f"nenhuma limitacao adicional foi registrada para source_decision={asset.source_decision or 'unknown'}."
 
 
 def _next_objective_check(asset: AssetReview) -> str:
-    if asset.asset_type == "crypto":
-        return "Confirmar CVD, OI, liquidations, premium e news no proximo main."
-    return "Confirmar news/earnings, valuation e sessao regular no proximo main."
+    if asset.blockers:
+        return "Revisar os blocking_reasons registrados no main: " + ", ".join(asset.blockers[:3]) + "."
+    if asset.risks and asset.risks.lower() not in {"not_verified", "nenhum", "none"}:
+        return "Revisar os reason_codes registrados pelo scoring no main: " + ", ".join(_split_compact_field(asset.risks)[:3]) + "."
+    return f"Consultar a regra e a evidencia que produziram source_decision={asset.source_decision or 'unknown'} no main."
 
 
 def _candidate_priority(asset: AssetReview) -> str:
@@ -978,7 +1296,11 @@ def _ticker_priority(ticker: str) -> int:
     return 99
 
 
-def _report_data_grade(markdown: str, assets: list[AssetReview]) -> str:
+def _report_data_grade(
+    markdown: str,
+    assets: list[AssetReview],
+    main_context: MainReviewContext | None = None,
+) -> str:
     main_summary = _section_text(markdown, "Main summary")
     if not main_summary:
         return "blocked_data"
@@ -991,22 +1313,37 @@ def _report_data_grade(markdown: str, assets: list[AssetReview]) -> str:
         or _field_any(main_summary, "market_session")
         or "unknown"
     )
+    primary_session = main_context.primary_market_session if main_context is not None else session_info.primary
+    conflict_status = (
+        main_context.market_session_conflict
+        if main_context is not None
+        else _market_session_conflict_status(_main_raw_report_context(markdown) or main_summary)
+    )
+    session_conflict = conflict_status == "true" or (
+        conflict_status == "unknown" and session_info.conflict
+    )
     provider_status = (_field_any(main_summary, "provider_rate_limit_status") or "ok").lower()
     fmp_status = (_field_any(main_summary, "fmp_status") or "ok").lower()
     coingecko_status = (_field_any(main_summary, "coingecko_status") or "ok").lower()
     fresh_price_count = _int_field_any(main_summary, "fresh_price_count")
     missing_price_count = _int_field_any(main_summary, "missing_price_count")
-    report_grade = (_field_any(main_summary, "report_grade") or "").lower()
+    primary_grade = (
+        main_context.primary_report_grade
+        if main_context is not None
+        else _field_any(main_summary, "primary_report_grade", "report_grade")
+    ).lower()
+    main_usable = main_context is None or not main_blocks_operation(main_context)
     provider_ok = all(status in {"ok", "not_present_in_input", "not_used"} for status in (provider_status, fmp_status, coingecko_status))
     coverage_ok = _has_configured_coverage(assets) or (fresh_price_count > 0 and missing_price_count == 0)
 
     if (
         data_mode == "live"
-        and session_info.primary == "regular"
-        and not session_info.conflict
+        and primary_session == "regular"
+        and not session_conflict
+        and main_usable
         and provider_ok
         and coverage_ok
-        and report_grade in {"decision_grade", "diagnostic_not_decision_grade", ""}
+        and primary_grade == "decision_grade"
     ):
         return "decision_grade"
     if data_mode == "live" and provider_ok and (fresh_price_count > 0 or bool(assets)):
@@ -1083,7 +1420,177 @@ def _artifact_run_ids(markdown: str) -> str:
     return ",".join(dict.fromkeys(values))
 
 
-def _market_brief_status(assets: list[AssetReview], markdown: str = "") -> str:
+def _parse_market_context_v1(markdown: str) -> tuple[str, dict[str, dict[str, object]] | None]:
+    section = _section_text(markdown, "Market context observations v1")
+    if not section:
+        return "legacy_unknown", None
+    version = _field(section, "market_context_version")
+    serialized = _field(section, "market_context_v1")
+    if not version and not serialized:
+        return "legacy_unknown", None
+    if version != "1" or not serialized or len(serialized.encode("utf-8")) > MARKET_CONTEXT_V1_MAX_BYTES:
+        return "invalid", None
+    try:
+        payload = json.loads(
+            serialized,
+            object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_nonfinite_json,
+        )
+    except (ValueError, TypeError, RecursionError):
+        return "invalid", None
+    expected_keys = set((*MARKET_CONTEXT_V1_PROXY_KEYS, *MARKET_CONTEXT_V1_REGIME_KEYS))
+    if not isinstance(payload, dict) or set(payload) != expected_keys:
+        return "invalid", None
+    for key in MARKET_CONTEXT_V1_PROXY_KEYS:
+        if not _valid_market_context_proxy(payload[key]):
+            return "invalid", None
+    for key in MARKET_CONTEXT_V1_REGIME_KEYS:
+        if not _valid_market_context_regime(payload[key]):
+            return "invalid", None
+    return "observed", payload
+
+
+def _valid_market_context_proxy(raw_entry: object) -> bool:
+    if not isinstance(raw_entry, dict):
+        return False
+    allowed = {
+        "status",
+        "source",
+        "observed_at",
+        "price_currency",
+        "daily_change_pct_unit",
+        "granularity",
+        "time_basis",
+        "price",
+        "daily_change_pct",
+    }
+    if not set(raw_entry).issubset(allowed):
+        return False
+    if not {"status", "source", "observed_at", "price_currency", "daily_change_pct_unit", "granularity", "time_basis"}.issubset(raw_entry):
+        return False
+    status = raw_entry.get("status")
+    if status not in {"available", "partial", "unavailable"}:
+        return False
+    if not _valid_optional_context_text(raw_entry.get("source"), 80):
+        return False
+    if not _valid_optional_context_text(raw_entry.get("observed_at"), 64):
+        return False
+    if not _valid_optional_context_text(raw_entry.get("price_currency"), 16):
+        return False
+    if raw_entry.get("daily_change_pct_unit") != "percent":
+        return False
+    if raw_entry.get("granularity") != "daily" or not isinstance(raw_entry.get("time_basis"), str):
+        return False
+    has_price = "price" in raw_entry
+    has_change = "daily_change_pct" in raw_entry
+    if status == "unavailable":
+        return not has_price and not has_change
+    if not has_price and not has_change:
+        return False
+    if has_price and not _finite_context_number(raw_entry["price"], minimum=0):
+        return False
+    if has_change and not _finite_context_number(raw_entry["daily_change_pct"]):
+        return False
+    return True
+
+
+def _valid_market_context_regime(raw_entry: object) -> bool:
+    if not isinstance(raw_entry, dict) or not set(raw_entry).issubset({"status", "source", "observed_at", "label"}):
+        return False
+    if not {"status", "source", "observed_at"}.issubset(raw_entry):
+        return False
+    if raw_entry.get("status") not in {"available", "unavailable"}:
+        return False
+    if not _valid_optional_context_text(raw_entry.get("source"), 80):
+        return False
+    if raw_entry.get("observed_at") is not None:
+        return False
+    if raw_entry.get("status") == "available":
+        return isinstance(raw_entry.get("label"), str) and bool(raw_entry["label"].strip())
+    return "label" not in raw_entry
+
+
+def _valid_optional_context_text(value: object, max_length: int) -> bool:
+    return value is None or isinstance(value, str) and len(value) <= max_length
+
+
+def _finite_context_number(value: object, *, minimum: float | None = None) -> bool:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    if not math.isfinite(value):
+        return False
+    return minimum is None or value > minimum
+
+
+def _resolve_market_context(main_markdown: str, copied_markdown: str) -> MarketContextReview:
+    main_status, main_entries = _parse_market_context_v1(main_markdown)
+    copied_status, copied_entries = _parse_market_context_v1(copied_markdown)
+    if main_status == "legacy_unknown":
+        if copied_status in {"observed", "invalid"}:
+            return MarketContextReview("transport_conflict", _conflicted_market_context_entries(None))
+        return MarketContextReview("legacy_unknown", {})
+    if main_status == "invalid" or main_entries is None:
+        return MarketContextReview("transport_conflict", _conflicted_market_context_entries(None))
+    if copied_status == "invalid":
+        return MarketContextReview("transport_conflict", _conflicted_market_context_entries(main_entries))
+    if copied_status != "observed" or copied_entries is None:
+        return MarketContextReview("observed", main_entries)
+    if copied_entries == main_entries:
+        return MarketContextReview("observed", main_entries)
+    resolved_entries = {
+        key: dict(entry)
+        for key, entry in main_entries.items()
+    }
+    for key in main_entries:
+        if main_entries[key] != copied_entries.get(key):
+            resolved_entries[key] = _conflicted_market_context_entry(main_entries[key])
+    return MarketContextReview("transport_conflict", resolved_entries)
+
+
+def _conflicted_market_context_entries(
+    entries: dict[str, dict[str, object]] | None,
+) -> dict[str, dict[str, object]]:
+    if entries is None:
+        return {
+            key: {"status": "transport_conflict", "source": None, "observed_at": None}
+            for key in (*MARKET_CONTEXT_V1_PROXY_KEYS, *MARKET_CONTEXT_V1_REGIME_KEYS)
+        }
+    return {key: _conflicted_market_context_entry(entry) for key, entry in entries.items()}
+
+
+def _conflicted_market_context_entry(entry: dict[str, object]) -> dict[str, object]:
+    return {
+        "status": "transport_conflict",
+        "source": entry.get("source"),
+        "observed_at": entry.get("observed_at"),
+    }
+
+
+def _market_brief_status(
+    assets: list[AssetReview],
+    markdown: str = "",
+    market_context_review: MarketContextReview | None = None,
+) -> str:
+    if market_context_review is not None and market_context_review.status != "legacy_unknown":
+        observed = {
+            ticker
+            for ticker in MARKET_CONTEXT_V1_PROXY_KEYS
+            if _has_structured_market_observation(market_context_review.entries.get(ticker))
+        }
+        conflicts = any(
+            market_context_review.entries.get(ticker, {}).get("status") == "transport_conflict"
+            for ticker in (*MARKET_CONTEXT_V1_PROXY_KEYS, *MARKET_CONTEXT_V1_REGIME_KEYS)
+        )
+        regimes = any(
+            market_context_review.entries.get(key, {}).get("status") == "available"
+            and _usable_context_value(str(market_context_review.entries[key].get("label", "")))
+            for key in MARKET_CONTEXT_V1_REGIME_KEYS
+        )
+        if len(observed) == len(MARKET_CONTEXT_V1_PROXY_KEYS) and not conflicts:
+            return "complete"
+        if observed or regimes or conflicts:
+            return "partial"
+        return "unavailable"
     by_ticker = {asset.ticker: asset for asset in assets}
     proxies = ("SPY", "QQQ", "SMH", "BTC", "ETH")
     observed = {ticker for ticker in proxies if _has_market_observation(by_ticker.get(ticker))}
@@ -1096,7 +1603,13 @@ def _market_brief_status(assets: list[AssetReview], markdown: str = "") -> str:
     return "unavailable"
 
 
-def _market_brief_lines(markdown: str, assets: list[AssetReview]) -> list[str]:
+def _market_brief_lines(
+    markdown: str,
+    assets: list[AssetReview],
+    market_context_review: MarketContextReview | None = None,
+) -> list[str]:
+    if market_context_review is not None and market_context_review.status != "legacy_unknown":
+        return _structured_market_brief_lines(market_context_review)
     by_ticker = {asset.ticker: asset for asset in assets}
     status = _market_brief_status(assets, markdown)
     proxy_labels = {
@@ -1112,6 +1625,7 @@ def _market_brief_lines(markdown: str, assets: list[AssetReview]) -> list[str]:
     lines = [
         "## Market brief",
         "",
+        "- market_context_contract_status: `legacy_unknown`",
         f"- market_brief_status: {status}",
         *[f"- {label}: {_brief_asset_summary(by_ticker.get(ticker))}" for ticker, label in proxy_labels.items()],
         *([f"- stock_regime: `{stock_regime}`"] if _usable_context_value(stock_regime) else []),
@@ -1127,6 +1641,77 @@ def _market_brief_lines(markdown: str, assets: list[AssetReview]) -> list[str]:
     else:
         lines.append("  - Market context is unavailable because no usable proxy values or verified regimes were supplied.")
     return lines
+
+
+def _structured_market_brief_lines(market_context_review: MarketContextReview) -> list[str]:
+    proxy_labels = {
+        "SPY": "SPY/S&P proxy",
+        "QQQ": "QQQ/Nasdaq proxy",
+        "SMH": "SMH/semi proxy",
+        "BTC": "BTC",
+        "ETH": "ETH",
+    }
+    status = _market_brief_status([], market_context_review=market_context_review)
+    entries = market_context_review.entries
+    unavailable = [ticker for ticker in proxy_labels if entries.get(ticker, {}).get("status") == "unavailable"]
+    conflicts = [ticker for ticker in proxy_labels if entries.get(ticker, {}).get("status") == "transport_conflict"]
+    lines = [
+        "## Market brief",
+        "",
+        f"- market_context_contract_status: `{market_context_review.status}`",
+        f"- market_brief_status: {status}",
+        *[
+            f"- {label}: {_structured_market_context_entry_summary(entries.get(ticker, {}))}"
+            for ticker, label in proxy_labels.items()
+        ],
+    ]
+    for key, label in (("stock_regime", "stock_regime"), ("crypto_regime", "crypto_regime")):
+        entry = entries.get(key, {})
+        if entry.get("status") == "available" and isinstance(entry.get("label"), str):
+            lines.append(f"- {label}: `{entry['label']}`")
+        elif entry.get("status") == "transport_conflict":
+            lines.append(f"- {label}: transport_conflict")
+    lines.append("- summary:")
+    if unavailable:
+        lines.append(f"  - Proxies unavailable in the selected main: {', '.join(unavailable)}.")
+    if conflicts:
+        lines.append(f"  - Context copy conflicts with selected main: {', '.join(conflicts)}.")
+    if status == "complete":
+        lines.append("  - All expected proxies have observed price or daily-change facts; no direction is inferred.")
+    elif conflicts:
+        lines.append("  - Conflicting transported values are not presented as provider outages or observations.")
+    elif status == "partial":
+        lines.append("  - Observed market context is partial; unavailable proxies remain unnamed as values.")
+    else:
+        lines.append("  - Market context is unavailable because no usable proxy values or verified regimes were supplied.")
+    return lines
+
+
+def _structured_market_context_entry_summary(entry: dict[str, object]) -> str:
+    status = entry.get("status", "unavailable")
+    if status in {"unavailable", "transport_conflict"}:
+        return str(status)
+    facts = []
+    price = entry.get("price")
+    if isinstance(price, (int, float)) and not isinstance(price, bool):
+        currency = entry.get("price_currency")
+        facts.append(f"price={float(price):.2f} {currency or 'currency_unknown'}")
+    change = entry.get("daily_change_pct")
+    if isinstance(change, (int, float)) and not isinstance(change, bool):
+        facts.append(f"daily_change_pct={float(change):.2f}%")
+    source = entry.get("source")
+    if isinstance(source, str) and source:
+        facts.append(f"source={source}")
+    observed_at = entry.get("observed_at")
+    if isinstance(observed_at, str) and observed_at:
+        facts.append(f"observed_at={observed_at}")
+    return "; ".join(facts) if facts else str(status)
+
+
+def _has_structured_market_observation(entry: dict[str, object] | None) -> bool:
+    if entry is None or entry.get("status") not in {"available", "partial"}:
+        return False
+    return "price" in entry or "daily_change_pct" in entry
 
 
 def _brief_asset_summary(asset: AssetReview | None) -> str:
@@ -1240,7 +1825,9 @@ def _main_decision_grade_diagnostic_lines(markdown: str) -> list[str]:
     main_summary = _section_text(markdown, "Main summary")
     if not main_summary:
         return []
-    main_context = "\n".join([main_summary, _section_text(markdown, "Main analyst-review-input"), _main_raw_report_context(markdown)])
+    raw_main = _main_raw_report_context(markdown)
+    main_context = "\n".join([main_summary, _section_text(markdown, "Main analyst-review-input"), raw_main])
+    market_session_conflict = _market_session_conflict_status(raw_main or main_summary)
     report_grade = _field_any(main_summary, "report_grade") or "unknown"
     session_info = normalize_market_session(
         _field_any(main_summary, "market_session_sources")
@@ -1253,11 +1840,16 @@ def _main_decision_grade_diagnostic_lines(markdown: str) -> list[str]:
     generated_utc = generated_brt.astimezone(timezone.utc) if generated_brt else None
     data_mode = _field_any(main_summary, "data_mode", "Data mode") or "unknown"
     existing_reasons = _field_any(main_summary, "reason_codes")
-    reason_codes = _normalize_main_reason_codes(existing_reasons, report_grade, data_mode, session_info)
-    possible_bug = str(
+    reason_codes = _normalize_main_reason_codes(
+        existing_reasons,
+        report_grade,
+        data_mode,
+        session_info,
+        market_session_conflict,
+    )
+    inferred_bug = (
         _had_regular_session_not_regular_reason(existing_reasons, session_info)
-        or
-        _possible_session_detection_bug(
+        or _possible_session_detection_bug(
             generated_brt,
             session_info,
             data_mode=data_mode,
@@ -1265,6 +1857,11 @@ def _main_decision_grade_diagnostic_lines(markdown: str) -> list[str]:
             fresh_price_count=_int_field_any(main_context, "fresh_price_count"),
             reason_codes=[reason.strip() for reason in reason_codes.split(",") if reason.strip()],
         )
+    )
+    possible_bug = str(
+        _had_regular_session_not_regular_reason(existing_reasons, session_info)
+        if market_session_conflict == "false"
+        else inferred_bug
     ).lower()
     return [
         "## Por que o main nao foi decision-grade",
@@ -1273,7 +1870,7 @@ def _main_decision_grade_diagnostic_lines(markdown: str) -> list[str]:
         f"- market_session: `{session_info.primary}`",
         f"- market_session_primary: `{session_info.primary}`",
         f"- market_session_sources: `{_format_market_session_sources(session_info.sources)}`",
-        f"- market_session_conflict: {str(session_info.conflict).lower()}",
+        f"- market_session_conflict: {market_session_conflict}",
         f"- generated_at BRT: `{_format_datetime_diagnostic(generated_brt)}`",
         f"- generated_at UTC: `{_format_datetime_diagnostic(generated_utc)}`",
         f"- expected market window: `{_expected_regular_market_window(generated_brt)}`",
@@ -1288,7 +1885,7 @@ def _main_decision_grade_diagnostic_lines(markdown: str) -> list[str]:
         f"- reason_codes: `{reason_codes}`",
         f"- possible_session_detection_bug: {possible_bug}",
         "",
-        _main_decision_grade_human_explanation(session_info, reason_codes),
+        _main_decision_grade_human_explanation(session_info, reason_codes, market_session_conflict),
     ]
 
 
@@ -1305,11 +1902,17 @@ def _normalize_existing_main_diagnostic(section: str) -> list[str]:
     generated_utc = generated_brt.astimezone(timezone.utc) if generated_brt else None
     data_mode = _field_any(section, "data_mode", "Data mode") or "unknown"
     existing_reasons = _field_any(section, "reason_codes")
-    reason_codes = _normalize_main_reason_codes(existing_reasons, report_grade, data_mode, session_info)
-    possible_bug = str(
+    market_session_conflict = _market_session_conflict_status(section)
+    reason_codes = _normalize_main_reason_codes(
+        existing_reasons,
+        report_grade,
+        data_mode,
+        session_info,
+        market_session_conflict,
+    )
+    inferred_bug = (
         _had_regular_session_not_regular_reason(existing_reasons, session_info)
-        or
-        _possible_session_detection_bug(
+        or _possible_session_detection_bug(
             generated_brt,
             session_info,
             data_mode=data_mode,
@@ -1317,6 +1920,11 @@ def _normalize_existing_main_diagnostic(section: str) -> list[str]:
             fresh_price_count=_int_field_any(section, "fresh_price_count"),
             reason_codes=[reason.strip() for reason in reason_codes.split(",") if reason.strip()],
         )
+    )
+    possible_bug = str(
+        _had_regular_session_not_regular_reason(existing_reasons, session_info)
+        if market_session_conflict == "false"
+        else inferred_bug
     ).lower()
     return [
         "## Por que o main nao foi decision-grade",
@@ -1325,7 +1933,7 @@ def _normalize_existing_main_diagnostic(section: str) -> list[str]:
         f"- market_session: `{session_info.primary}`",
         f"- market_session_primary: `{session_info.primary}`",
         f"- market_session_sources: `{_format_market_session_sources(session_info.sources)}`",
-        f"- market_session_conflict: {str(session_info.conflict).lower()}",
+        f"- market_session_conflict: {market_session_conflict}",
         f"- generated_at BRT: `{_format_datetime_diagnostic(generated_brt)}`",
         f"- generated_at UTC: `{_format_datetime_diagnostic(generated_utc)}`",
         f"- expected market window: `{_expected_regular_market_window(generated_brt)}`",
@@ -1340,30 +1948,47 @@ def _normalize_existing_main_diagnostic(section: str) -> list[str]:
         f"- reason_codes: `{reason_codes}`",
         f"- possible_session_detection_bug: {possible_bug}",
         "",
-        _main_decision_grade_human_explanation(session_info, reason_codes),
+        _main_decision_grade_human_explanation(session_info, reason_codes, market_session_conflict),
     ]
 
 
-def _normalize_main_reason_codes(existing: str, report_grade: str, data_mode: str, session_info) -> str:
+def _normalize_main_reason_codes(
+    existing: str,
+    report_grade: str,
+    data_mode: str,
+    session_info,
+    market_session_conflict: str,
+) -> str:
     reasons = [reason.strip() for reason in existing.split(",") if reason.strip()]
-    if session_info.conflict:
+    if market_session_conflict == "true":
+        reasons = [reason for reason in reasons if reason != "market_session_not_regular"]
+        if "market_session_conflict" not in reasons:
+            reasons.append("market_session_conflict")
+    elif market_session_conflict == "unknown" and session_info.conflict:
         reasons = [reason for reason in reasons if reason != "market_session_not_regular"]
         if "market_session_conflict" not in reasons:
             reasons.append("market_session_conflict")
     elif session_info.primary == "regular":
         reasons = [reason for reason in reasons if reason != "market_session_not_regular"]
     if not reasons:
-        return _main_summary_reason_codes(report_grade, data_mode, session_info)
+        return _main_summary_reason_codes(report_grade, data_mode, session_info, market_session_conflict)
     return ",".join(reasons)
 
 
-def _main_summary_reason_codes(report_grade: str, data_mode: str, session_info) -> str:
+def _main_summary_reason_codes(
+    report_grade: str,
+    data_mode: str,
+    session_info,
+    market_session_conflict: str,
+) -> str:
     if report_grade == "decision_grade":
         return "nenhum"
     reasons = []
     if data_mode in {"blocked", "demo", "fixture", "limited"}:
         reasons.append("data_mode_not_live")
-    if session_info.conflict:
+    if market_session_conflict == "true" or (
+        market_session_conflict == "unknown" and session_info.conflict
+    ):
         reasons.append("market_session_conflict")
     elif session_info.primary != "regular":
         reasons.append("market_session_not_regular")
@@ -1375,8 +2000,12 @@ def _had_regular_session_not_regular_reason(existing_reasons: str, session_info)
     return "market_session_not_regular" in reasons and "regular" in session_info.sources
 
 
-def _main_decision_grade_human_explanation(session_info, reason_codes: str) -> str:
-    if "market_session_conflict" in reason_codes:
+def _main_decision_grade_human_explanation(
+    session_info,
+    reason_codes: str,
+    market_session_conflict: str,
+) -> str:
+    if market_session_conflict == "true":
         return (
             "Main foi bloqueado porque a sessao veio conflitante: "
             f"sources={_format_market_session_sources(session_info.sources)}. "
@@ -1405,6 +2034,15 @@ def _field_any(block: str, *names: str) -> str:
         if value:
             return value
     return ""
+
+
+def _market_session_conflict_status(markdown: str) -> str:
+    value = _field(markdown, "market_session_conflict").lower()
+    if value == "true":
+        return "true"
+    if value == "false":
+        return "false"
+    return "unknown"
 
 
 def generate_from_file(
@@ -1517,7 +2155,7 @@ def _classify_asset(block: str) -> AssetReview | None:
                 ticker,
                 asset_type,
                 "watch_pending_checks",
-                f"{ticker} tem sinais tecnicos/fundamentais parciais, mas ainda exige validacao de news, earnings/guidance, valuation, risco de gap e main decision-grade antes de qualquer entrada.",
+                f"{ticker} tem sinais tecnicos/fundamentais parciais; source_decision={label} permanece a decisao do main.",
                 "Momentum/medias/score ou crescimento sugerem algo a observar.",
                 "Dados/eventos/noticias ainda nao verificados; nao e compra.",
                 block,
@@ -1554,9 +2192,9 @@ def _classify_asset(block: str) -> AssetReview | None:
                 ticker,
                 asset_type,
                 decision,
-                "Setup/ativo pode ser acompanhado, mas flow/news not_verified impedem trade.",
+                "Fluxo/derivativos ou noticias estao ausentes neste artifact; ausencia nao e observacao adversa.",
                 "Preco/liquidez/setup basico parecem existir no pacote.",
-                "flow/derivatives nao verificados; CVD/OI/liquidations/premium ausentes.",
+                "flow/derivatives nao verificados neste artifact; ausencia nao e observacao adversa.",
                 block,
                 basic_data_status=crypto_basic_status,
                 flow_data_status=crypto_flow_status,
@@ -1694,12 +2332,12 @@ def _risks_line(block: str) -> str:
     return reasons if reasons else "not_verified"
 
 
-def _path_to_operation(decision: str, asset_type: str) -> str:
-    if decision in {"blocked", "rejected"}:
-        return "Precisa sair de blocked/rejected antes de qualquer watch."
-    if asset_type == "crypto":
-        return "Validar CVD, OI, liquidations, premium, news e regime antes de qualquer entrada manual."
-    return "Validar news, earnings/guidance, valuation, risco de gap, setor e main decision-grade antes de qualquer entrada manual."
+def _path_to_operation(
+    decision: str,
+    asset_type: str,
+) -> str:
+    del asset_type
+    return f"Consultar a regra e a evidencia que produziram source_decision={decision or 'unknown'} no main; esta revisao nao recalcula elegibilidade."
 
 
 def _asset_lines(assets: list[AssetReview]) -> list[str]:
@@ -1738,9 +2376,9 @@ def _telegram_summary(
     confirmed_tradeables: list[AssetReview],
     market_brief_status: str,
     market_context_markdown: str,
-    main_blocked: bool,
+    market_context_review: MarketContextReview | None = None,
+    main_context: MainReviewContext,
     input_incomplete: bool,
-    main_diagnostic_lines: list[str] | None = None,
 ) -> str:
     confirmed_tickers = {asset.ticker for asset in confirmed_tradeables}
 
@@ -1763,11 +2401,10 @@ def _telegram_summary(
             or asset.decision in {"blocked", "rejected"}
         )
     ]
-    diagnostics = main_diagnostic_lines or []
     main_reason = (
         "O main confirmou estes candidatos e eles passaram pelo gate de integridade existente."
         if confirmed_tradeables
-        else _telegram_reason(main_blocked, diagnostics)
+        else _telegram_reason(main_context, assets)
     )
     uncertainty = _telegram_uncertainty_lines(assets, input_incomplete)
 
@@ -1805,6 +2442,7 @@ def _telegram_summary(
                 market_context_markdown,
                 assets,
                 market_brief_status,
+                market_context_review=market_context_review,
                 include_regimes=include_regimes,
             ),
         ]
@@ -1856,7 +2494,7 @@ def _telegram_summary(
         lines.extend(
             [
                 "",
-                f"Chamada pratica: {_telegram_practical_call(confirmed_tradeables, priorities)}",
+                f"Chamada pratica: {_telegram_practical_call(confirmed_tradeables, priorities, assets, main_context)}",
                 "Execucao manual; o bot nao envia ordens.",
             ]
         )
@@ -1893,8 +2531,45 @@ def _telegram_market_lines(
     assets: list[AssetReview],
     status: str,
     *,
+    market_context_review: MarketContextReview | None = None,
     include_regimes: bool,
 ) -> list[str]:
+    if market_context_review is not None and market_context_review.status != "legacy_unknown":
+        entries = market_context_review.entries
+        observed = [
+            f"{ticker}: {_structured_market_context_entry_summary(entries.get(ticker, {}))}"
+            for ticker in MARKET_CONTEXT_V1_PROXY_KEYS
+            if _has_structured_market_observation(entries.get(ticker))
+        ]
+        unavailable = [
+            ticker
+            for ticker in MARKET_CONTEXT_V1_PROXY_KEYS
+            if entries.get(ticker, {}).get("status") == "unavailable"
+        ]
+        conflicts = [
+            ticker
+            for ticker in MARKET_CONTEXT_V1_PROXY_KEYS
+            if entries.get(ticker, {}).get("status") == "transport_conflict"
+        ]
+        lines = [f"Contexto de mercado: {status}."]
+        if observed:
+            lines.append("  Observado: " + "; ".join(observed) + ".")
+        if unavailable:
+            lines.append("  Proxies indisponiveis na main selecionada: " + ", ".join(unavailable) + ".")
+        if conflicts:
+            lines.append("  Contexto copiado em conflito com a main: " + ", ".join(conflicts) + ".")
+        if include_regimes:
+            regimes = []
+            for key, label in (("stock_regime", "acoes"), ("crypto_regime", "cripto")):
+                entry = entries.get(key, {})
+                if entry.get("status") == "available" and isinstance(entry.get("label"), str):
+                    regimes.append(f"{label} {entry['label']}")
+                elif entry.get("status") == "transport_conflict":
+                    regimes.append(f"{label} transport_conflict")
+            if regimes:
+                lines.append("  Regimes observados: " + "; ".join(regimes) + ".")
+        return lines
+
     by_ticker = {asset.ticker: asset for asset in assets}
     labels = {"SPY": "SPY", "QQQ": "QQQ", "SMH": "SMH", "BTC": "BTC", "ETH": "ETH"}
     observed: list[str] = []
@@ -2102,11 +2777,15 @@ def _telegram_human_text(value: str) -> str:
 def _telegram_practical_call(
     confirmed_tradeables: list[AssetReview],
     priorities: list[AssetReview],
+    assets: list[AssetReview],
+    main_context: MainReviewContext,
 ) -> str:
     if confirmed_tradeables:
         return "Conferir os termos fornecidos pelo main; qualquer execucao permanece manual."
     if not priorities:
-        return "Nenhuma prioridade esta apoiada pelo review; aguardar novo main e verificacoes completas."
+        if main_blocks_operation(main_context):
+            return f"Resolver os gates registrados no main ({_main_gate_block_summary(main_context)}) e revisar as source_decision existentes."
+        return f"Revisar as source_decision e limitacoes do main atual; {_primary_asset_no_trade_summary(assets)}."
     names = ", ".join(asset.ticker for asset in priorities)
     if len(priorities) > 1:
         return f"Manter {names} em observacao; cada ativo depende dos checks listados no respectivo card."
@@ -2115,42 +2794,41 @@ def _telegram_practical_call(
     return f"Manter {names} em observacao; reavaliar apos {next_step}. Risco/invalidation: {risk}."
 
 
-def _telegram_reason(main_not_decision_grade: bool, main_diagnostic_lines: list[str]) -> str:
-    diagnostic = "\n".join(main_diagnostic_lines)
-    if "market_session_conflict" in diagnostic:
-        sources = _field_any(diagnostic, "market_session_sources").strip("[]").replace(", ", "/")
-        source_note = f" (fontes: {sources})" if sources else ""
-        return f"A classificacao da sessao pode estar incorreta{source_note}; por seguranca, o main nao foi tratado como base de decisao."
-    if main_not_decision_grade:
-        return "O main nao passou pelo gate de integridade; nenhuma entrada foi aprovada."
-    return "O main nao confirmou um trade candidate pelo gate de integridade."
+def _telegram_reason(
+    main_context: MainReviewContext,
+    assets: list[AssetReview],
+) -> str:
+    if main_context.market_session_conflict == "true":
+        return "A classificacao da sessao pode estar incorreta porque um conflito real foi registrado; por seguranca, o main nao foi tratado como base de decisao."
+    if main_blocks_operation(main_context):
+        return f"O main nao passou pelos gates registrados: {_main_gate_block_summary(main_context)}. Nenhuma entrada foi aprovada."
+    return f"O main esta utilizavel; {_primary_asset_no_trade_summary(assets)}."
 
 
-def _trade_block_summary(assets: list[AssetReview], report_data_grade: str) -> str:
-    blockers: list[str] = []
-    if report_data_grade != "decision_grade":
-        blockers.append("main_not_decision_grade")
-    if any(asset.asset_type == "stock" and "not_verified" in asset.events_news for asset in assets):
-        blockers.append("news/earnings")
-    if any(asset.asset_type == "crypto" and asset.flow_data_status in {"not_verified", "unavailable"} for asset in assets):
-        blockers.append("crypto_flow_pending")
-    if not blockers:
-        blockers.append("manual_trade_checks_pending")
-    if "news/earnings" in blockers and "crypto_flow_pending" in blockers:
-        return "news/earnings/flow/crypto_flow_pending (flow/derivatives nao verificados)"
-    if "crypto_flow_pending" in blockers:
-        return ",".join(dict.fromkeys(blockers)).replace("crypto_flow_pending", "crypto_flow_pending (flow/derivatives nao verificados)")
-    return ",".join(dict.fromkeys(blockers))
+def _trade_block_summary(
+    assets: list[AssetReview],
+    main_context: MainReviewContext,
+    confirmed_tradeables: list[AssetReview],
+) -> str:
+    if confirmed_tradeables:
+        return "nenhum"
+    if main_blocks_operation(main_context):
+        return f"main_integrity_gates={_main_gate_block_summary(main_context)}"
+    return _primary_asset_no_trade_summary(assets)
 
 
-def _data_error_summary(input_incomplete: bool, main_diagnostic_lines: list[str]) -> str:
+def _data_error_summary(
+    input_incomplete: bool,
+    main_diagnostic_lines: list[str],
+    market_session_conflict: str = "unknown",
+) -> str:
     diagnostic = "\n".join(main_diagnostic_lines)
     errors: list[str] = []
     if input_incomplete:
         errors.append("nightly_input_incomplete")
-    if "possible_session_detection_bug: true" in diagnostic:
+    if _field_any(diagnostic, "possible_session_detection_bug").lower() == "true":
         errors.append("possible_session_detection_bug")
-    if "market_session_conflict: true" in diagnostic:
+    if market_session_conflict == "true":
         errors.append("market_session_conflict")
     return ",".join(dict.fromkeys(errors)) if errors else "nenhum"
 

@@ -184,6 +184,52 @@ class ScoredAsset:
     ideal_entry: float
     alternative_entry: float | None
     hold_suggestion: str
+    evidence_effects: list[DecisionEvidenceEffect] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class DecisionEvidenceEffect:
+    rule_id: str
+    capability: str
+    scope: Literal["primary_report", "stock_asset", "crypto_asset", "specific_rule", "market_context", "discovery"]
+    criticality: Literal[
+        "REQUIRED_FOR_DECISION",
+        "REQUIRED_FOR_SPECIFIC_RULE",
+        "OPTIONAL_CONTEXT",
+        "DIAGNOSTIC_ONLY",
+        "NOT_APPLICABLE",
+        "UNSUPPORTED",
+    ]
+    status: Literal[
+        "available",
+        "temporary_provider_failure",
+        "provider_restriction",
+        "not_collected",
+        "unsupported",
+        "not_implemented",
+        "not_applicable",
+        "invalid",
+        "stale",
+    ]
+    evaluation: Literal[
+        "passed",
+        "failed_observed_signal",
+        "unresolved_required_evidence",
+        "not_applicable",
+    ]
+    decision_effect: Literal[
+        "none",
+        "score_change",
+        "confidence_only",
+        "cap_to_watch",
+        "cap_to_technical_unvalidated",
+        "cap_to_wait",
+        "avoid",
+        "blocked",
+    ]
+    reason_code: str | None = None
+    source: str | None = None
+    observed_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -233,3 +279,4 @@ class AssetDecision:
     borrow_data_available: bool = False
     short_status: str = "not_evaluated"
     universe_origin: str = "unknown"
+    evidence_effects: list[DecisionEvidenceEffect] = field(default_factory=list)

@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 from advisor.backtest import summarize_backtest_setups
@@ -11,7 +12,7 @@ from advisor.cache import SQLiteCache
 from advisor.config import AdvisorConfig
 from advisor.data_pipeline import stock_snapshot_from_payloads
 from advisor.live_loader import LiveDataLoader
-from advisor.models import AssetDecision, AssetSnapshot, BacktestStats, Candle, EventInfo, Fundamentals, RiskPlan, ScoredAsset
+from advisor.models import AssetDecision, AssetSnapshot, BacktestStats, Candle, DataFetchMetadata, EventInfo, Fundamentals, ProviderCapability, RiskPlan, ScoredAsset
 from advisor.report import render_markdown_report
 from advisor.risk import calculate_trade_plan
 from advisor.scoring import classify_asset, score_asset
@@ -32,6 +33,7 @@ def candles(count=220, *, start=100.0, step=1.0):
 
 
 def strong_stock_snapshot(symbol="GOOD", *, event=None, fundamentals=None, news_events=None):
+    snapshot_event = event if event is not None else EventInfo(days_to_earnings=45, guidance_recent=False, post_earnings_gap_percent=0)
     return AssetSnapshot(
         symbol=symbol,
         asset_type="stock",
@@ -49,7 +51,14 @@ def strong_stock_snapshot(symbol="GOOD", *, event=None, fundamentals=None, news_
             market_cap=500_000_000_000,
             average_volume=10_000_000,
         ),
-        event=event if event is not None else EventInfo(days_to_earnings=45, guidance_recent=False, post_earnings_gap_percent=0),
+        event=snapshot_event,
+        earnings_status=(
+            "verified"
+            if snapshot_event is not None
+            and snapshot_event.days_to_earnings is not None
+            and snapshot_event.days_to_earnings >= 0
+            else "not_collected"
+        ),
         news_events=news_events or [],
     )
 
@@ -83,6 +92,367 @@ def strong_scored(symbol="GOOD", *, alerts=None, limitations=None, investment=90
 
 
 class HardeningTests(unittest.TestCase):
+    def test_unconsumed_fundamental_and_uncollected_context_do_not_cap_an_otherwise_tradeable_stock(self):
+        base_snapshot = strong_stock_snapshot("MSFT")
+        base_snapshot = replace(
+            base_snapshot,
+            event=EventInfo(
+                days_to_earnings=45,
+                guidance_recent=False,
+                post_earnings_gap_percent=0.0,
+                next_earnings_date="2026-11-24",
+            ),
+            earnings_status="verified",
+        )
+        missing_snapshot = replace(
+            base_snapshot,
+            fundamentals=replace(base_snapshot.fundamentals, revenue_growth=None),
+        )
+        stats = BacktestStats(
+            sample_size=120,
+            win_rate_2r=0.66,
+            win_rate_3r=0.44,
+            expected_value_r=0.5,
+            avg_win_r=1.2,
+            avg_loss_r=-0.5,
+        )
+
+        complete_decision = classify_asset(
+            score_asset(base_snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral"),
+            stats,
+        )
+        missing_decision = classify_asset(
+            score_asset(missing_snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral"),
+            stats,
+        )
+
+        self.assertIn("missing_revenue_growth", missing_decision.reason_codes)
+        self.assertIn("news_not_collected_confidence_limited", missing_decision.reason_codes)
+        self.assertIn("macro_not_collected_confidence_limited", missing_decision.reason_codes)
+        self.assertIn("sector_relative_strength_not_collected", missing_decision.reason_codes)
+        self.assertEqual(complete_decision.decision, "tradeable")
+        self.assertEqual(missing_decision.decision, complete_decision.decision)
+        expected_confidence = min(
+            missing_decision.data_quality_score,
+            int(round((missing_decision.investment_quality_score + missing_decision.swing_trade_score) / 2)),
+        )
+        self.assertEqual(missing_decision.decision_confidence_score, expected_confidence)
+
+    def test_required_price_history_gap_remains_blocked(self):
+        scored = replace(
+            strong_scored("ASML"),
+            snapshot=replace(strong_stock_snapshot("ASML"), candles=[]),
+            limitations=["insufficient_price_history"],
+        )
+
+        decision = classify_asset(
+            scored,
+            BacktestStats(
+                sample_size=120,
+                win_rate_2r=0.66,
+                win_rate_3r=0.44,
+                expected_value_r=0.5,
+                avg_win_r=1.2,
+                avg_loss_r=-0.5,
+            ),
+        )
+
+        self.assertEqual(decision.decision, "blocked")
+        self.assertEqual(decision.data_quality, "blocked")
+
+    def test_report_keeps_valid_backtest_stats_visible_with_unconsumed_missing_field(self):
+        decision = classify_asset(
+            strong_scored("AMD", limitations=["missing_revenue_growth"]),
+            BacktestStats(sample_size=120, win_rate_2r=0.66, win_rate_3r=0.44, expected_value_r=0.5),
+        )
+
+        report = render_markdown_report([decision], stock_regime="neutral", crypto_regime="neutral", data_mode="live")
+
+        self.assertIn("Setup win rate estimado: 66%", report)
+        self.assertNotIn("Setup win rate estimado: oculto por dados incompletos ou nao-live", report)
+
+    def test_optional_crypto_flow_absence_is_not_an_observed_risk_or_decision_cap(self):
+        snapshot = AssetSnapshot(
+            symbol="BTC",
+            asset_type="crypto",
+            theme="crypto",
+            candles=candles(),
+            fundamentals=Fundamentals(
+                pe=None,
+                peg=None,
+                historical_pe=None,
+                revenue_growth=None,
+                eps_growth=None,
+                margin_trend=None,
+                free_cash_flow_positive=None,
+                market_cap=1_500_000_000_000,
+                average_volume=5_000_000_000,
+            ),
+            missing_data=["cvd_proxy_unavailable"],
+            data_source="coingecko",
+            data_timestamp="2026-10-10T12:00:00Z",
+            crypto_metric_provenance={"cvd_proxy": {"status": "not_collected", "provider": "binance"}},
+        )
+        base_scored = replace(
+            strong_scored("BTC", investment=90, swing=90),
+            snapshot=snapshot,
+            limitations=[],
+        )
+        missing_flow = replace(base_scored, limitations=["cvd_proxy_unavailable"])
+        stats = BacktestStats(
+            sample_size=120,
+            win_rate_2r=0.66,
+            win_rate_3r=0.44,
+            expected_value_r=0.5,
+            avg_win_r=1.2,
+            avg_loss_r=-0.5,
+        )
+
+        missing_decision = classify_asset(missing_flow, stats)
+        control_decision = classify_asset(base_scored, stats)
+
+        self.assertIn("cvd_proxy_unavailable", missing_decision.reason_codes)
+        self.assertIsNone(missing_flow.snapshot.cvd_proxy)
+        self.assertNotIn("leverage_risk_funding", missing_decision.alerts)
+        self.assertEqual(missing_decision.decision, control_decision.decision)
+        self.assertEqual(missing_decision.data_quality, control_decision.data_quality)
+        self.assertEqual(missing_decision.decision_confidence_score, control_decision.decision_confidence_score)
+
+        without_funding = score_asset(
+            replace(snapshot, missing_data=[], funding_rate=None),
+            stock_regime_label="neutral",
+            crypto_regime_label="risk_on",
+        )
+        with_hot_funding = score_asset(
+            replace(snapshot, missing_data=[], funding_rate=0.0015),
+            stock_regime_label="neutral",
+            crypto_regime_label="risk_on",
+        )
+        self.assertIn("leverage_risk_funding", with_hot_funding.alerts)
+        self.assertLess(with_hot_funding.swing_trade_score, without_funding.swing_trade_score)
+
+    def test_optional_crypto_flow_absence_is_audited_without_erasing_measured_risk(self):
+        reason_status = {
+            "cvd_proxy_unavailable": ("cvd", "crypto.cvd_proxy", "not_collected", "OPTIONAL_CONTEXT"),
+            "open_interest_change_unavailable": (
+                "open_interest_change",
+                "crypto.open_interest_change",
+                "not_implemented",
+                "OPTIONAL_CONTEXT",
+            ),
+            "liquidations_unavailable": ("liquidations", "crypto.liquidations", "not_implemented", "UNSUPPORTED"),
+            "coinbase_premium_unavailable": (
+                "premium",
+                "crypto.coinbase_premium",
+                "temporary_provider_failure",
+                "OPTIONAL_CONTEXT",
+            ),
+        }
+        missing_reasons = list(reason_status)
+        snapshot = AssetSnapshot(
+            symbol="BTC",
+            asset_type="crypto",
+            theme="crypto",
+            candles=candles(),
+            fundamentals=Fundamentals(
+                pe=None,
+                peg=None,
+                historical_pe=None,
+                revenue_growth=None,
+                eps_growth=None,
+                margin_trend=None,
+                free_cash_flow_positive=None,
+                market_cap=1_500_000_000_000,
+                average_volume=5_000_000_000,
+            ),
+            missing_data=missing_reasons,
+            data_source="coingecko",
+            data_timestamp="2026-10-10T12:00:00Z",
+            crypto_metric_provenance={
+                "cvd": {"provider": "binance", "status": "not_collected"},
+                "open_interest_change": {"provider": "hyperliquid", "status": "not_implemented"},
+                "liquidations": {"provider": "binance", "status": "not_implemented"},
+                "premium": {"provider": "coinbase", "status": "temporary_provider_failure"},
+            },
+        )
+        stats = BacktestStats(
+            sample_size=120,
+            win_rate_2r=0.66,
+            win_rate_3r=0.44,
+            expected_value_r=0.5,
+            avg_win_r=1.2,
+            avg_loss_r=-0.5,
+        )
+        missing_scored = score_asset(
+            snapshot,
+            stock_regime_label="neutral",
+            crypto_regime_label="risk_on",
+        )
+        control_scored = score_asset(
+            replace(snapshot, missing_data=[], crypto_metric_provenance={}),
+            stock_regime_label="neutral",
+            crypto_regime_label="risk_on",
+        )
+        missing_decision = classify_asset(missing_scored, stats)
+        control_decision = classify_asset(control_scored, stats)
+
+        self.assertEqual(missing_decision.decision, control_decision.decision)
+        self.assertEqual(missing_decision.data_quality, control_decision.data_quality)
+        self.assertEqual(missing_decision.decision_confidence_score, control_decision.decision_confidence_score)
+        self.assertTrue(set(missing_reasons).issubset(missing_decision.reason_codes))
+        self.assertNotIn("leverage_risk_funding", missing_decision.alerts)
+        self.assertNotIn("leverage_risk_open_interest", missing_decision.alerts)
+        effects_by_reason = {effect.reason_code: effect for effect in missing_scored.evidence_effects}
+        for reason, (metric, capability, status, criticality) in reason_status.items():
+            with self.subTest(reason=reason):
+                effect = effects_by_reason[reason]
+                self.assertEqual(effect.capability, capability)
+                self.assertEqual(effect.scope, "crypto_asset")
+                self.assertEqual(effect.criticality, criticality)
+                self.assertEqual(effect.status, status)
+                self.assertEqual(effect.evaluation, "not_applicable")
+                self.assertEqual(effect.decision_effect, "none")
+
+        without_flow = replace(snapshot, missing_data=[], crypto_metric_provenance={})
+        without_flow_scored = score_asset(
+            without_flow,
+            stock_regime_label="neutral",
+            crypto_regime_label="risk_on",
+        )
+        hot_funding = score_asset(
+            replace(without_flow, funding_rate=0.0015),
+            stock_regime_label="neutral",
+            crypto_regime_label="risk_on",
+        )
+        hot_open_interest = score_asset(
+            replace(without_flow, open_interest_change=0.30),
+            stock_regime_label="neutral",
+            crypto_regime_label="risk_on",
+        )
+        material_liquidations = score_asset(
+            replace(without_flow, liquidation_imbalance=0.80),
+            stock_regime_label="neutral",
+            crypto_regime_label="risk_on",
+        )
+        self.assertIn("leverage_risk_funding", hot_funding.alerts)
+        self.assertLess(hot_funding.swing_trade_score, without_flow_scored.swing_trade_score)
+        self.assertIn("leverage_risk_open_interest", hot_open_interest.alerts)
+        self.assertLess(hot_open_interest.swing_trade_score, without_flow_scored.swing_trade_score)
+        self.assertIn("liquidation_pressure", material_liquidations.alerts)
+
+    def test_binance_restriction_keeps_authorized_crypto_fallback_capabilities_available(self):
+        config = AdvisorConfig.default(env_file=None)
+        config.coingecko_api_key = "test-key"
+        end_timestamp_ms = int(datetime(2026, 10, 10, tzinfo=timezone.utc).timestamp() * 1000)
+        chart_prices = [
+            [end_timestamp_ms - (219 - index) * 86_400_000, 100 + index]
+            for index in range(220)
+        ]
+
+        def load_with_chart(chart_available):
+            def fake_fetch(url, *, payload=None, headers=None):
+                if "/coins/markets" in url:
+                    return [{"market_cap": 1_500_000_000_000, "total_volume": 5_000_000_000, "market_cap_rank": 1}]
+                if "/fapi/v1/klines" in url:
+                    raise RuntimeError("http_error:451:restricted location")
+                if "/coins/bitcoin/market_chart" in url:
+                    return {"prices": chart_prices if chart_available else []}
+                if "api.hyperliquid.xyz/info" in url and payload == {"type": "metaAndAssetCtxs"}:
+                    return [
+                        {"universe": [{"name": "BTC"}]},
+                        [{"funding": "0.0001", "openInterest": "100000"}],
+                    ]
+                if "api.coinbase.com" in url:
+                    return {"price": "60000"}
+                raise AssertionError(f"unexpected provider request: {url}")
+
+            return LiveDataLoader(config, fetch_json=fake_fetch, today="2026-10-10").load_crypto("BTC")
+
+        fallback_snapshot = load_with_chart(chart_available=True)
+        price_provenance = fallback_snapshot.crypto_metric_provenance["candles"]
+        with self.subTest(capability="price_provenance"):
+            self.assertEqual(price_provenance["status"], "available")
+            self.assertEqual(price_provenance["provider"], "coingecko")
+            self.assertEqual(price_provenance.get("fallback_from"), "binance")
+            self.assertEqual(price_provenance.get("fallback_to"), "coingecko")
+            self.assertEqual(price_provenance.get("fallback_reason"), "binance_restricted_location")
+        for metric in ("funding", "current_open_interest"):
+            with self.subTest(metric=metric):
+                provenance = fallback_snapshot.crypto_metric_provenance[metric]
+                self.assertEqual(provenance["status"], "available")
+                self.assertEqual(provenance["provider"], "hyperliquid")
+                self.assertEqual(provenance.get("fallback_from"), "binance")
+                self.assertEqual(provenance.get("fallback_to"), "hyperliquid")
+                self.assertEqual(provenance.get("fallback_reason"), "binance_flow_unavailable")
+        with self.subTest(capability="fallback_diagnostics"):
+            self.assertIn("binance_restricted_location", fallback_snapshot.missing_data)
+            self.assertIn("binance_flow_unavailable", fallback_snapshot.missing_data)
+            self.assertIn("hyperliquid_flow_fallback", fallback_snapshot.missing_data)
+            self.assertEqual(len(fallback_snapshot.candles), 220)
+
+        stats = BacktestStats(
+            sample_size=120,
+            win_rate_2r=0.66,
+            win_rate_3r=0.44,
+            expected_value_r=0.5,
+            avg_win_r=1.2,
+            avg_loss_r=-0.5,
+        )
+        fallback_scored = score_asset(
+            fallback_snapshot,
+            stock_regime_label="neutral",
+            crypto_regime_label="risk_on",
+        )
+        without_provider_restriction = score_asset(
+            replace(
+                fallback_snapshot,
+                missing_data=[
+                    reason
+                    for reason in fallback_snapshot.missing_data
+                    if reason not in {"binance_restricted_location", "binance_flow_unavailable", "hyperliquid_flow_fallback"}
+                ],
+            ),
+            stock_regime_label="neutral",
+            crypto_regime_label="risk_on",
+        )
+        fallback_decision = classify_asset(fallback_scored, stats)
+        no_restriction_decision = classify_asset(without_provider_restriction, stats)
+        with self.subTest(capability="valid_fallback_eligibility"):
+            self.assertEqual(fallback_decision.decision, no_restriction_decision.decision)
+            self.assertEqual(fallback_decision.decision_confidence_score, no_restriction_decision.decision_confidence_score)
+
+        proxy_snapshot = replace(
+            fallback_snapshot,
+            cvd_proxy=0.2,
+            crypto_metric_provenance={
+                **fallback_snapshot.crypto_metric_provenance,
+                "cvd": {"provider": "binance", "status": "available", "is_proxy": True},
+            },
+        )
+        proxy_scored = score_asset(
+            proxy_snapshot,
+            stock_regime_label="neutral",
+            crypto_regime_label="risk_on",
+        )
+        with self.subTest(capability="cvd_proxy_disclosure"):
+            self.assertIn("cvd_proxy_uses_taker_buy_sell_volume", proxy_scored.limitations)
+
+        no_price_snapshot = load_with_chart(chart_available=False)
+        with self.subTest(capability="no_valid_price_fallback"):
+            self.assertFalse(no_price_snapshot.candles)
+            self.assertIn("price_history_unavailable", no_price_snapshot.missing_data)
+        blocked = classify_asset(
+            replace(
+                strong_scored("BTC"),
+                snapshot=no_price_snapshot,
+                limitations=no_price_snapshot.missing_data,
+            ),
+            stats,
+        )
+        with self.subTest(capability="required_price_failure_still_blocks"):
+            self.assertEqual(blocked.decision, "blocked")
+            self.assertEqual(blocked.data_quality, "blocked")
+
     def test_earnings_payload_without_next_date_is_unknown_not_none(self):
         snapshot = stock_snapshot_from_payloads(
             symbol="MSFT",
@@ -143,8 +513,13 @@ class HardeningTests(unittest.TestCase):
             strong_scored("AMD", investment=75, swing=72, alerts=["market_not_risk_on"]),
             BacktestStats(sample_size=120, win_rate_2r=0.55, win_rate_3r=0.35, expected_value_r=0.45),
         )
+        short_history_scored = score_asset(
+            replace(strong_stock_snapshot("HYPE"), candles=candles(80)),
+            stock_regime_label="risk_on",
+            crypto_regime_label="neutral",
+        )
         unvalidated = classify_asset(
-            strong_scored("HYPE", investment=72, swing=82, limitations=["fundamentals_unavailable"]),
+            replace(short_history_scored, investment_quality_score=72, swing_trade_score=82),
             BacktestStats(sample_size=90, win_rate_2r=0.58, win_rate_3r=0.31, expected_value_r=0.25),
         )
 
@@ -188,6 +563,109 @@ class HardeningTests(unittest.TestCase):
         self.assertIn("last_price_timestamp", report)
         self.assertIn("is_stale: `yes`", report)
         self.assertIn("stale_reason", report)
+        freshness_effect = next(
+            (effect for effect in decision.evidence_effects if effect.capability == "price_freshness"),
+            None,
+        )
+        self.assertIsNotNone(freshness_effect)
+        self.assertEqual(freshness_effect.criticality, "REQUIRED_FOR_DECISION")
+        self.assertEqual(freshness_effect.status, "stale")
+        self.assertEqual(freshness_effect.evaluation, "unresolved_required_evidence")
+        self.assertEqual(freshness_effect.decision_effect, "cap_to_wait")
+
+    def test_market_regime_cap_is_recorded_as_rule_effect(self):
+        regime_limited = classify_asset(
+            strong_scored("REGIME", alerts=["market_not_risk_on"]),
+            BacktestStats(sample_size=120, win_rate_2r=0.66, win_rate_3r=None, expected_value_r=0.60),
+        )
+        regime_effect = next(
+            (effect for effect in regime_limited.evidence_effects if effect.capability == "market_regime"),
+            None,
+        )
+        self.assertIsNotNone(regime_effect)
+        self.assertEqual(regime_limited.decision, "watch_buy")
+        self.assertEqual(regime_effect.criticality, "REQUIRED_FOR_SPECIFIC_RULE")
+        self.assertEqual(regime_effect.evaluation, "failed_observed_signal")
+        self.assertEqual(regime_effect.decision_effect, "cap_to_watch")
+
+    def test_low_sample_cap_is_recorded_as_rule_effect(self):
+        low_sample = classify_asset(
+            strong_scored("SAMPLE"),
+            BacktestStats(sample_size=0, win_rate_2r=None, win_rate_3r=None, expected_value_r=None),
+        )
+        sample_effect = next(
+            (effect for effect in low_sample.evidence_effects if effect.capability == "backtest.sample_size"),
+            None,
+        )
+        self.assertIsNotNone(sample_effect)
+        self.assertEqual(sample_effect.criticality, "REQUIRED_FOR_DECISION")
+        self.assertEqual(sample_effect.evaluation, "unresolved_required_evidence")
+        self.assertEqual(sample_effect.decision_effect, "cap_to_watch")
+        confidence_effect = next(
+            (effect for effect in low_sample.evidence_effects if effect.rule_id == "classify_asset.confidence_below_65"),
+            None,
+        )
+        self.assertIsNotNone(confidence_effect)
+        self.assertEqual(confidence_effect.capability, "decision_confidence.score")
+        self.assertEqual(confidence_effect.decision_effect, "cap_to_watch")
+        technical_effect = next(
+            (effect for effect in low_sample.evidence_effects if effect.rule_id == "classify_asset.technical_unvalidated_cap"),
+            None,
+        )
+        self.assertIsNotNone(technical_effect)
+        self.assertEqual(technical_effect.capability, "technical_setup")
+        self.assertEqual(technical_effect.decision_effect, "cap_to_technical_unvalidated")
+
+    def test_measured_win_rate_cap_is_recorded_as_rule_effect(self):
+        decision = classify_asset(
+            strong_scored("LOW-WIN-RATE"),
+            BacktestStats(sample_size=120, win_rate_2r=0.30, win_rate_3r=None, expected_value_r=0.20),
+        )
+
+        effect = next(
+            (effect for effect in decision.evidence_effects if effect.rule_id == "classify_asset.win_rate_below_35"),
+            None,
+        )
+        self.assertIsNotNone(effect)
+        self.assertEqual(effect.capability, "backtest.win_rate_2r")
+        self.assertEqual(effect.criticality, "REQUIRED_FOR_SPECIFIC_RULE")
+        self.assertEqual(effect.status, "available")
+        self.assertEqual(effect.evaluation, "failed_observed_signal")
+        self.assertEqual(effect.decision_effect, "cap_to_technical_unvalidated")
+
+    def test_measured_nonpositive_ev_cap_is_recorded_as_rule_effect(self):
+        decision = classify_asset(
+            strong_scored("NONPOSITIVE-EV"),
+            BacktestStats(sample_size=120, win_rate_2r=0.50, win_rate_3r=None, expected_value_r=0.0),
+        )
+
+        effect = next(
+            (effect for effect in decision.evidence_effects if effect.rule_id == "classify_asset.nonpositive_ev"),
+            None,
+        )
+        self.assertIsNotNone(effect)
+        self.assertEqual(effect.capability, "backtest.expected_value_r")
+        self.assertEqual(effect.criticality, "REQUIRED_FOR_SPECIFIC_RULE")
+        self.assertEqual(effect.status, "available")
+        self.assertEqual(effect.evaluation, "failed_observed_signal")
+        self.assertEqual(effect.decision_effect, "cap_to_wait")
+
+    def test_high_severity_cap_is_recorded_as_rule_effect(self):
+        snapshot = strong_stock_snapshot("UNKNOWN-EARNINGS", event=EventInfo(None, False, 0.0))
+        decision = classify_asset(
+            score_asset(snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral"),
+            BacktestStats(sample_size=120, win_rate_2r=0.66, win_rate_3r=None, expected_value_r=0.60),
+        )
+
+        effect = next(
+            (effect for effect in decision.evidence_effects if effect.rule_id == "classify_asset.high_severity_cap"),
+            None,
+        )
+        self.assertIsNotNone(effect)
+        self.assertEqual(effect.capability, "data_quality.missing_data_severity")
+        self.assertEqual(effect.criticality, "REQUIRED_FOR_SPECIFIC_RULE")
+        self.assertEqual(effect.evaluation, "failed_observed_signal")
+        self.assertEqual(effect.decision_effect, "cap_to_technical_unvalidated")
 
     def test_adr_and_mixed_provider_add_mismatch_alerts(self):
         snapshot = strong_stock_snapshot("TSM")
@@ -202,7 +680,7 @@ class HardeningTests(unittest.TestCase):
         self.assertIn("provider_market_cap_mismatch_possible", decision.alerts)
         self.assertIn("mixed_provider_data", decision.limitations)
 
-    def test_price_fallback_reduces_decision_confidence(self):
+    def test_price_fallback_remains_diagnostic_without_a_measured_mismatch(self):
         base_snapshot = strong_stock_snapshot("MSFT", news_events=[{"headline": "verified catalyst", "confirmed_status": "confirmed"}])
         fallback_snapshot = AssetSnapshot(
             **{
@@ -222,8 +700,140 @@ class HardeningTests(unittest.TestCase):
         )
 
         self.assertIn("mixed_provider_data", fallback_decision.limitations)
-        self.assertLess(fallback_decision.decision_confidence_score, fmp_decision.decision_confidence_score)
-        self.assertNotEqual(fallback_decision.decision, "tradeable")
+        self.assertIn("source_mismatch_possible", fallback_decision.alerts)
+        self.assertEqual(fallback_decision.decision_confidence_score, fmp_decision.decision_confidence_score)
+        self.assertEqual(fallback_decision.decision, fmp_decision.decision)
+
+    def test_compatible_yahoo_prices_and_fmp_fundamentals_do_not_reduce_eligibility(self):
+        source_timestamp = "2026-10-09T20:00:00+00:00"
+        base_snapshot = strong_stock_snapshot(
+            "MSFT",
+            news_events=[{"headline": "verified catalyst", "confirmed_status": "confirmed"}],
+        )
+        fmp_snapshot = replace(
+            base_snapshot,
+            data_source="fmp",
+            cache_age_seconds=3600,
+            data_fetch_metadata=DataFetchMetadata(
+                provider="fmp",
+                endpoint="historical_prices",
+                source_timestamp=source_timestamp,
+                cache_age_seconds=3600,
+                is_fresh=True,
+                granularity="daily",
+                market_data_kind="eod_candle",
+            ),
+            provider_capabilities=[
+                ProviderCapability("fmp", "historical_prices", True, True, True, "available", False),
+                ProviderCapability("fmp", "fundamentals", True, True, True, "available", False),
+            ],
+        )
+        compatible_mixed_snapshot = replace(
+            base_snapshot,
+            data_source="yahoo",
+            missing_data=["yahoo_price_fallback"],
+            cache_age_seconds=3600,
+            data_fetch_metadata=DataFetchMetadata(
+                provider="yahoo",
+                endpoint="historical_prices",
+                source_timestamp=source_timestamp,
+                cache_age_seconds=3600,
+                is_fresh=True,
+                fallback_used=True,
+                fallback_from="fmp",
+                fallback_to="yahoo",
+                granularity="daily",
+                market_data_kind="eod_candle",
+            ),
+            provider_capabilities=[
+                ProviderCapability("yahoo", "prices", True, True, True, "available", False),
+                ProviderCapability("fmp", "fundamentals", True, True, True, "available", False),
+            ],
+        )
+        stats = BacktestStats(
+            sample_size=120,
+            win_rate_2r=0.66,
+            win_rate_3r=0.44,
+            expected_value_r=0.55,
+            avg_win_r=1.2,
+            avg_loss_r=-0.5,
+        )
+
+        fmp_decision = classify_asset(
+            score_asset(fmp_snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral"),
+            stats,
+        )
+        mixed_decision = classify_asset(
+            score_asset(compatible_mixed_snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral"),
+            stats,
+        )
+
+        self.assertIn("mixed_provider_data", mixed_decision.limitations)
+        self.assertIn("source_mismatch_possible", mixed_decision.alerts)
+        self.assertEqual(mixed_decision.decision, fmp_decision.decision)
+        self.assertEqual(mixed_decision.decision_confidence_score, fmp_decision.decision_confidence_score)
+
+    def test_intraday_price_metadata_conflict_limits_only_price_history_rule(self):
+        source_timestamp = "2026-10-09T20:00:00+00:00"
+        mixed_snapshot = replace(
+            strong_stock_snapshot("MSFT"),
+            data_source="yahoo",
+            missing_data=["yahoo_price_fallback"],
+            cache_age_seconds=3600,
+            data_fetch_metadata=DataFetchMetadata(
+                provider="yahoo",
+                endpoint="historical_prices",
+                source_timestamp=source_timestamp,
+                cache_age_seconds=3600,
+                is_fresh=True,
+                fallback_used=True,
+                fallback_from="fmp",
+                fallback_to="yahoo",
+                granularity="daily",
+                market_data_kind="eod_candle",
+            ),
+            provider_capabilities=[
+                ProviderCapability("yahoo", "prices", True, True, True, "available", False),
+                ProviderCapability("fmp", "fundamentals", True, True, True, "available", False),
+            ],
+        )
+        incompatible_snapshot = replace(
+            mixed_snapshot,
+            data_fetch_metadata=replace(
+                mixed_snapshot.data_fetch_metadata,
+                granularity="intraday",
+                market_data_kind="intraday_quote",
+            ),
+        )
+        stats = BacktestStats(
+            sample_size=120,
+            win_rate_2r=0.66,
+            win_rate_3r=0.44,
+            expected_value_r=0.55,
+            avg_win_r=1.2,
+            avg_loss_r=-0.5,
+        )
+
+        compatible_decision = classify_asset(
+            score_asset(mixed_snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral"),
+            stats,
+        )
+        incompatible_decision = classify_asset(
+            score_asset(incompatible_snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral"),
+            stats,
+        )
+
+        self.assertEqual(compatible_decision.decision, "tradeable")
+        self.assertNotEqual(incompatible_decision.decision, "tradeable")
+        price_effect = next(
+            item for item in incompatible_decision.evidence_effects if item.capability == "price_history"
+        )
+        self.assertEqual(price_effect.scope, "specific_rule")
+        self.assertEqual(price_effect.criticality, "REQUIRED_FOR_SPECIFIC_RULE")
+        self.assertEqual(price_effect.status, "invalid")
+        self.assertEqual(price_effect.evaluation, "unresolved_required_evidence")
+        self.assertEqual(price_effect.decision_effect, "cap_to_technical_unvalidated")
+        self.assertEqual(price_effect.reason_code, "price_timeframe_incompatible")
 
     def test_signal_journal_persists_decisions_for_tracking(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -577,6 +1187,92 @@ class HardeningTests(unittest.TestCase):
         self.assertEqual(decision.decision, "wait")
         self.assertIn("earnings_imminent", decision.alerts)
 
+    def test_stock_approval_requires_verified_earnings_timing_and_preserves_proximity_rules(self):
+        stats = BacktestStats(
+            sample_size=120,
+            win_rate_2r=0.66,
+            win_rate_3r=0.44,
+            expected_value_r=0.5,
+            avg_win_r=1.2,
+            avg_loss_r=-0.5,
+        )
+        effective_now = datetime(2026, 10, 9, 15, 0, tzinfo=timezone.utc)
+
+        def decide(snapshot):
+            scored = score_asset(snapshot, stock_regime_label="risk_on", crypto_regime_label="neutral")
+            return classify_asset(scored, stats, effective_now_utc=effective_now)
+
+        distant = decide(
+            replace(
+                strong_stock_snapshot("DISTANT"),
+                event=EventInfo(
+                    days_to_earnings=45,
+                    guidance_recent=False,
+                    post_earnings_gap_percent=0.0,
+                    next_earnings_date="2026-11-23",
+                ),
+                earnings_status="verified",
+            )
+        )
+        near = decide(
+            replace(
+                strong_stock_snapshot("NEAR"),
+                event=EventInfo(
+                    days_to_earnings=10,
+                    guidance_recent=False,
+                    post_earnings_gap_percent=0.0,
+                    next_earnings_date="2026-10-19",
+                ),
+                earnings_status="verified",
+            )
+        )
+        imminent = decide(
+            replace(
+                strong_stock_snapshot("IMMINENT"),
+                event=EventInfo(
+                    days_to_earnings=5,
+                    guidance_recent=False,
+                    post_earnings_gap_percent=0.0,
+                    next_earnings_date="2026-10-14",
+                ),
+                earnings_status="verified",
+            )
+        )
+
+        self.assertEqual(distant.decision, "tradeable")
+        self.assertEqual(distant.event_check_status, "verified")
+        self.assertNotEqual(near.decision, "tradeable")
+        self.assertIn("earnings_near", near.alerts)
+        self.assertNotIn("earnings_imminent", near.alerts)
+        self.assertEqual(imminent.decision, "wait")
+        self.assertIn("earnings_near", imminent.alerts)
+        self.assertIn("earnings_imminent", imminent.alerts)
+
+        dated_but_unverified = decide(
+            replace(
+                strong_stock_snapshot("UNVERIFIED"),
+                event=EventInfo(
+                    days_to_earnings=45,
+                    guidance_recent=False,
+                    post_earnings_gap_percent=0.0,
+                    next_earnings_date="2026-11-23",
+                ),
+                earnings_status="not_implemented",
+            )
+        )
+        self.assertEqual(dated_but_unverified.event_check_status, "not_implemented")
+        self.assertNotEqual(dated_but_unverified.decision, "tradeable")
+
+        unknown = decide(
+            replace(
+                strong_stock_snapshot("UNKNOWN"),
+                event=None,
+                earnings_status="not_collected",
+            )
+        )
+        self.assertEqual(unknown.event_check_status, "not_collected")
+        self.assertNotEqual(unknown.decision, "tradeable")
+
     def test_tradeable_replaces_strong_buy_candidate_for_clean_positive_ev_setup(self):
         decision = classify_asset(
             strong_scored(),
@@ -749,7 +1445,7 @@ class HardeningTests(unittest.TestCase):
         self.assertIn("event_check_status: `verified`", report)
         self.assertIn("event_check_status: `not_applicable`", report)
 
-    def test_decision_confidence_reduces_for_uncollected_context_and_missing_ev_components(self):
+    def test_missing_ev_components_remain_diagnostic_when_consumed_metrics_are_valid(self):
         scored = strong_scored("AMD", investment=90, swing=90)
 
         decision = classify_asset(
@@ -757,13 +1453,64 @@ class HardeningTests(unittest.TestCase):
             BacktestStats(sample_size=120, win_rate_2r=0.62, win_rate_3r=0.35, expected_value_r=0.55),
         )
 
-        self.assertLessEqual(decision.decision_confidence_score, 60)
+        self.assertGreater(decision.decision_confidence_score, 60)
+        self.assertEqual(decision.decision, "tradeable")
         self.assertIn("news_not_collected_confidence_limited", decision.reason_codes)
         self.assertIn("macro_not_collected_confidence_limited", decision.reason_codes)
         self.assertIn("sector_relative_strength_not_collected", decision.reason_codes)
         self.assertIn("ev_components_missing", decision.reason_codes)
 
-    def test_expected_value_is_marked_limited_without_avg_win_loss_components(self):
+    def test_missing_average_decomposition_does_not_cap_valid_backtest_metrics(self):
+        scored = strong_scored("AMD", investment=90, swing=90)
+        consumed_metrics = {
+            "sample_size": 120,
+            "win_rate_2r": 0.62,
+            "win_rate_3r": 0.35,
+            "expected_value_r": 0.55,
+        }
+        complete = classify_asset(
+            scored,
+            BacktestStats(**consumed_metrics, avg_win_r=1.1, avg_loss_r=-0.25),
+        )
+        missing_average = classify_asset(
+            scored,
+            BacktestStats(**consumed_metrics, avg_win_r=1.1, avg_loss_r=None),
+        )
+
+        self.assertEqual(missing_average.decision, complete.decision)
+        self.assertEqual(missing_average.decision_confidence_score, complete.decision_confidence_score)
+        self.assertIn("ev_components_missing", missing_average.reason_codes)
+
+        report = render_markdown_report(
+            [missing_average],
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            data_mode="live",
+        )
+        self.assertIn("expected_value_r: 0.55", report)
+        self.assertNotIn("expected_value_r: 0.55 (limited/model_estimate)", report)
+
+        no_positive_outcomes = classify_asset(
+            scored,
+            BacktestStats(
+                sample_size=120,
+                win_rate_2r=0.0,
+                win_rate_3r=0.0,
+                expected_value_r=-0.10,
+                avg_win_r=None,
+                avg_loss_r=-0.10,
+            ),
+        )
+        no_positive_report = render_markdown_report(
+            [no_positive_outcomes],
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            data_mode="live",
+        )
+        self.assertIn("expected_value_r: -0.10", no_positive_report)
+        self.assertNotIn("expected_value_r: -0.10 (limited/model_estimate)", no_positive_report)
+
+    def test_expected_value_remains_direct_without_avg_win_loss_components(self):
         decision = _asset_decision_for_report("AMD", "watch_buy", swing=72, investment=76)
         decision = AssetDecision(
             **{
@@ -781,7 +1528,54 @@ class HardeningTests(unittest.TestCase):
 
         report = render_markdown_report([decision], stock_regime="neutral", crypto_regime="neutral", data_mode="live")
 
-        self.assertIn("expected_value_r: 0.52 (limited/model_estimate)", report)
+        self.assertIn("expected_value_r: 0.52", report)
+        self.assertNotIn("expected_value_r: 0.52 (limited/model_estimate)", report)
+
+    def test_adequate_backtest_requires_valid_consumed_statistics(self):
+        scored = strong_scored("AMD", investment=90, swing=90)
+        valid = classify_asset(
+            scored,
+            BacktestStats(sample_size=120, win_rate_2r=0.62, win_rate_3r=0.35, expected_value_r=0.55),
+        )
+        self.assertEqual(valid.decision, "tradeable")
+
+        invalid_stats = [
+            ("missing win_rate_2r", BacktestStats(sample_size=120, win_rate_2r=None, win_rate_3r=0.35, expected_value_r=0.55)),
+            ("missing expected_value_r", BacktestStats(sample_size=120, win_rate_2r=0.62, win_rate_3r=0.35, expected_value_r=None)),
+            ("nonfinite win_rate_2r", BacktestStats(sample_size=120, win_rate_2r=float("nan"), win_rate_3r=0.35, expected_value_r=0.55)),
+            ("out-of-range win_rate_2r", BacktestStats(sample_size=120, win_rate_2r=1.2, win_rate_3r=0.35, expected_value_r=0.55)),
+            ("nonfinite expected_value_r", BacktestStats(sample_size=120, win_rate_2r=0.62, win_rate_3r=0.35, expected_value_r=float("inf"))),
+        ]
+        for label, stats in invalid_stats:
+            with self.subTest(label=label):
+                decision = classify_asset(scored, stats)
+                self.assertNotEqual(decision.decision, "tradeable")
+                capability = "backtest.win_rate_2r" if "win_rate_2r" in label else "backtest.expected_value_r"
+                effect = next(item for item in decision.evidence_effects if item.capability == capability)
+                self.assertEqual(effect.scope, "specific_rule")
+                self.assertEqual(effect.criticality, "REQUIRED_FOR_SPECIFIC_RULE")
+                self.assertEqual(effect.status, "not_collected" if "missing" in label else "invalid")
+                self.assertEqual(effect.evaluation, "unresolved_required_evidence")
+                self.assertEqual(effect.decision_effect, "cap_to_watch")
+
+        no_backtest = classify_asset(scored, None)
+        low_sample = classify_asset(
+            scored,
+            BacktestStats(sample_size=20, win_rate_2r=None, win_rate_3r=None, expected_value_r=None),
+        )
+        low_quality = classify_asset(
+            scored,
+            BacktestStats(
+                sample_size=120,
+                win_rate_2r=0.62,
+                win_rate_3r=0.35,
+                expected_value_r=0.55,
+                setup_quality="low",
+            ),
+        )
+        self.assertNotEqual(no_backtest.decision, "tradeable")
+        self.assertNotEqual(low_sample.decision, "tradeable")
+        self.assertNotEqual(low_quality.decision, "tradeable")
 
     def test_negative_ev_with_high_severity_data_downgrades_to_technical_unvalidated(self):
         scored = strong_scored(
@@ -797,7 +1591,8 @@ class HardeningTests(unittest.TestCase):
         )
 
         self.assertEqual(decision.decision, "technical_unvalidated")
-        self.assertIn("negative_ev_with_high_data_severity", decision.alerts)
+        self.assertIn("weak_setup_win_rate", decision.alerts)
+        self.assertNotIn("negative_ev_with_high_data_severity", decision.alerts)
 
     def test_high_severity_limited_data_cannot_remain_watch_buy(self):
         scored = strong_scored(
@@ -812,8 +1607,8 @@ class HardeningTests(unittest.TestCase):
             BacktestStats(sample_size=57, win_rate_2r=0.56, win_rate_3r=0.35, expected_value_r=1.18),
         )
 
-        self.assertEqual(decision.decision, "technical_unvalidated")
-        self.assertIn("high_severity_data_not_watchlist", decision.alerts)
+        self.assertEqual(decision.decision, "watch_buy")
+        self.assertNotIn("high_severity_data_not_watchlist", decision.alerts)
 
     def test_post_earnings_gap_not_collected_removed_when_gap_is_calculated(self):
         rows = [

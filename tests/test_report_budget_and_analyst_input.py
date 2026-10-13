@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 import sys
 import tempfile
@@ -8,7 +9,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from advisor.models import AssetDecision, BacktestStats, RiskPlan
+from advisor.models import AssetDecision, BacktestStats, DecisionEvidenceEffect, RiskPlan
 from advisor.cli import _provider_budget_summary
 from advisor.config import AdvisorConfig
 from advisor.report import render_analyst_review_input, render_markdown_report
@@ -77,6 +78,66 @@ def _decision(
 
 
 class ReportBudgetAndAnalystInputTests(unittest.TestCase):
+    def test_evidence_trace_is_required_in_main_and_analyst_input(self) -> None:
+        effect = DecisionEvidenceEffect(
+            rule_id="classify_asset.stock_earnings_timing",
+            capability="earnings_timing",
+            scope="stock_asset",
+            criticality="REQUIRED_FOR_DECISION",
+            status="not_collected",
+            evaluation="unresolved_required_evidence",
+            decision_effect="cap_to_watch",
+            reason_code="earnings_data_missing",
+            source="fmp",
+            observed_at="2026-10-10T12:00:00Z",
+        )
+        decision = replace(
+            _decision("AMD", decision="technical_unvalidated"),
+            universe_origin="primary_watchlist",
+            evidence_effects=[effect],
+        )
+        common = {
+            "report_type": "main",
+            "data_mode": "live",
+            "stock_regime": "neutral",
+            "crypto_regime": "neutral",
+            "generated_at": "2026-10-10T12:00:00-03:00",
+        }
+
+        main = render_markdown_report(
+            [decision],
+            stock_regime="neutral",
+            crypto_regime="neutral",
+            report_type="main",
+            data_mode="live",
+            generated_at="2026-10-10T12:00:00-03:00",
+        )
+        analyst_input = render_analyst_review_input([decision], **common)
+
+        for artifact in (main, analyst_input):
+            self.assertIn("evidence_trace_version: 1", artifact)
+            trace_line = next(line for line in artifact.splitlines() if line.startswith("- evidence_trace_v1:"))
+            self.assertLessEqual(len(trace_line.encode("utf-8")), 4096)
+            trace = json.loads(trace_line.split(":", 1)[1].strip())
+            self.assertEqual(trace["source_decision"], "technical_unvalidated")
+            self.assertEqual(trace["asset_symbol"], "AMD")
+            self.assertEqual(trace["universe_origin"], "primary_watchlist")
+            self.assertEqual(
+                trace["effects"][0],
+                {
+                    "rule_id": "classify_asset.stock_earnings_timing",
+                    "capability": "earnings_timing",
+                    "scope": "stock_asset",
+                    "criticality": "REQUIRED_FOR_DECISION",
+                    "status": "not_collected",
+                    "evaluation": "unresolved_required_evidence",
+                    "decision_effect": "cap_to_watch",
+                    "reason_code": "earnings_data_missing",
+                    "source": "fmp",
+                    "observed_at": "2026-10-10T12:00:00Z",
+                },
+            )
+
     def test_report_includes_provider_budget_summary_and_few_asset_reason(self) -> None:
         report = render_markdown_report(
             [_decision("MSFT")],
@@ -466,6 +527,198 @@ class ReportBudgetAndAnalystInputTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((output_dir / "analyst-review-input.md").exists())
             self.assertIn("# Analyst review input", (output_dir / "analyst-review-input.md").read_text(encoding="utf-8"))
+
+    def test_cli_transports_observed_market_context_without_scoring_benchmarks(self) -> None:
+        def candle_rows(last_close, previous_close=None):
+            rows = []
+            for index in range(220):
+                close = last_close * (0.75 + 0.25 * index / 219)
+                if index == 218 and previous_close is not None:
+                    close = previous_close
+                if index == 219:
+                    close = last_close
+                rows.append(
+                    {
+                        "date": "2026-10-10" if index == 219 else f"2026-03-{index % 28 + 1:02d}",
+                        "open": close,
+                        "high": close * 1.01,
+                        "low": close * 0.99,
+                        "close": close,
+                        "volume": 1_000_000,
+                    }
+                )
+            if previous_close is not None:
+                rows[218]["date"] = "2026-10-09"
+            return rows
+
+        assets = [
+            {
+                "symbol": "BTC",
+                "asset_type": "crypto",
+                "theme": "crypto",
+                "market_cap": 1_500_000_000_000,
+                "average_volume": 5_000_000_000,
+                "data_source": "binance",
+                "data_timestamp": "2026-10-10T20:00:00+00:00",
+                "candles": candle_rows(61500, 61500 / 1.012),
+            },
+            {
+                "symbol": "ETH",
+                "asset_type": "crypto",
+                "theme": "crypto",
+                "market_cap": 400_000_000_000,
+                "average_volume": 2_000_000_000,
+                "data_source": "coingecko",
+                "data_timestamp": "2026-10-10T20:00:00+00:00",
+                "candles": candle_rows(3400, 3400 / 1.008),
+            },
+        ]
+        benchmarks = {
+            symbol: candle_rows(last_close, last_close / 1.01)
+            for symbol, last_close in (("SPY", 500), ("QQQ", 600), ("SMH", 300))
+        }
+
+        def run_scan(root: Path, *, include_benchmarks: bool):
+            fixture_dir = root / ("fixture-with-context" if include_benchmarks else "fixture-without-context")
+            output_dir = root / ("reports-with-context" if include_benchmarks else "reports-without-context")
+            fixture_dir.mkdir()
+            payload = {
+                "stock_regime": "neutral",
+                "crypto_regime": "risk_on",
+                "assets": assets,
+                "benchmarks": benchmarks if include_benchmarks else {},
+            }
+            (fixture_dir / "scan.json").write_text(json.dumps(payload), encoding="utf-8")
+            env = os.environ.copy()
+            env["ADVISOR_ENV_FILE"] = str(root / "missing.env")
+            env.pop("FMP_API_KEY", None)
+            env.pop("COINGECKO_API_KEY", None)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "advisor",
+                    "scan",
+                    "--fixture-dir",
+                    str(fixture_dir),
+                    "--output-dir",
+                    str(output_dir),
+                    "--db",
+                    str(root / ("with-context.db" if include_benchmarks else "without-context.db")),
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+                env=env,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return (
+                (output_dir / "advisor-report.md").read_text(encoding="utf-8"),
+                (output_dir / "analyst-review-input.md").read_text(encoding="utf-8"),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            main, analyst_input = run_scan(root, include_benchmarks=True)
+            main_without_benchmarks, _ = run_scan(root, include_benchmarks=False)
+            with self.subTest(boundary="raw_main_context"):
+                self.assertIn("- market_context_version: `1`", main)
+                self.assertIn("- market_context_v1:", main)
+            with self.subTest(boundary="analyst_input_context"):
+                self.assertIn("- market_context_version: `1`", analyst_input)
+                self.assertIn("- market_context_v1:", analyst_input)
+
+            def context_from(markdown):
+                line = next((line for line in markdown.splitlines() if line.startswith("- market_context_v1:")), None)
+                if line is None:
+                    return None
+                value = line.split(":", 1)[1].strip().strip("`")
+                return json.loads(value)
+
+            main_context = context_from(main)
+            analyst_context = context_from(analyst_input)
+            if main_context is not None and analyst_context is not None:
+                with self.subTest(boundary="same_emitted_context"):
+                    self.assertEqual(main_context, analyst_context)
+                with self.subTest(boundary="observed_proxy_fields"):
+                    for symbol, expected_price, expected_change, expected_source, expected_currency in (
+                        ("BTC", 61500.0, 1.2, "binance", "USDT"),
+                        ("ETH", 3400.0, 0.8, "coingecko", "USD"),
+                        ("SPY", 500.0, 1.0, "fixture", "USD"),
+                        ("QQQ", 600.0, 1.0, "fixture", "USD"),
+                        ("SMH", 300.0, 1.0, "fixture", "USD"),
+                    ):
+                        entry = main_context[symbol]
+                        self.assertEqual(entry["status"], "available")
+                        self.assertAlmostEqual(entry["price"], expected_price, places=2)
+                        self.assertAlmostEqual(entry["daily_change_pct"], expected_change, places=2)
+                        self.assertEqual(entry["source"], expected_source)
+                        self.assertTrue(entry["observed_at"].startswith("2026-10-10"))
+                        self.assertEqual(entry["price_currency"], expected_currency)
+                        self.assertEqual(entry["daily_change_pct_unit"], "percent")
+                        self.assertEqual(entry["granularity"], "daily")
+                        self.assertEqual(entry["time_basis"], "eod_candle")
+                with self.subTest(boundary="regime_labels"):
+                    self.assertEqual(main_context["stock_regime"]["label"], "neutral")
+                    self.assertEqual(main_context["crypto_regime"]["label"], "risk_on")
+
+            no_benchmark_context = context_from(main_without_benchmarks)
+            if no_benchmark_context is not None:
+                with self.subTest(boundary="missing_benchmark_not_fabricated"):
+                    self.assertEqual(no_benchmark_context["SMH"]["status"], "unavailable")
+                    self.assertNotIn("price", no_benchmark_context["SMH"])
+                    self.assertNotIn("daily_change_pct", no_benchmark_context["SMH"])
+
+            with self.subTest(boundary="benchmarks_excluded_from_primary"):
+                self.assertIn("- Ativos analisados: 2", main)
+                self.assertNotIn("## SPY", main)
+                self.assertNotIn("## QQQ", main)
+                self.assertNotIn("## SMH", main)
+                self.assertEqual(_section(main, "## Ranking de oportunidades"), _section(main_without_benchmarks, "## Ranking de oportunidades"))
+
+    def test_unavailable_derived_regimes_are_not_serialized_as_observed_neutral(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fixture_dir = root / "fixture"
+            output_dir = root / "reports"
+            fixture_dir.mkdir()
+            (fixture_dir / "scan.json").write_text(
+                json.dumps({"assets": [], "benchmarks": {}}),
+                encoding="utf-8",
+            )
+            env = os.environ.copy()
+            env["ADVISOR_ENV_FILE"] = str(root / "missing.env")
+            env.pop("FMP_API_KEY", None)
+            env.pop("COINGECKO_API_KEY", None)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "advisor",
+                    "scan",
+                    "--fixture-dir",
+                    str(fixture_dir),
+                    "--output-dir",
+                    str(output_dir),
+                    "--db",
+                    str(root / "scan.db"),
+                ],
+                check=False,
+                text=True,
+                capture_output=True,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = (output_dir / "advisor-report.md").read_text(encoding="utf-8")
+            context_line = next(line for line in report.splitlines() if line.startswith("- market_context_v1:"))
+            context = json.loads(context_line.split(":", 1)[1].strip().strip("`"))
+
+            for key in ("stock_regime", "crypto_regime"):
+                with self.subTest(regime=key):
+                    self.assertEqual(context[key]["status"], "unavailable")
+                    self.assertNotIn("label", context[key])
 
     def test_provider_budget_universe_requested_is_before_stock_cap(self) -> None:
         config = AdvisorConfig.default()
